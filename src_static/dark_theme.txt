@@ -1,0 +1,174 @@
+QMainWindow, QWidget {{
+    background-color: {COLOR_DARK_BG};
+    color: {COLOR_DARK_FG};
+    font-family: Inter, sans-serif; /* Added default font */
+}}
+QPushButton {{
+    background-color: {COLOR_DARK_BG_ALT};
+    color: {COLOR_DARK_FG};
+    border-radius: 5px; /* Slightly more rounded */
+    padding: 8px 16px;
+    border: none;
+    font-weight: 500; /* Medium weight */
+}}
+QPushButton:hover {{
+    background-color: {COLOR_DARK_BG_HOVER};
+}}
+QPushButton#navButton {{ /* Style for nav buttons */
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent; /* For active state */
+    padding: 8px 5px; /* Less horizontal padding */
+    margin-right: 10px;
+    font-weight: 600; /* Bolder */
+}}
+QPushButton#navButton:hover {{
+    color: {COLOR_GREEN};
+}}
+QPushButton#navButtonActive {{ /* Active nav button style */
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid {COLOR_GREEN};
+    padding: 8px 5px;
+    margin-right: 10px;
+    font-weight: 600;
+    color: {COLOR_GREEN}; /* Highlight active */
+}}
+QPushButton#{BTN_GREEN} {{
+    background-color: {COLOR_GREEN};
+    color: {COLOR_DARK_BG}; /* Better contrast */
+    font-weight: bold;
+}}
+QPushButton#{BTN_GREEN}:hover {{
+    background-color: #b1e8b1; /* Lighter green on hover */
+}}
+QPushButton#{BTN_RED} {{
+    background-color: {COLOR_RED};
+    color: {COLOR_DARK_BG}; /* Better contrast */
+    font-weight: bold;
+}}
+QPushButton#{BTN_RED}:hover {{
+    background-color: #f7a1b8; /* Lighter red on hover */
+}}
+QPushButton#{BTN_BLUE} {{
+    background-color: {COLOR_BLUE};
+    color: {COLOR_DARK_BG}; /* Better contrast */
+    font-weight: bold;
+}}
+QPushButton#{BTN_BLUE}:hover {{
+    background-color: #a1c4f7; /* Lighter blue on hover */
+}}
+QLineEdit, QTextEdit, QSpinBox {{
+    background-color: {COLOR_DARK_BG_ALT};
+    color: {COLOR_DARK_FG};
+    border-radius: 5px;
+    padding: 5px;
+    border: 1px solid {COLOR_DARK_BORDER};
+    
+}}
+QTableWidget {{
+    background-color: {COLOR_DARK_BG};
+    color: {COLOR_DARK_FG};
+    gridline-color: {COLOR_DARK_BG_ALT};
+    border: 1px solid {COLOR_DARK_BORDER}; /* Added border */
+    border-radius: 5px;
+}}
+QHeaderView::section {{
+    background-color: {COLOR_DARK_BG_ALT}; /* Header distinct */
+    color: {COLOR_DARK_FG};
+    padding: 10px; /* More padding */
+    border: none;
+    border-bottom: 1px solid {COLOR_DARK_BORDER};
+    font-weight: bold;
+}}
+QTableWidget::item {{
+    padding: 10px; /* More padding */
+    border-bottom: 1px solid {COLOR_DARK_BG_ALT}; /* Row separator */
+}}
+QTableWidget::item:selected {{
+    background-color: {COLOR_DARK_BG_HOVER};
+    color: {COLOR_GREEN}; /* Highlight selected */
+}}
+QComboBox {{
+    background-color: {COLOR_DARK_BG_ALT};
+    color: {COLOR_DARK_FG};
+    border-radius: 5px;
+    padding: 8px;
+    border: 1px solid {COLOR_DARK_BORDER};
+    min-width: 6em; /* Ensure minimum size */
+}}
+QComboBox::drop-down {{
+    border: none; /* Cleaner dropdown arrow */
+}}
+QComboBox QAbstractItemView {{ /* Style dropdown list */
+    background-color: {COLOR_DARK_BG_ALT};
+    color: {COLOR_DARK_FG};
+    selection-background-color: {COLOR_DARK_BG_HOVER};
+    border: 1px solid {COLOR_DARK_BORDER};
+    border-radius: 5px;
+    padding: 5px;
+}}
+QCheckBox {{
+    color: {COLOR_DARK_FG};
+    spacing: 8px;
+}}
+QCheckBox::indicator {{
+    width: 18px;
+    height: 18px;
+    border-radius: 3px; /* Slightly rounded */
+    border: 1px solid {COLOR_DARK_BORDER};
+    background-color: {COLOR_DARK_BG_ALT};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {COLOR_GREEN};
+    border: 1px solid {COLOR_GREEN};
+}}
+QGroupBox {{
+    border: 1px solid {COLOR_DARK_BORDER};
+    border-radius: 5px;
+    margin-top: 0em;
+    padding: 1em 0em 0.5em 0em; /* Adjusted padding */
+    font-weight: bold;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    subcontrol-position: top left; /* Title top-left */
+    padding: 0 5px;
+    margin-left: 10px; /* Indent title slightly */
+    color: {COLOR_DARK_FG};
+    background-color: {COLOR_DARK_BG}; /* Make title background same as main */
+}}
+QProgressBar {{
+    border: 1px solid {COLOR_DARK_BORDER};
+    border-radius: 5px;
+    text-align: center;
+    background-color: {COLOR_DARK_BG_ALT};
+    color: {COLOR_DARK_FG}; /* Ensure text is visible */
+    font-weight: bold;
+}}
+QProgressBar::chunk {{
+    background-color: {COLOR_GREEN};
+    border-radius: 4px; /* Rounded chunk */
+    margin: 1px; /* Small margin around chunk */
+}}
+QLabel#logoLabel {{ /* Specific style for logo */
+    background-color: {COLOR_GREEN};
+    color: {COLOR_DARK_BG};
+    border-radius: 5px;
+    padding: 5px;
+    font-weight: bold;
+    font-size: 14px;
+}}
+QLabel#statusLabelRunning {{ color: {COLOR_GREEN}; }}
+QLabel#statusLabelPending {{ color: {COLOR_ORANGE}; }}
+QLabel#statusLabelCompleted {{ color: {COLOR_BLUE}; }}
+QLabel#statusLabelFailed {{ color: {COLOR_RED}; }}
+QLabel#clusterStatValue {{ font-size: 24px; font-weight: bold; }}
+QLabel#clusterStatValueAvail {{ color: {COLOR_GREEN}; }}
+QLabel#clusterStatValueRunning {{ color: {COLOR_BLUE}; }}
+QLabel#clusterStatValuePending {{ color: {COLOR_ORANGE}; }}
+QLabel#nodeLabel[nodeState="idle"] {{ background-color: #50fa7b; border: 1px solid #f8f8f2; }}
+QLabel#nodeLabel[nodeState="alloc"] {{ background-color: #8be9fd; border: 1px solid #f8f8f2; }}
+QLabel#nodeLabel[nodeState="down"] {{ background-color: #ff5555; border: 1px solid #f8f8f2; }}
+QLabel#nodeLabel[nodeState="drain"] {{ background-color: #ffb86c; border: 1px solid #f8f8f2; }}
+QLabel#nodeLabel[nodeState="unknown"] {{ background-color: #6272a4; border: 1px solid #f8f8f2; }}

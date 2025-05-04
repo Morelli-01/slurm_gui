@@ -1,4 +1,3 @@
-import paramiko
 import yaml
 import os
 from time import sleep
@@ -6,11 +5,13 @@ import paramiko
 import yaml
 import os
 import tempfile
+from PyQt6.QtCore import QObject
 
 
 class SlurmConnection:
     def __init__(self, config_path="slurm_config.yaml"):
-        with open(config_path, 'r') as f:
+        self.config_path = config_path
+        with open(self.config_path, 'r') as f:
             self.config = yaml.safe_load(f)
 
         ssh_config = self.config.get('ssh', {})
@@ -35,13 +36,6 @@ class SlurmConnection:
         self.accounts = []
         self.gres = []
         self.remote_home = None
-        self.connect()
-        if self.is_connected():
-            self._fetch_basic_info()
-            self._fetch_submission_options()
-            self.remote_home, _ = self.run_command("echo $HOME")
-            self.remote_home = self.remote_home.strip()
-            self.run_command(f"mkdir -p {self.remote_home}/.logs")
 
     def connect(self):
         self.client = paramiko.SSHClient()
@@ -54,11 +48,34 @@ class SlurmConnection:
             else:
                 raise ValueError("No valid authentication method provided.")
             print(f"Connected to {self.host}")
+            self._fetch_basic_info()
+            self._fetch_submission_options()
+            self.remote_home, _ = self.run_command("echo $HOME")
+            self.remote_home = self.remote_home.strip()
+            self.run_command(f"mkdir -p {self.remote_home}/.logs")
+
         except Exception as e:
             print(f"Connection failed: {e}")
 
     def is_connected(self):
-        return self.client and self.client.get_transport() and self.client.get_transport().is_active()
+        try:
+            transport = self.client.get_transport()
+            if transport and transport.is_active():
+                # Try sending a simple command with a short timeout to check if the channel is still working
+                channel = transport.open_session(timeout=1)
+                if channel:
+                    channel.close()
+                    return True
+                else:
+                    return False
+            else:
+                return False
+        except paramiko.SSHException as e:
+            print(f"SSH error: {e}")
+            return False
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return False
 
     def run_command(self, command):
         if not self.is_connected():
@@ -186,6 +203,23 @@ class SlurmConnection:
 
         return stdout, stderr
 
+    def update_credentials_and_reconnect(self, new_user, new_host, new_psw=None, new_identity_file=None):
+        self.config['ssh'] = {
+            'user': new_user,
+            'host': new_host,
+            'password': new_psw,
+            'identity_file': new_identity_file
+        }
+        try:
+            with open(self.config_path, "w") as f:
+                yaml.dump(self.config, f)
+            if self.is_connected():
+                self.client.close()
+            self.__init__(self.config_path)
+            self.connect()
+        except Exception as e:
+            raise IOError(f"Failed to update YAML configuration file: {e}")
+
     def close(self):
         if self.client:
             self.client.close()
@@ -193,7 +227,7 @@ class SlurmConnection:
 
 
 if __name__ == "__main__":
-    sc_ = SlurmConnection("/home/nicola/Desktop/qt_playground/.config/slurm_config.yaml")
+    sc_ = SlurmConnection("./configs/slurm_config.yaml")
     sc_.connect()
     out, err = sc_.run_command("squeue")
     print(out, err)

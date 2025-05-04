@@ -1,0 +1,168 @@
+QMainWindow, QWidget {{
+    background-color: {COLOR_LIGHT_BG};
+    color: {COLOR_LIGHT_FG};
+    font-family: Inter, sans-serif;
+}}
+QPushButton {{
+    background-color: {COLOR_LIGHT_BG_ALT};
+    color: {COLOR_LIGHT_FG};
+    border-radius: 5px;
+    padding: 8px 16px;
+    border: none;
+    font-weight: 500;
+}}
+QPushButton:hover {{
+    background-color: {COLOR_LIGHT_BG_HOVER};
+}}
+QPushButton#navButton {{
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 5px;
+    margin-right: 10px;
+    font-weight: 600;
+}}
+QPushButton#navButton:hover {{
+    color: {COLOR_GREEN};
+}}
+QPushButton#navButtonActive {{
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid {COLOR_GREEN};
+    padding: 8px 5px;
+    margin-right: 10px;
+    font-weight: 600;
+    color: {COLOR_GREEN};
+}}
+QPushButton#{BTN_GREEN} {{
+    background-color: {COLOR_GREEN};
+    color: white;
+    font-weight: bold;
+}}
+QPushButton#{BTN_GREEN}:hover {{
+     background-color: #b1e8b1;
+}}
+QPushButton#{BTN_RED} {{
+    background-color: {COLOR_RED};
+    color: white;
+    font-weight: bold;
+}}
+QPushButton#{BTN_RED}:hover {{
+     background-color: #f7a1b8;
+}}
+QPushButton#{BTN_BLUE} {{
+    background-color: {COLOR_BLUE};
+    color: white;
+    font-weight: bold;
+}}
+QPushButton#{BTN_BLUE}:hover {{
+     background-color: #a1c4f7;
+}}
+QLineEdit, QTextEdit, QSpinBox {{
+    background-color: #ffffff; /* White inputs */
+    color: {COLOR_LIGHT_FG};
+    border-radius: 5px;
+    padding: 8px;
+    border: 1px solid {COLOR_LIGHT_BORDER};
+}}
+QTableWidget {{
+    background-color: #ffffff;
+    color: {COLOR_LIGHT_FG};
+    gridline-color: {COLOR_LIGHT_BG_ALT};
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    border-radius: 5px;
+}}
+QHeaderView::section {{
+    background-color: {COLOR_LIGHT_BG_ALT};
+    color: {COLOR_LIGHT_FG};
+    padding: 10px;
+    border: none;
+    border-bottom: 1px solid {COLOR_LIGHT_BORDER};
+    font-weight: bold;
+}}
+QTableWidget::item {{
+    padding: 10px;
+    border-bottom: 1px solid {COLOR_LIGHT_BG_ALT};
+}}
+QTableWidget::item:selected {{
+    background-color: {COLOR_LIGHT_BG_HOVER};
+    color: {COLOR_GREEN};
+}}
+QComboBox {{
+    background-color: #ffffff;
+    color: {COLOR_LIGHT_FG};
+    border-radius: 5px;
+    padding: 8px;
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    min-width: 6em;
+}}
+QComboBox::drop-down {{
+    border: none;
+}}
+QComboBox QAbstractItemView {{
+    background-color: #ffffff;
+    color: {COLOR_LIGHT_FG};
+    selection-background-color: {COLOR_LIGHT_BG_HOVER};
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    border-radius: 5px;
+    padding: 5px;
+}}
+QCheckBox {{
+    color: {COLOR_LIGHT_FG};
+    spacing: 8px;
+}}
+QCheckBox::indicator {{
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    background-color: {COLOR_LIGHT_BG_ALT};
+}}
+QCheckBox::indicator:checked {{
+    background-color: {COLOR_GREEN};
+    border: 1px solid {COLOR_GREEN};
+}}
+QGroupBox {{
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    border-radius: 5px;
+    margin-top: 0em;
+    padding: 1em 0em 0.5em 0em;
+    font-weight: bold;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 8px;
+    margin-left: 10px;
+    color: {COLOR_LIGHT_FG};
+    background-color: {COLOR_LIGHT_BG};
+}}
+QProgressBar {{
+    border: 1px solid {COLOR_LIGHT_BORDER};
+    border-radius: 5px;
+    text-align: center;
+    background-color: {COLOR_LIGHT_BG_ALT};
+    color: {COLOR_LIGHT_FG};
+    font-weight: bold;
+}}
+QProgressBar::chunk {{
+    background-color: {COLOR_GREEN};
+    border-radius: 4px;
+    margin: 1px;
+}}
+QLabel#logoLabel {{
+    background-color: {COLOR_GREEN};
+    color: white;
+    border-radius: 5px;
+    padding: 5px;
+    font-weight: bold;
+    font-size: 14px;
+}}
+QLabel#statusLabelRunning {{ color: {COLOR_GREEN}; }}
+QLabel#statusLabelPending {{ color: {COLOR_ORANGE}; }}
+QLabel#statusLabelCompleted {{ color: {COLOR_BLUE}; }}
+QLabel#statusLabelFailed {{ color: {COLOR_RED}; }}
+QLabel#clusterStatValue {{ font-size: 24px; font-weight: bold; }}
+QLabel#clusterStatValueAvail {{ color: {COLOR_GREEN}; }}
+QLabel#clusterStatValueRunning {{ color: {COLOR_BLUE}; }}
+QLabel#clusterStatValuePending {{ color: {COLOR_ORANGE}; }}

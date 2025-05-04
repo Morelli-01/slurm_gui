@@ -1,5 +1,5 @@
 ssh:
   host: 155.185.49.58
+  identity_file: null
+  password: LuigiMorelli5!
   user: nmorelli
-  password: LuigiMorelli5! # opzionale se si usa la chiave
-  # identity_file: /home/nicola/.ssh/ailb-key # opzionale se si usa la password
