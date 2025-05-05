@@ -1,4 +1,4 @@
-import yaml
+import yaml, sys
 import os
 from time import sleep
 import paramiko
@@ -220,6 +220,39 @@ class SlurmConnection:
         except Exception as e:
             raise IOError(f"Failed to update YAML configuration file: {e}")
 
+    def _read_maintenances(self):
+        msg_out, MSG_ERRQUEUE = self.run_command("scontrol show reservation 2>/dev/null")
+        if "No reservations in the system" in msg_out:
+            return None
+        else:
+            return msg_out
+
+    def _fetch_nodes_infos(self):
+        msg_out, msg_err = self.run_command("scontrol show nodes")
+        nodes = msg_out.split("\n\n")
+        nodes_arr = []
+        for node in nodes:
+            node_dict = {}
+            for feats in node.split("\n"):
+                for f in feats.split(" "):
+                    if "=" in f:
+                        if "AllocTRES" in f:
+                            for f1 in f.removeprefix("AllocTRES=").split(","):
+                                if f1 != '':
+                                    k, v = f1.split("=")
+                                    node_dict[f"alloc_{k}"] = v
+                        elif "CfgTRES" in f:
+                            for f1 in f.removeprefix("CfgTRES=").split(","):
+                                if f1 != '':
+                                    k, v = f1.split("=")
+                                    node_dict[f"total_{k}"] = v
+                        else:
+                            f = f.strip().split("=")
+                            node_dict[f[0]] = f[1]
+            nodes_arr.append(node_dict)
+
+        return nodes_arr
+
     def close(self):
         if self.client:
             self.client.close()
@@ -229,7 +262,11 @@ class SlurmConnection:
 if __name__ == "__main__":
     sc_ = SlurmConnection("./configs/slurm_config.yaml")
     sc_.connect()
+    out = sc_._fetch_nodes_infos()
+    print(out[5])
+    sys.exit(0)
     out, err = sc_.run_command("squeue")
+
     print(out, err)
     print(sc_.remote_user)
     print(sc_.user_groups)
@@ -251,4 +288,3 @@ if __name__ == "__main__":
         print(out, err)
     except RuntimeError as e:
         print(e)
-    print("")

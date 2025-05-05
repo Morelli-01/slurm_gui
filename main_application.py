@@ -1,54 +1,18 @@
-import sys
+import sys, slurm_connection
+import threading
 import os
 import subprocess
 import re
 import random  # For demo refresh
-import time  # Added for demo delay
-
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QComboBox, QFrame, QSizePolicy, QStackedWidget, QFormLayout, QGroupBox,
-    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox
+    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea
 )
-from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap
-from PyQt6.QtCore import Qt, QSize, QTimer, QThread, QObject, pyqtSignal
-
-# Assuming slurm_connection is a separate module you have
-# import slurm_connection
-# For this example, we'll use a mock object if the module isn't available
-try:
-    import slurm_connection
-except ImportError:
-    print("Warning: 'slurm_connection' module not found. Using mock connection.")
-
-    class MockSlurmConnection:
-        def __init__(self, config_path):
-            print(f"MockSlurmConnection initialized with config: {config_path}")
-            self._connected = False
-            self.host = "mock_host"
-            self.user = "mock_user"
-            self.password = "mock_password"  # Insecure, use proper secrets management
-
-        def is_connected(self):
-            # Simulate connection status change
-            if random.random() < 0.1:  # 10% chance to disconnect
-                self._connected = False
-            elif random.random() < 0.8:  # 80% chance to connect if disconnected
-                self._connected = True
-            return self._connected
-
-        def update_credentials_and_reconnect(self, new_user, new_host, new_psw):
-            print(f"MockSlurmConnection: Updating credentials and reconnecting...")
-            self.user = new_user
-            self.host = new_host
-            self.password = new_psw
-            # Simulate connection attempt
-            self._connected = random.random() > 0.2  # 80% chance of success
-            print(f"MockSlurmConnection: Reconnected status: {self._connected}")
-
-    slurm_connection = MockSlurmConnection  # Use the mock class
-
+from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
+from PyQt6.QtCore import Qt, QSize, QTimer
+from utils import *
 
 # --- Constants ---
 APP_TITLE = "SLURM Job Manager"
@@ -70,6 +34,7 @@ COLOR_GREEN = "#50fa7b"  # Brighter Green
 COLOR_RED = "#ff5555"   # Brighter Red
 COLOR_BLUE = "#6272a4"  # Brighter Blue
 COLOR_ORANGE = "#ffb86c"  # Brighter Orange
+COLOR_GRAY = "#6272a4"   # Gray (Unknown/Offline) - Was Blue
 
 COLOR_LIGHT_BG = "#eff1f5"  # Light Background
 COLOR_LIGHT_FG = "#4c4f69"  # Light Foreground
@@ -94,8 +59,13 @@ STATUS_RUNNING = "RUNNING"
 STATUS_PENDING = "PENDING"
 STATUS_COMPLETED = "COMPLETED"
 STATUS_FAILED = "FAILED"  # Added for completeness
-STATUS_CANCELLED = "CANCELLED"  # Added cancelled status
 
+# SLURM Statuses (Node States - simplified)
+NODE_STATE_IDLE = "IDLE"
+NODE_STATE_ALLOC = "ALLOCATED"  # Or RUNNING, MIXED
+NODE_STATE_DOWN = "DOWN"
+NODE_STATE_DRAIN = "DRAIN"
+NODE_STATE_UNKNOWN = "UNKNOWN"
 # --- Helper Functions ---
 
 
@@ -124,41 +94,8 @@ def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
 
 
 def get_dark_theme_stylesheet():
-    # In a real app, handle file not found gracefully
-    try:
-        with open("src_static/dark_theme.txt", "r") as f:
-            stylesheet_template = f.read()
-    except FileNotFoundError:
-        print("Warning: dark_theme.txt not found. Using fallback styles.")
-        stylesheet_template = """
-            QMainWindow {{ background-color: {COLOR_DARK_BG}; color: {COLOR_DARK_FG}; }}
-            QWidget {{ background-color: {COLOR_DARK_BG}; color: {COLOR_DARK_FG}; }}
-            QGroupBox {{ border: 1px solid {COLOR_DARK_BORDER}; margin-top: 10px; }}
-            QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; color: {COLOR_DARK_FG}; }}
-            QPushButton {{ background-color: {COLOR_DARK_BG_ALT}; color: {COLOR_DARK_FG}; border: 1px solid {COLOR_DARK_BORDER}; padding: 5px 10px; border-radius: 5px; }}
-            QPushButton:hover {{ background-color: {COLOR_DARK_BG_HOVER}; }}
-            QPushButton:pressed {{ background-color: {COLOR_DARK_BORDER}; }}
-            QPushButton#navButton {{ background-color: transparent; border: none; padding: 5px 10px; }}
-            QPushButton#navButton:hover {{ background-color: {COLOR_DARK_BG_HOVER}; }}
-            QPushButton#navButtonActive {{ background-color: {COLOR_DARK_BG_ALT}; border: 1px solid {COLOR_DARK_BORDER}; border-bottom-color: transparent; border-radius: 5px 5px 0 0; }}
-            QPushButton#{BTN_GREEN} {{ background-color: {COLOR_GREEN}; color: {COLOR_DARK_BG}; font-weight: bold; }}
-            QPushButton#{BTN_RED} {{ background-color: {COLOR_RED}; color: {COLOR_DARK_BG}; font-weight: bold; }}
-            QPushButton#{BTN_BLUE} {{ background-color: {COLOR_BLUE}; color: {COLOR_DARK_BG}; font-weight: bold; }}
-            QLineEdit {{ background-color: {COLOR_DARK_BG_ALT}; color: {COLOR_DARK_FG}; border: 1px solid {COLOR_DARK_BORDER}; padding: 5px; border-radius: 3px; }}
-            QTextEdit {{ background-color: {COLOR_DARK_BG_ALT}; color: {COLOR_DARK_FG}; border: 1px solid {COLOR_DARK_BORDER}; padding: 5px; border-radius: 3px; }}
-            QComboBox {{ background-color: {COLOR_DARK_BG_ALT}; color: {COLOR_DARK_FG}; border: 1px solid {COLOR_DARK_BORDER}; padding: 5px; border-radius: 3px; }}
-            QTableWidget {{ background-color: {COLOR_DARK_BG}; color: {COLOR_DARK_FG}; border: 1px solid {COLOR_DARK_BORDER}; gridline-color: {COLOR_DARK_BORDER}; }}
-            QTableWidget QHeaderView::section {{ background-color: {COLOR_DARK_BG_ALT}; color: {COLOR_DARK_FG}; padding: 5px; border: 1px solid {COLOR_DARK_BORDER}; }}
-            QTableWidget::item {{ padding: 5px; }}
-            QTableWidget::item:selected {{ background-color: {COLOR_DARK_BG_HOVER}; }}
-            QProgressBar {{ border: 1px solid {COLOR_DARK_BORDER}; border-radius: 5px; text-align: center; background-color: {COLOR_DARK_BG_ALT}; }}
-            QProgressBar::chunk {{ background-color: {COLOR_BLUE}; border-radius: 5px; }}
-            QLabel#clusterStatValue {{ font-size: 14px; font-weight: bold; }}
-            QLabel#clusterStatValueAvail {{ color: {COLOR_GREEN}; }}
-            QLabel#clusterStatValueRunning {{ color: {COLOR_BLUE}; }}
-            QLabel#clusterStatValuePending {{ color: {COLOR_ORANGE}; }}
-            QPushButton#statusButton {{ border: none; font-weight: bold; }}
-        """
+    with open("src_static/dark_theme.txt", "r") as f:
+        stylesheet_template = f.read()
 
     return stylesheet_template.format(
         COLOR_DARK_BG=COLOR_DARK_BG,
@@ -178,41 +115,8 @@ def get_dark_theme_stylesheet():
 
 def get_light_theme_stylesheet():
     """Loads and returns the CSS stylesheet for the light theme from a file."""
-    # In a real app, handle file not found gracefully
-    try:
-        with open("/home/nicola/Desktop/slurm_gui/src_static/light_theme.txt", "r") as f:
-            stylesheet = f.read()
-    except FileNotFoundError:
-        print("Warning: light_theme.txt not found. Using fallback styles.")
-        stylesheet = """
-             QMainWindow {{ background-color: {COLOR_LIGHT_BG}; color: {COLOR_LIGHT_FG}; }}
-             QWidget {{ background-color: {COLOR_LIGHT_BG}; color: {COLOR_LIGHT_FG}; }}
-             QGroupBox {{ border: 1px solid {COLOR_LIGHT_BORDER}; margin-top: 10px; }}
-             QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; color: {COLOR_LIGHT_FG}; }}
-             QPushButton {{ background-color: {COLOR_LIGHT_BG_ALT}; color: {COLOR_LIGHT_FG}; border: 1px solid {COLOR_LIGHT_BORDER}; padding: 5px 10px; border-radius: 5px; }}
-             QPushButton:hover {{ background-color: {COLOR_LIGHT_BG_HOVER}; }}
-             QPushButton:pressed {{ background-color: {COLOR_LIGHT_BORDER}; }}
-             QPushButton#navButton {{ background-color: transparent; border: none; padding: 5px 10px; }}
-             QPushButton#navButton:hover {{ background-color: {COLOR_LIGHT_BG_HOVER}; }}
-             QPushButton#navButtonActive {{ background-color: {COLOR_LIGHT_BG_ALT}; border: 1px solid {COLOR_LIGHT_BORDER}; border-bottom-color: transparent; border-radius: 5px 5px 0 0; }}
-             QPushButton#{BTN_GREEN} {{ background-color: {COLOR_GREEN}; color: white; font-weight: bold; }}
-             QPushButton#{BTN_RED} {{ background-color: {COLOR_RED}; color: white; font-weight: bold; }}
-             QPushButton#{BTN_BLUE} {{ background-color: {COLOR_BLUE}; color: white; font-weight: bold; }}
-             QLineEdit {{ background-color: {COLOR_LIGHT_BG_ALT}; color: {COLOR_LIGHT_FG}; border: 1px solid {COLOR_LIGHT_BORDER}; padding: 5px; border-radius: 3px; }}
-             QTextEdit {{ background-color: {COLOR_LIGHT_BG_ALT}; color: {COLOR_LIGHT_FG}; border: 1px solid {COLOR_LIGHT_BORDER}; padding: 5px; border-radius: 3px; }}
-             QComboBox {{ background-color: {COLOR_LIGHT_BG_ALT}; color: {COLOR_LIGHT_FG}; border: 1px solid {COLOR_LIGHT_BORDER}; padding: 5px; border-radius: 3px; }}
-             QTableWidget {{ background-color: {COLOR_LIGHT_BG}; color: {COLOR_LIGHT_FG}; border: 1px solid {COLOR_LIGHT_BORDER}; gridline-color: {COLOR_LIGHT_BORDER}; }}
-             QTableWidget QHeaderView::section {{ background-color: {COLOR_LIGHT_BG_ALT}; color: {COLOR_LIGHT_FG}; padding: 5px; border: 1px solid {COLOR_LIGHT_BORDER}; }}
-             QTableWidget::item {{ padding: 5px; }}
-             QTableWidget::item:selected {{ background-color: {COLOR_LIGHT_BG_HOVER}; }}
-             QProgressBar {{ border: 1px solid {COLOR_LIGHT_BORDER}; border-radius: 5px; text-align: center; background-color: {COLOR_LIGHT_BG_ALT}; }}
-             QProgressBar::chunk {{ background-color: {COLOR_BLUE}; border-radius: 5px; }}
-             QLabel#clusterStatValue {{ font-size: 14px; font-weight: bold; }}
-             QLabel#clusterStatValueAvail {{ color: {COLOR_GREEN}; }}
-             QLabel#clusterStatValueRunning {{ color: {COLOR_BLUE}; }}
-             QLabel#clusterStatValuePending {{ color: {COLOR_ORANGE}; }}
-             QPushButton#statusButton {{ border: none; font-weight: bold; }}
-         """
+    with open("/home/nicola/Desktop/slurm_gui/src_static/light_theme.txt", "r") as f:
+        stylesheet = f.read()
 
     return stylesheet.format(
         COLOR_LIGHT_BG=COLOR_LIGHT_BG,
@@ -229,157 +133,22 @@ def get_light_theme_stylesheet():
         BTN_BLUE=BTN_BLUE,
     )
 
-
-# --- Worker Class for Background Operations ---
-class SlurmWorker(QObject):
-    # Define signals to communicate with the main thread
-    jobs_data_fetched = pyqtSignal(list)
-    cluster_data_fetched = pyqtSignal(dict, list)  # Pass cluster stats dict and partitions list
-    connection_status_fetched = pyqtSignal(bool)
-    error_occurred = pyqtSignal(str)  # Signal for reporting errors
-
-    def __init__(self, slurm_connection_instance):
-        super().__init__()
-        self._slurm_connection = slurm_connection_instance
-        self._is_running = True  # Flag to control the worker loop
-
-    def stop(self):
-        """Safely stops the worker's main loop."""
-        self._is_running = False
-
-    def fetch_all_data(self):
-        while (True):
-            """Fetches all data (jobs, cluster, connection) in the worker thread."""
-            if not self._is_running:
-                return
-
-            print("Worker: Fetching all data...")
-            try:
-                # Fetch connection status first
-                connected = self._slurm_connection.is_connected()
-                self.connection_status_fetched.emit(connected)
-
-                if connected:
-                    # --- Fetch Job Data (Replace with actual squeue call) ---
-                    # try:
-                    #    cmd = ["squeue", "-u", os.environ.get("USER"), "-o", "%i %j %P %T %M %D"] # Example format
-                    #    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
-                    #    output_lines = result.stdout.strip().split('\n')
-                    #    # Parse output_lines into jobs_data list of dicts
-                    #    jobs_data = [] # Populate this list
-                    #    # Example parsing (adjust based on your squeue format)
-                    #    if len(output_lines) > 1: # Check if there's data beyond header
-                    #        for line in output_lines[1:]:
-                    #            parts = line.split() # Simple split, might need regex
-                    #            if len(parts) >= 6:
-                    #                job = {"id": parts[0], "name": parts[1], "partition": parts[2],
-                    #                       "status": parts[3], "time": parts[4], "nodes": parts[5]}
-                    #                jobs_data.append(job)
-                    #    self.jobs_data_fetched.emit(jobs_data)
-                    # except Exception as e:
-                    #    self.error_occurred.emit(f"Error fetching job data: {e}")
-                    #    self.jobs_data_fetched.emit([]) # Emit empty list on error
-
-                    # --- Demo Job Data ---
-                    sample_jobs = [
-                        {"id": "123456", "name": "RNA-seq_analysis_long_name_test", "partition": "compute",
-                         "status": STATUS_RUNNING, "time": "1:23:45", "nodes": "2"},
-                        {"id": "123457", "name": "protein_folding_sim", "partition": "gpu",
-                         "status": STATUS_PENDING, "time": "0:00:00", "nodes": "4"},
-                        {"id": "123458", "name": "genome_assembly", "partition": "bigmem",
-                         "status": STATUS_COMPLETED, "time": "5:37:12", "nodes": "1"},
-                        {"id": "123459", "name": "ml_training_job", "partition": "gpu",
-                         "status": STATUS_RUNNING, "time": "12:05:22", "nodes": "2"},
-                        {"id": "123460", "name": "failed_experiment", "partition": "debug",
-                         "status": STATUS_FAILED, "time": "0:01:15", "nodes": "1"},
-                        {"id": "123461", "name": "cancelled_job", "partition": "compute",
-                         "status": STATUS_CANCELLED, "time": "0:05:00", "nodes": "1"},
-                    ]
-                    # Randomly change status for demo refresh effect
-                    for job in sample_jobs:
-                        if random.random() < 0.1 and job["status"] == STATUS_PENDING:
-                            job["status"] = STATUS_RUNNING
-                            job["time"] = "0:00:10"
-                        elif random.random() < 0.05 and job["status"] == STATUS_RUNNING:
-                            job["status"] = random.choice([STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED])
-                            job["time"] = f"{random.randint(1, 5)}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
-
-                    # Simulate some work
-                    time.sleep(0.5)  # Simulate network latency/processing time
-                    self.jobs_data_fetched.emit(sample_jobs)
-
-                    # --- Fetch Cluster Data (Replace with actual sinfo/scontrol calls) ---
-                    # try:
-                    #    # Fetch cluster stats (total, avail nodes, job counts)
-                    #    # Fetch partition data (sinfo)
-                    #    cluster_stats = {} # Populate this dict
-                    #    partitions_data = [] # Populate this list
-                    #    self.cluster_data_fetched.emit(cluster_stats, partitions_data)
-                    # except Exception as e:
-                    #    self.error_occurred.emit(f"Error fetching cluster data: {e}")
-                    #    self.cluster_data_fetched.emit({}, []) # Emit empty data on error
-
-                    # --- Demo Cluster Data ---
-                    total_nodes = 64
-                    avail_nodes = random.randint(30, 55)
-                    running_jobs = random.randint(10, 20)
-                    pending_jobs = random.randint(5, 15)
-                    cpu_usage = random.randint(40, 85)
-                    mem_usage = random.randint(30, 70)
-                    gpu_usage = random.randint(50, 90)  # Assuming some GPUs exist
-
-                    cluster_stats = {
-                        "total_nodes": total_nodes,
-                        "avail_nodes": avail_nodes,
-                        "running_jobs": running_jobs,
-                        "pending_jobs": pending_jobs,
-                        "cpu_usage": cpu_usage,
-                        "mem_usage": mem_usage,
-                        "gpu_usage": gpu_usage,
-                    }
-
-                    sample_partitions = [
-                        {"name": "compute", "avail": str(random.randint(20, 40)), "total": "48",
-                         "usage": f"{random.randint(50, 80)}%", "state": "up"},
-                        {"name": "gpu", "avail": str(random.randint(1, 6)), "total": "8",
-                         "usage": f"{random.randint(60, 95)}%", "state": "up"},
-                        {"name": "bigmem", "avail": str(random.randint(0, 4)), "total": "8",
-                         "usage": f"{random.randint(40, 60)}%", "state": "up"},
-                        {"name": "debug", "avail": str(random.randint(
-                            0, 2)), "total": "2", "usage": f"{random.randint(0, 10)}%", "state": random.choice(["up", "down", "idle"])},
-                    ]
-
-                    # Simulate some work
-                    time.sleep(0.5)  # Simulate network latency/processing time
-                    self.cluster_data_fetched.emit(cluster_stats, sample_partitions)
-
-                else:
-                    print("Worker: Not connected, skipping data fetch.")
-
-            except Exception as e:
-                # Catch any unexpected errors during the process
-                self.error_occurred.emit(f"An unexpected error occurred in worker: {e}")
-
-            time.sleep(2)
-
 # --- Main Application Class ---
 
 
 class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Initialize the SLURM connection object
         self.slurm_connection = slurm_connection.SlurmConnection(
             "/home/nicola/Desktop/slurm_gui/configs/slurm_config.yaml")
 
+        t = threading.Thread(target=self.slurm_connection.connect())
+        t.start()
+
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
-        # Add an icon path here if you have one, handle file not found
-        icon_path = "/home/nicola/Desktop/slurm_gui/src_static/logo.png"
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
-        else:
-            print(f"Warning: Icon file not found at {icon_path}")
+        self.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png")
+                           )  # Add an icon path here if you have one
 
         # --- Theme Setup ---
         self.themes = {
@@ -391,6 +160,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         # --- Central Widget and Layout ---
         self.central_widget = QWidget()
+        self.central_widget.setMinimumSize(QSize(600, 900))
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(15, 15, 15, 15)  # Increased margins
@@ -399,9 +169,8 @@ class SlurmJobManagerApp(QMainWindow):
         # --- UI Elements ---
         self.nav_buttons = {}  # Store nav buttons for easier access
         self.create_navigation_bar()
-        # Initial separator color based on current theme
-        separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
-        self.main_layout.addWidget(create_separator(color=separator_color))
+        self.main_layout.addWidget(create_separator(color=COLOR_DARK_BORDER if self.current_theme ==
+                                   THEME_DARK else COLOR_LIGHT_BORDER))  # Initial separator
 
         self.stacked_widget = QStackedWidget()
         self.main_layout.addWidget(self.stacked_widget)
@@ -411,66 +180,36 @@ class SlurmJobManagerApp(QMainWindow):
         self.create_cluster_panel()
         self.create_settings_panel()
 
-        self.connection_status = QPushButton(" Connecting...")  # Initial status
-        self.connection_status.setObjectName("statusButton")  # Use object name for styling
-        self.connection_status.setCheckable(True)  # Make buttons checkable for active state
-        # Handle icon file not found
-        cloud_off_icon_path = "/home/nicola/Desktop/slurm_gui/src_static/cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png"
-        if os.path.exists(cloud_off_icon_path):
-            self.connection_status.setIcon(QIcon(cloud_off_icon_path))
-        else:
-            print(f"Warning: Cloud off icon not found at {cloud_off_icon_path}")
-
-        self.main_layout.addWidget(self.connection_status, alignment=Qt.AlignmentFlag.AlignLeft |
-                                   Qt.AlignmentFlag.AlignBottom)
-
-        # --- Threading Setup ---
-        self.worker_thread = QThread()
-        self.slurm_worker = SlurmWorker(self.slurm_connection)  # Pass the connection object to the worker
-
-        # Move the worker object to the thread
-        self.slurm_worker.moveToThread(self.worker_thread)
-
-        # Connect signals and slots
-        # When the thread starts, execute the worker's fetch_all_data method
-        self.worker_thread.started.connect(self.slurm_worker.fetch_all_data)
-
-        # When worker finishes fetching jobs data, update the jobs table in the main thread
-        self.slurm_worker.jobs_data_fetched.connect(self.populate_jobs_table)
-
-        # When worker finishes fetching cluster data, update cluster widgets in the main thread
-        self.slurm_worker.cluster_data_fetched.connect(self.update_cluster_widgets)
-
-        # When worker fetches connection status, update the status button in the main thread
-        self.slurm_worker.connection_status_fetched.connect(self.set_connection_status)
-
-        # Connect error signal to a slot for displaying messages
-        self.slurm_worker.error_occurred.connect(lambda msg: show_message(
-            self, "Worker Error", msg, QMessageBox.Icon.Warning))
-
-        # Clean up the worker and thread when the worker finishes (optional but good practice)
-        # self.slurm_worker.finished.connect(self.worker_thread.quit)
-        # self.slurm_worker.finished.connect(self.slurm_worker.deleteLater)
-        # self.worker_thread.finished.connect(self.worker_thread.deleteLater)
-
         # --- Initialization ---
         self.update_nav_styles(self.nav_buttons["Jobs"])  # Set initial active nav
         self.stacked_widget.setCurrentIndex(0)
         self.setup_refresh_timer()
-        self.refresh_all()  # Initial data load - this now *starts* the worker thread
-        # Initial connection status is set by the first worker run
+        self.refresh_all()  # Initial data load
+        self.set_connection_status(self.slurm_connection.is_connected())
 
-    def set_connection_status(self, connected: bool):
-        """Updates the visual status of the connection button."""
+    def set_connection_status(self, connected: bool, connecting=False):
+        if connecting:
+            loading_movie = QMovie("/home/nicola/Desktop/slurm_gui/src_static/loading.gif")
+            loading_movie.setScaledSize(QSize(32, 32))
+            loading_movie.start()
+            self.connection_status.setMovie(loading_movie)
+            self.connection_status.setToolTip("Connecting...")
+            self.connection_status.setStyleSheet("""
+                QPushButton#statusButton {
+                    background-color: #9e9e9e;
+                    color: white;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    padding: 6px 12px;
+                }
+            """)
+
+            return
+
         if connected:
-            self.connection_status.setText("Connected")
-            # Handle icon file not found
-            good_icon_path = "/home/nicola/Desktop/slurm_gui/src_static/good_connection.png"
-            if os.path.exists(good_icon_path):
-                self.connection_status.setIcon(QIcon(good_icon_path))
-            else:
-                print(f"Warning: Good connection icon not found at {good_icon_path}")
-
+            self.connection_status.setToolTip("Connected")
+            self.connection_status.setPixmap(
+                QIcon("/home/nicola/Desktop/slurm_gui/src_static/good_connection.png").pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
                 QPushButton#statusButton {
                     background-color: #4caf50;
@@ -481,14 +220,9 @@ class SlurmJobManagerApp(QMainWindow):
                 }
             """)
         else:
-            self.connection_status.setText("Disconnected")
-            # Handle icon file not found
-            bad_icon_path = "/home/nicola/Desktop/slurm_gui/src_static/bad_connection.png"
-            if os.path.exists(bad_icon_path):
-                self.connection_status.setIcon(QIcon(bad_icon_path))
-            else:
-                print(f"Warning: Bad connection icon not found at {bad_icon_path}")
-
+            self.connection_status.setToolTip("Disconnected")
+            self.connection_status.setPixmap(
+                QIcon("/home/nicola/Desktop/slurm_gui/src_static/bad_connection.png").pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
                 QPushButton#statusButton {
                     background-color: #f44336;
@@ -502,21 +236,17 @@ class SlurmJobManagerApp(QMainWindow):
     def setup_refresh_timer(self):
         """Sets up the timer for automatic data refreshing."""
         self.refresh_timer = QTimer(self)
-        # Connect the timer timeout to refresh_all, which now starts the worker
         self.refresh_timer.timeout.connect(self.refresh_all)
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
     def refresh_all(self):
-        """Triggers a full data refresh by starting the worker thread."""
-        print("Triggering data refresh...")
-        # Only start the worker if it's not already running
-        if not self.worker_thread.isRunning():
-            self.worker_thread.start()
-        else:
-            print("Worker is already running, skipping start.")
+        """Refreshes data for all relevant panels."""
+        print("Refreshing all data...")
+        self.refresh_job_status()
+        self.refresh_cluster_status()
+        self.set_connection_status(self.slurm_connection.is_connected())
 
     # --- Theme Handling ---
-
     def change_theme(self, theme_name):
         """Applies the selected theme stylesheet."""
         if theme_name in self.themes:
@@ -548,16 +278,12 @@ class SlurmJobManagerApp(QMainWindow):
         logo_label.setFixedSize(35, 35)  # Slightly larger
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
-        # Handle logo file not found
-        logo_path = "/home/nicola/Desktop/slurm_gui/src_static/logo.png"
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)  # Use .svg or .ico if needed
-            scaled_pixmap = pixmap.scaled(35, 35, Qt.AspectRatioMode.KeepAspectRatio,
-                                          Qt.TransformationMode.SmoothTransformation)
-            logo_label.setPixmap(scaled_pixmap)
-        else:
-            print(f"Warning: Logo file not found at {logo_path}")
-            logo_label.setText("Logo")  # Fallback text
+        pixmap = QPixmap("/home/nicola/Desktop/slurm_gui/src_static/logo.png")  # Use .svg or .ico if needed
+        scaled_pixmap = pixmap.scaled(35, 35, Qt.AspectRatioMode.KeepAspectRatio,
+                                      Qt.TransformationMode.SmoothTransformation)
+        logo_label.setPixmap(scaled_pixmap)
+
+        # logo_label.setWindowIconText(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
 
         nav_layout.addSpacing(15)
 
@@ -579,6 +305,13 @@ class SlurmJobManagerApp(QMainWindow):
         self.search_input.setFixedWidth(250)  # Wider search
         self.search_input.textChanged.connect(self.filter_jobs)  # Connect search
         nav_layout.addWidget(self.search_input)
+
+        self.connection_status = ClickableLabel(" Connection status...")
+        self.connection_status.setObjectName("statusButton")  # Use object name for styling
+        self.connection_status.setPixmap(
+            QPixmap("/home/nicola/Desktop/slurm_gui/src_static/cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png"))
+        self.connection_status.clicked.connect(self.update_connection_setting)
+        nav_layout.addWidget(self.connection_status)
 
         self.main_layout.addWidget(nav_widget)
 
@@ -613,9 +346,8 @@ class SlurmJobManagerApp(QMainWindow):
         jobs_layout = QVBoxLayout(jobs_panel, spacing=15)
         # --- Job Submission Section ---
         jobs_layout.addWidget(self._create_job_submission_group())
-        # Separator color based on current theme
-        separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
-        jobs_layout.addWidget(create_separator(color=separator_color))
+        jobs_layout.addWidget(create_separator(color=COLOR_DARK_BORDER if self.current_theme ==
+                              THEME_DARK else COLOR_LIGHT_BORDER))
         # --- Job List Section ---
         jobs_layout.addWidget(self._create_job_list_group())
         jobs_layout.addStretch()
@@ -713,8 +445,7 @@ class SlurmJobManagerApp(QMainWindow):
         header_layout.addStretch()
         refresh_btn = QPushButton("Refresh List")
         refresh_btn.setIcon(QIcon())  # Placeholder for icon
-        # Connect refresh button to refresh_all, which starts the worker
-        refresh_btn.clicked.connect(self.refresh_all)
+        refresh_btn.clicked.connect(self.refresh_job_status)
         header_layout.addWidget(refresh_btn)
         layout.addLayout(header_layout)
 
@@ -741,108 +472,353 @@ class SlurmJobManagerApp(QMainWindow):
         return group
 
     def create_cluster_panel(self):
-        """Creates the panel displaying cluster status information."""
+        """Creates the panel displaying detailed cluster node status using a table."""
         cluster_panel = QWidget()
         cluster_layout = QVBoxLayout(cluster_panel)
         cluster_layout.setSpacing(15)
+        cluster_layout.setContentsMargins(15, 15, 15, 15)  # Consistent margins
 
-        # Header with refresh button
+        # --- Header ---
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
-        cluster_label = QLabel("Cluster Status Overview")
-        cluster_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # Slightly smaller title
+        cluster_label = QLabel("Cluster Node Status")
+        cluster_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         header_layout.addWidget(cluster_label)
         header_layout.addStretch()
         refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.setIcon(QIcon())  # Placeholder icon
-        # Connect refresh button to refresh_all, which starts the worker
-        refresh_cluster_btn.clicked.connect(self.refresh_all)
+        # Add an icon if desired: refresh_cluster_btn.setIcon(QIcon("path/to/refresh_icon.png"))
+        # The refresh logic itself will be implemented later by the user
+        # refresh_cluster_btn.clicked.connect(self.refresh_cluster_status_detailed) # Connect to a future refresh method
+        refresh_cluster_btn.setToolTip("Refresh functionality to be implemented later.")
         header_layout.addWidget(refresh_cluster_btn)
         cluster_layout.addLayout(header_layout)
 
-        # --- Cluster Overview Group ---
-        overview_group = QGroupBox("Real-time Usage")
-        overview_layout = QVBoxLayout(overview_group)
-        overview_layout.setSpacing(15)
+        # --- Node Information Table ---
+        node_info_group = QGroupBox("Node Details")
+        node_info_group.setStyleSheet("QGroupBox { font-weight: bold; }")
+        node_info_layout = QVBoxLayout(node_info_group)
 
-        # Cluster stats grid
-        stats_layout = QHBoxLayout()
-        stats_layout.setSpacing(20)  # Space between stats
+        self.nodes_table = QTableWidget()
+        # Define columns based on expected keys from _fetch_nodes_infos()
+        # Adjust these based on the actual keys available
+        self.node_table_headers = [
+            "NodeName", "State", "Partitions", "CPULoad",
+            "AllocCPUs", "TotalCPUs", "RealMemory", "AllocMem",
+            "FreeMem", "Features", "GRES", "Reason"
+        ]
+        self.nodes_table.setColumnCount(len(self.node_table_headers))
+        self.nodes_table.setHorizontalHeaderLabels(self.node_table_headers)
 
-        # Helper to create stat widgets
-        def create_stat_widget(label_text, value_id, object_name=None):
-            widget = QWidget()
-            layout = QVBoxLayout(widget)
-            layout.setContentsMargins(0, 0, 0, 0)
-            label = QLabel(label_text)
-            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            value = QLabel("N/A")  # Default value
-            value.setObjectName("clusterStatValue")
-            if object_name:
-                value.setProperty("statusColor", object_name)  # Custom property for styling if needed
-                value.setObjectName(f"clusterStatValue{object_name}")  # Specific object name for styling
-            value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(label)
-            layout.addWidget(value)
-            setattr(self, value_id, value)  # Store value label reference
-            return widget
+        self.nodes_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.nodes_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
+        self.nodes_table.setSortingEnabled(True)  # Allow sorting by column
+        self.nodes_table.verticalHeader().setVisible(False)  # Hide row numbers
+        # self.nodes_table.setAlternatingRowColors(True) # Optional: Improves readability
 
-        stats_layout.addWidget(create_stat_widget("Total Nodes", "total_nodes_value"))
-        stats_layout.addWidget(create_stat_widget("Available Nodes", "avail_nodes_value", "Avail"))
-        stats_layout.addWidget(create_stat_widget("Running Jobs", "running_jobs_value", "Running"))
-        stats_layout.addWidget(create_stat_widget("Pending Jobs", "pending_jobs_value", "Pending"))
+        # --- Column Resizing ---
+        header = self.nodes_table.horizontalHeader()
+        # Resize specific columns to content, stretch others
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)  # NodeName
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # State
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Partitions
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # CPULoad
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # AllocCPUs
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # TotalCPUs
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # RealMemory
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # AllocMem
+        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # FreeMem
+        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)  # Features (can be long)
+        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)  # GRES (can be long)
+        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Stretch)  # Reason (can be long)
+        # Adjust initial widths if needed
+        self.nodes_table.setColumnWidth(0, 120)  # NodeName initial width
+        self.nodes_table.setColumnWidth(2, 100)  # Partitions initial width
 
-        overview_layout.addLayout(stats_layout)
+        node_info_layout.addWidget(self.nodes_table)
+        # Make the table expand to fill available space
+        cluster_layout.addWidget(node_info_group, 1)  # The '1' makes this section expand
 
-        # Usage bars
-        usage_layout = QFormLayout()  # Use form layout for better alignment
-        usage_layout.setSpacing(10)
+        # --- Placeholder for Initial Data Load (or call refresh method) ---
+        # You would call a method here to fetch and populate the table initially.
+        # For now, it's just set up.
+        self.populate_nodes_table()  # Example call to a future population method
 
-        # Helper to create progress bar row
-        def create_progress_row(label_text, progress_id, percent_id):
-            layout = QHBoxLayout()
-            layout.setContentsMargins(0, 0, 0, 0)
-            progress = QProgressBar()
-            progress.setValue(0)
-            progress.setTextVisible(False)  # Show percentage in separate label
-            percent_label = QLabel("0%")
-            percent_label.setFixedWidth(40)  # Fixed width for alignment
-            layout.addWidget(progress)
-            layout.addWidget(percent_label)
-            setattr(self, progress_id, progress)
-            setattr(self, percent_id, percent_label)
-            return label_text, layout
+        # --- (Optional) Add Overall Stats Section ---
+        # You could add a summary section below the table if needed, similar to before.
+        # stats_group = QGroupBox("Overall Statistics")
+        # ... (add labels for total nodes, idle, alloc, down etc.) ...
+        # cluster_layout.addWidget(stats_group)
 
-        usage_layout.addRow(*create_progress_row("CPU Usage:", "cpu_progress", "cpu_percent_label"))
-        usage_layout.addRow(*create_progress_row("Memory Usage:", "mem_progress", "mem_percent_label"))
-        usage_layout.addRow(*create_progress_row("GPU Usage:", "gpu_progress", "gpu_percent_label"))
-
-        overview_layout.addLayout(usage_layout)
-        cluster_layout.addWidget(overview_group)
-
-        # --- Partition Status Group ---
-        partitions_group = QGroupBox("Partition Status")
-        partitions_layout = QVBoxLayout(partitions_group)
-
-        self.partitions_table = QTableWidget()
-        self.partitions_table.setColumnCount(5)
-        self.partitions_table.setHorizontalHeaderLabels(
-            ["Partition", "Available", "Total", "Usage %", "State"])
-        self.partitions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.partitions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        # self.partitions_table.setAlternatingRowColors(True)
-        self.partitions_table.verticalHeader().setVisible(False)
-
-        header = self.partitions_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Partition name takes space
-        for i in range(1, 5):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)  # Other columns fit content
-
-        partitions_layout.addWidget(self.partitions_table)
-        cluster_layout.addWidget(partitions_group)
-
-        cluster_layout.addStretch()
+        # Add the main panel widget to the stacked widget
         self.stacked_widget.addWidget(cluster_panel)
+
+    def populate_nodes_table(self):
+        """
+        Placeholder method to populate the nodes table.
+        (The actual data fetching and population logic will be added later)
+        """
+        print("Fetching node data (implementation pending)...")
+        try:
+            # --- Fetch data ---
+            # This is where you'll call your function
+            # nodes_data = self.slurm_connection._fetch_nodes_infos()
+            # --- Mock Data for Demonstration ---
+            nodes_data = [
+                {'NodeName': 'node01', 'State': 'IDLE', 'Partitions': 'compute', 'CPULoad': '0.10', 'AllocCPUs': '0', 'TotalCPUs': '32',
+                    'RealMemory': '128000', 'AllocMem': '0', 'FreeMem': '127500', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
+                {'NodeName': 'node02', 'State': 'ALLOCATED', 'Partitions': 'compute', 'CPULoad': '28.50', 'AllocCPUs': '32', 'TotalCPUs': '32',
+                    'RealMemory': '128000', 'AllocMem': '100000', 'FreeMem': '25000', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
+                {'NodeName': 'node03', 'State': 'MIXED', 'Partitions': 'compute', 'CPULoad': '15.00', 'AllocCPUs': '16', 'TotalCPUs': '32',
+                    'RealMemory': '128000', 'AllocMem': '64000', 'FreeMem': '63000', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
+                {'NodeName': 'node04', 'State': 'DOWN', 'Partitions': 'compute', 'CPULoad': 'N/A', 'AllocCPUs': '0', 'TotalCPUs': '32',
+                    'RealMemory': '128000', 'AllocMem': '0', 'FreeMem': 'N/A', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'Not responding'},
+                {'NodeName': 'gpu01', 'State': 'IDLE', 'Partitions': 'gpu', 'CPULoad': '0.50', 'AllocCPUs': '0', 'TotalCPUs': '64',
+                    'RealMemory': '256000', 'AllocMem': '0', 'FreeMem': '255000', 'Features': 'amd,epyc,a100', 'GRES': 'gpu:a100:4', 'Reason': 'none'},
+            ]
+            # --- End Mock Data ---
+
+            if not nodes_data:
+                print("No node data received.")
+                self.nodes_table.setRowCount(0)
+                return
+
+            self.nodes_table.setSortingEnabled(False)  # Disable sorting during population
+            self.nodes_table.setRowCount(len(nodes_data))
+
+            # --- Color mapping for states (adjust as needed) ---
+            state_colors = {
+                "IDLE": QColor(COLOR_GREEN),
+                "ALLOCATED": QColor(COLOR_BLUE),
+                "MIXED": QColor(COLOR_ORANGE),  # Or a different color for mixed
+                "DOWN": QColor(COLOR_RED),
+                "DRAIN": QColor(COLOR_ORANGE),
+                "MAINT": QColor(COLOR_ORANGE),
+                "UNKNOWN": QColor(COLOR_GRAY),
+                # Add other SLURM states as needed
+            }
+            default_color = QColor(COLOR_DARK_FG if self.current_theme == THEME_DARK else COLOR_LIGHT_FG)
+            state_column_index = self.node_table_headers.index("State")  # Find State column index
+
+            for row, node_info in enumerate(nodes_data):
+                node_state = node_info.get("State", "UNKNOWN").upper().split(
+                    '+')[0]  # Get base state (e.g., ignore +DRAINING)
+
+                for col, header in enumerate(self.node_table_headers):
+                    value = str(node_info.get(header, "N/A"))  # Get value or N/A
+                    item = QTableWidgetItem(value)
+
+                    # --- Apply State Coloring to the entire row (optional) ---
+                    # state_color = state_colors.get(node_state, default_color)
+                    # item.setBackground(state_color.lighter(180) if self.current_theme == THEME_DARK else state_color.lighter(110)) # Subtle background tint
+                    # item.setForeground(default_color) # Ensure text is readable
+
+                    # --- Or Apply Coloring only to the State cell ---
+                    if col == state_column_index:
+                        state_color = state_colors.get(node_state, default_color)
+                        item.setForeground(state_color)
+                        # Make state bold
+                        font = item.font()
+                        font.setBold(True)
+                        item.setFont(font)
+
+                    # --- Alignment for numeric columns (example) ---
+                    if header in ["CPULoad", "AllocCPUs", "TotalCPUs", "RealMemory", "AllocMem", "FreeMem"]:
+                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+                    self.nodes_table.setItem(row, col, item)
+
+            self.nodes_table.setSortingEnabled(True)  # Re-enable sorting
+
+        except Exception as e:
+            print(f"Error populating nodes table: {e}")
+            # Optionally display an error message in the UI
+            self.nodes_table.setRowCount(0)  # Clear table on error
+
+    # You will need a method like this, connected to the refresh button
+    # def refresh_cluster_status_detailed(self):
+    #    print("Refreshing detailed cluster status...")
+    #    self.populate_nodes_table() # Call the population method
+
+    # def create_cluster_panel(self):
+    #     """Creates the panel displaying cluster status using a node grid."""
+    #     self.slurm_connection._fetch_nodes_infos()
+    #     cluster_panel = QWidget()
+    #     cluster_layout = QVBoxLayout(cluster_panel)
+    #     cluster_layout.setSpacing(15)
+
+    #     # --- Header ---
+    #     header_layout = QHBoxLayout()
+    #     header_layout.setContentsMargins(0, 0, 0, 0)
+    #     cluster_label = QLabel("Cluster Node Status")  # Changed title
+    #     cluster_label.setStyleSheet("font-size: 16px; font-weight: bold;")  # Adjusted size
+    #     header_layout.addWidget(cluster_label)
+    #     header_layout.addStretch()
+    #     refresh_cluster_btn = QPushButton("Refresh Status")
+    #     # refresh_cluster_btn.setIcon(QIcon()) # Placeholder icon
+    #     refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
+    #     header_layout.addWidget(refresh_cluster_btn)
+    #     cluster_layout.addLayout(header_layout)
+
+    #     # --- Legend ---
+    #     legend_layout = QHBoxLayout()
+    #     legend_layout.setSpacing(10)
+    #     legend_layout.addWidget(QLabel("Legend:"))
+
+    #     def create_legend_item(color, text):
+    #         item_layout = QHBoxLayout()
+    #         color_label = QLabel()
+    #         color_label.setFixedSize(15, 15)
+    #         color_label.setStyleSheet(f"background-color: {color}; border: 1px solid gray;")
+    #         item_layout.addWidget(color_label)
+    #         item_layout.addWidget(QLabel(text))
+    #         widget = QWidget()
+    #         widget.setLayout(item_layout)
+    #         return widget
+
+    #     legend_layout.addWidget(create_legend_item(COLOR_GREEN, NODE_STATE_IDLE))
+    #     legend_layout.addWidget(create_legend_item(COLOR_BLUE, NODE_STATE_ALLOC))
+    #     legend_layout.addWidget(create_legend_item(COLOR_ORANGE, NODE_STATE_DRAIN))
+    #     legend_layout.addWidget(create_legend_item(COLOR_RED, NODE_STATE_DOWN))
+    #     legend_layout.addWidget(create_legend_item(COLOR_GRAY, NODE_STATE_UNKNOWN))
+    #     legend_layout.addStretch()
+    #     cluster_layout.addLayout(legend_layout)
+
+    #     # --- Node Grid Group ---
+    #     node_grid_group = QGroupBox("Node Occupancy")
+    #     node_grid_outer_layout = QVBoxLayout(node_grid_group)  # Use QVBoxLayout to contain the grid
+
+    #     # The grid layout itself
+    #     self.node_grid_layout = QGridLayout()
+    #     self.node_grid_layout.setSpacing(4)  # Small spacing between nodes
+
+    #     # We will populate this grid in refresh_cluster_status
+    #     # Add the grid layout to the group box layout
+    #     node_grid_outer_layout.addLayout(self.node_grid_layout)
+    #     node_grid_outer_layout.addStretch()  # Allow grid to be at the top
+
+    #     cluster_layout.addWidget(node_grid_group)
+
+    #     # --- Overall Stats (Optional - can be kept or removed) ---
+    #     # You might want to keep a summary section
+    #     stats_group = QGroupBox("Overall Statistics")
+    #     stats_layout = QFormLayout(stats_group)
+    #     self.total_nodes_label = QLabel("N/A")
+    #     self.idle_nodes_label = QLabel("N/A")
+    #     self.alloc_nodes_label = QLabel("N/A")
+    #     self.down_nodes_label = QLabel("N/A")
+    #     stats_layout.addRow("Total Nodes:", self.total_nodes_label)
+    #     stats_layout.addRow("Idle Nodes:", self.idle_nodes_label)
+    #     stats_layout.addRow("Allocated Nodes:", self.alloc_nodes_label)
+    #     stats_layout.addRow("Down/Drained Nodes:", self.down_nodes_label)
+    #     cluster_layout.addWidget(stats_group)
+    #     # --- End Optional Stats ---
+
+    #     cluster_layout.addStretch()  # Pushes content upwards
+    #     self.stacked_widget.addWidget(cluster_panel)
+    #     self.node_widgets = {}  # Dictionary to hold references to node labels {node_name: QLabel}
+
+    # def create_cluster_panel(self):
+    #     """Creates the panel displaying cluster status information."""
+    #     cluster_panel = QWidget()
+    #     cluster_layout = QVBoxLayout(cluster_panel)
+    #     cluster_layout.setSpacing(15)
+
+    #     # Header with refresh button
+    #     header_layout = QHBoxLayout()
+    #     header_layout.setContentsMargins(0, 0, 0, 0)
+    #     cluster_label = QLabel("Cluster Status Overview")
+    #     cluster_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # Slightly smaller title
+    #     header_layout.addWidget(cluster_label)
+    #     header_layout.addStretch()
+    #     refresh_cluster_btn = QPushButton("Refresh Status")
+    #     refresh_cluster_btn.setIcon(QIcon())  # Placeholder icon
+    #     refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
+    #     header_layout.addWidget(refresh_cluster_btn)
+    #     cluster_layout.addLayout(header_layout)
+
+    #     # --- Cluster Overview Group ---
+    #     overview_group = QGroupBox("Real-time Usage")
+    #     overview_layout = QVBoxLayout(overview_group)
+    #     overview_layout.setSpacing(15)
+
+    #     # Cluster stats grid
+    #     stats_layout = QHBoxLayout()
+    #     stats_layout.setSpacing(20)  # Space between stats
+
+    #     # Helper to create stat widgets
+    #     def create_stat_widget(label_text, value_id, object_name=None):
+    #         widget = QWidget()
+    #         layout = QVBoxLayout(widget)
+    #         layout.setContentsMargins(0, 0, 0, 0)
+    #         label = QLabel(label_text)
+    #         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    #         value = QLabel("N/A")  # Default value
+    #         value.setObjectName("clusterStatValue")
+    #         if object_name:
+    #             value.setProperty("statusColor", object_name)  # Custom property for styling if needed
+    #             value.setObjectName(f"clusterStatValue{object_name}")  # Specific object name for styling
+    #         value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    #         layout.addWidget(label)
+    #         layout.addWidget(value)
+    #         setattr(self, value_id, value)  # Store value label reference
+    #         return widget
+
+    #     stats_layout.addWidget(create_stat_widget("Total Nodes", "total_nodes_value"))
+    #     stats_layout.addWidget(create_stat_widget("Available Nodes", "avail_nodes_value", "Avail"))
+    #     stats_layout.addWidget(create_stat_widget("Running Jobs", "running_jobs_value", "Running"))
+    #     stats_layout.addWidget(create_stat_widget("Pending Jobs", "pending_jobs_value", "Pending"))
+
+    #     overview_layout.addLayout(stats_layout)
+
+    #     # Usage bars
+    #     usage_layout = QFormLayout()  # Use form layout for better alignment
+    #     usage_layout.setSpacing(10)
+
+    #     # Helper to create progress bar row
+    #     def create_progress_row(label_text, progress_id, percent_id):
+    #         layout = QHBoxLayout()
+    #         layout.setContentsMargins(0, 0, 0, 0)
+    #         progress = QProgressBar()
+    #         progress.setValue(0)
+    #         progress.setTextVisible(False)  # Show percentage in separate label
+    #         percent_label = QLabel("0%")
+    #         percent_label.setFixedWidth(40)  # Fixed width for alignment
+    #         layout.addWidget(progress)
+    #         layout.addWidget(percent_label)
+    #         setattr(self, progress_id, progress)
+    #         setattr(self, percent_id, percent_label)
+    #         return label_text, layout
+
+    #     usage_layout.addRow(*create_progress_row("CPU Usage:", "cpu_progress", "cpu_percent_label"))
+    #     usage_layout.addRow(*create_progress_row("Memory Usage:", "mem_progress", "mem_percent_label"))
+    #     usage_layout.addRow(*create_progress_row("GPU Usage:", "gpu_progress", "gpu_percent_label"))
+
+    #     overview_layout.addLayout(usage_layout)
+    #     cluster_layout.addWidget(overview_group)
+
+    #     # --- Partition Status Group ---
+    #     partitions_group = QGroupBox("Partition Status")
+    #     partitions_layout = QVBoxLayout(partitions_group)
+
+    #     self.partitions_table = QTableWidget()
+    #     self.partitions_table.setColumnCount(5)
+    #     self.partitions_table.setHorizontalHeaderLabels(
+    #         ["Partition", "Available", "Total", "Usage %", "State"])
+    #     self.partitions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    #     self.partitions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    #     # self.partitions_table.setAlternatingRowColors(True)
+    #     self.partitions_table.verticalHeader().setVisible(False)
+
+    #     header = self.partitions_table.horizontalHeader()
+    #     header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Partition name takes space
+    #     for i in range(1, 5):
+    #         header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)  # Other columns fit content
+
+    #     partitions_layout.addWidget(self.partitions_table)
+    #     cluster_layout.addWidget(partitions_group)
+
+    #     cluster_layout.addStretch()
+    #     self.stacked_widget.addWidget(cluster_panel)
 
     def create_settings_panel(self):
         """Creates the panel for application settings."""
@@ -869,15 +845,16 @@ class SlurmJobManagerApp(QMainWindow):
 
         # --- SLURM Connection Settings ---
         connection_group = QGroupBox("SLURM Connection (Example)")
+        connection_group.setMinimumHeight(150)
         connection_layout = QFormLayout(connection_group)
-        # Handle potential None values if slurm_connection init failed
-        self.cluster_address = QLineEdit(getattr(self.slurm_connection, 'host', ''))
+        self.cluster_address = QLineEdit(self.slurm_connection.host)
         connection_layout.addRow("Cluster Address:", self.cluster_address)
-        self.username = QLineEdit(getattr(self.slurm_connection, 'user', ''))
+        # self.username = QLineEdit(os.environ.get("USER", self.slurm_connection.use))
+        self.username = QLineEdit(self.slurm_connection.user)
         connection_layout.addRow("Username:", self.username)
 
         # Replace SSH key with password field
-        self.password = QLineEdit(getattr(self.slurm_connection, 'password', ''))  # Insecure storage
+        self.password = QLineEdit(self.slurm_connection.password)
         self.password.setEchoMode(QLineEdit.EchoMode.Password)  # Correct way to set password mode
         connection_layout.addRow("Password:", self.password)
 
@@ -936,22 +913,32 @@ class SlurmJobManagerApp(QMainWindow):
         settings_layout.addStretch()  # Pushes settings to the top
         self.stacked_widget.addWidget(settings_panel)
 
-    # --- Action & Data Methods (Slots connected to worker signals) ---
+    # --- Action & Data Methods ---
 
     def update_connection_setting(self):
-        """Updates connection settings and triggers a reconnect attempt."""
-        print("Updating connection settings...")
-        # This call might still block if the reconnect logic is synchronous.
-        # For a fully non-blocking approach, the reconnect logic itself
-        # would need to be moved to a separate thread or use async methods.
-        # For now, we'll keep it here as it's user-initiated.
-        self.slurm_connection.update_credentials_and_reconnect(
-            new_user=self.username.text(),
-            new_host=self.cluster_address.text(),
-            new_psw=self.password.text()  # Insecure
-        )
-        # After attempting reconnect, trigger a status update via the worker
-        # self.refresh_all()
+        print("Updateding connection settings...")
+
+        self.set_connection_status(None, connecting=True)
+        # def update_fn_():
+
+        #     self.slurm_connection.update_credentials_and_reconnect(self.username.text(),
+        #                                                            self.cluster_address.text(),
+        #                                                            self.password.text())
+
+        thread = threading.Thread(target=self.slurm_connection.update_credentials_and_reconnect, args=(
+            self.username.text(),
+            self.cluster_address.text(),
+            self.password.text()
+        ))
+
+        thread.start()
+
+        # self.slurm_connection.update_credentials_and_reconnect(
+        #     new_user=self.username.text(),
+        #     new_host=self.cluster_address.text(),
+        #     new_psw=self.password.text()
+        # )
+        # self.set_connection_status(self.slurm_connection.is_connected())
 
     def filter_jobs(self, text):
         """Filters the jobs table based on the search input."""
@@ -1031,7 +1018,6 @@ class SlurmJobManagerApp(QMainWindow):
         print(f"Attempting to submit job with command:\n{command_str}")
 
         # ** In a real application, replace the print with subprocess execution **
-        # You might want to run this in a separate thread as well if it blocks
         # try:
         #     # Consider using SSH if running remotely
         #     result = subprocess.run(sbatch_cmd, capture_output=True, text=True, check=True, timeout=10)
@@ -1041,7 +1027,7 @@ class SlurmJobManagerApp(QMainWindow):
         #         job_id = match.group(1)
         #         show_message(self, "Job Submitted", f"Job '{job_name}' submitted successfully.\nJob ID: {job_id}")
         #         self.clear_submission_form()
-        #         self.refresh_all() # Trigger a refresh via the worker
+        #         self.refresh_job_status() # Refresh list immediately
         #     else:
         #         show_message(self, "Submission Info", f"Job submitted, but couldn't parse Job ID.\nOutput:\n{output}", QMessageBox.Icon.Information)
         #
@@ -1058,8 +1044,8 @@ class SlurmJobManagerApp(QMainWindow):
         show_message(self, "Job Submitted (Demo)",
                      f"Job '{job_name}' would be submitted.\nCommand (printed to console):\n{command_str}")
         self.clear_submission_form()
-        # Simulate adding the job and refreshing by triggering the worker
-        self.refresh_all()
+        # Simulate adding the job and refreshing
+        self.refresh_job_status()
 
     def clear_submission_form(self):
         """Clears the input fields in the job submission form."""
@@ -1073,10 +1059,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.email_input.clear()
         self.additional_options.clear()
 
-    # Slot to receive job data from the worker and update the table
     def populate_jobs_table(self, jobs_data):
-        """Populates the jobs table with data received from the worker."""
-        print("Main Thread: Populating jobs table...")
+        """Populates the jobs table with data."""
         self.jobs_table.setRowCount(0)  # Clear existing rows
         self.jobs_table.setSortingEnabled(False)  # Disable sorting during population
 
@@ -1101,9 +1085,7 @@ class SlurmJobManagerApp(QMainWindow):
                 item_status.setForeground(QColor(COLOR_BLUE))
             elif status == STATUS_FAILED:
                 item_status.setForeground(QColor(COLOR_RED))
-            elif status == STATUS_CANCELLED:
-                item_status.setForeground(QColor(Qt.GlobalColor.darkGray))  # Use a different color for cancelled
-            # Add more statuses (TIMEOUT, etc.) if needed
+            # Add more statuses (CANCELLED, TIMEOUT, etc.) if needed
 
             # --- Set Items in Table ---
             self.jobs_table.setItem(row, 0, item_id)
@@ -1118,7 +1100,6 @@ class SlurmJobManagerApp(QMainWindow):
             self.jobs_table.setCellWidget(row, 6, actions_widget)
 
         self.jobs_table.setSortingEnabled(True)  # Re-enable sorting
-        self.filter_jobs(self.search_input.text())  # Re-apply filter after refresh
 
     def _create_job_action_buttons(self, job_id, status):
         """Creates a widget containing action buttons for a job row."""
@@ -1157,24 +1138,22 @@ class SlurmJobManagerApp(QMainWindow):
         """Handles the 'Cancel Job' action (demo)."""
         print(f"Attempting to cancel job {job_id}")
         # ** In a real application, run 'scancel job_id' **
-        # This might also need to be run in a separate thread if it blocks
         # try:
         #     subprocess.run(["scancel", job_id], check=True, capture_output=True, text=True)
         #     show_message(self, "Job Cancelled", f"Job {job_id} cancelled successfully.")
-        #     self.refresh_all() # Trigger a refresh via the worker
+        #     self.refresh_job_status() # Refresh list
         # except Exception as e:
         #     show_message(self, "Error", f"Failed to cancel job {job_id}:\n{str(e)}", QMessageBox.Icon.Warning)
 
         # Demo
         show_message(self, "Cancel Job (Demo)", f"Would attempt to cancel job {job_id}.")
-        # Simulate removal or status change by triggering a refresh
-        self.refresh_all()
+        # Simulate removal or status change
+        self.refresh_job_status()
 
     def show_job_details(self, job_id):
         """Handles the 'Show Details' action (demo)."""
         print(f"Fetching details for job {job_id}")
         # ** In a real application, run 'scontrol show job job_id' and display output **
-        # This might also need to be run in a separate thread if it blocks
         # try:
         #     result = subprocess.run(["scontrol", "show", "job", job_id], check=True, capture_output=True, text=True, timeout=5)
         #     details = result.stdout
@@ -1189,7 +1168,7 @@ class SlurmJobManagerApp(QMainWindow):
         #     show_message(self, "Error", f"Failed to get details for job {job_id}:\n{str(e)}", QMessageBox.Icon.Warning)
 
         # Demo
-        demo_details = f"JobId={job_id} Name=some_job\nUserId=user(1001) GroupId=group(1001)\nPriority=100 Nice=0 Account=default QOS=normal\nJobState={random.choice(['RUNNING', 'PENDING', 'COMPLETED', 'FAILED', 'CANCELLED'])} Reason=None Dependency=(null)\nTimeLimit=01:00:00 TimeLeft=00:{random.randint(0, 59):02d}:{random.randint(0, 59):02d} SubmitTime=...\nStartTime=... EndTime=...\nPartition=compute NodeList=node01\nNumNodes=1 NumCPUs=4 Mem=4G\nWorkDir=/path/to/workdir\nStdOut=/path/to/output.log"
+        demo_details = f"JobId={job_id} Name=some_job\nUserId=user(1001) GroupId=group(1001)\nPriority=100 Nice=0 Account=default QOS=normal\nJobState=RUNNING Reason=None Dependency=(null)\nTimeLimit=01:00:00 TimeLeft=00:45:12 SubmitTime=...\nStartTime=... EndTime=...\nPartition=compute NodeList=node01\nNumNodes=1 NumCPUs=4 Mem=4G\nWorkDir=/path/to/workdir\nStdOut=/path/to/output.log"
         details_dialog = QMessageBox(self)
         details_dialog.setWindowTitle(f"Job Details (Demo): {job_id}")
         details_dialog.setTextFormat(Qt.TextFormat.PlainText)
@@ -1199,34 +1178,55 @@ class SlurmJobManagerApp(QMainWindow):
         details_dialog.layout().setColumnStretch(1, 1)  # Allow text area to expand
         details_dialog.exec()
 
-    # Slot to receive cluster data from the worker and update widgets
-    def update_cluster_widgets(self, cluster_stats, partitions_data):
-        """Updates cluster status widgets and partitions table with data from the worker."""
-        print("Main Thread: Updating cluster widgets...")
-        # Update overview stats
-        self.total_nodes_value.setText(str(cluster_stats.get("total_nodes", "N/A")))
-        self.avail_nodes_value.setText(str(cluster_stats.get("avail_nodes", "N/A")))
-        self.running_jobs_value.setText(str(cluster_stats.get("running_jobs", "N/A")))
-        self.pending_jobs_value.setText(str(cluster_stats.get("pending_jobs", "N/A")))
+    def refresh_job_status(self):
+        """Refreshes the job list table (demo)."""
+        print("Refreshing job status...")
+        # ** In a real application, call squeue, parse output, and update table **
+        # try:
+        #    cmd = ["squeue", "-u", os.environ.get("USER"), "-o", "%i %j %P %T %M %D"] # Example format
+        #    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
+        #    output_lines = result.stdout.strip().split('\n')
+        #    headers = output_lines[0].split() # Assuming first line is header
+        #    jobs_data = []
+        #    for line in output_lines[1:]:
+        #        # Parse line based on your squeue format
+        #        parts = line.split() # Simple split, might need regex for complex names
+        #        if len(parts) >= 6: # Basic check
+        #             job = {"id": parts[0], "name": parts[1], "partition": parts[2],
+        #                    "status": parts[3], "time": parts[4], "nodes": parts[5]}
+        #             jobs_data.append(job)
+        #    self.populate_jobs_table(jobs_data)
+        # except Exception as e:
+        #    print(f"Error refreshing job status: {e}")
+        #    # Maybe show an error indicator in the UI
 
-        # Update progress bars
-        cpu_usage = cluster_stats.get("cpu_usage", 0)
-        mem_usage = cluster_stats.get("mem_usage", 0)
-        gpu_usage = cluster_stats.get("gpu_usage", 0)
+        # --- Demo Data ---
+        sample_jobs = [
+            {"id": "123456", "name": "RNA-seq_analysis_long_name_test", "partition": "compute",
+             "status": STATUS_RUNNING, "time": "1:23:45", "nodes": "2"},
+            {"id": "123457", "name": "protein_folding_sim", "partition": "gpu",
+             "status": STATUS_PENDING, "time": "0:00:00", "nodes": "4"},
+            {"id": "123458", "name": "genome_assembly", "partition": "bigmem",
+             "status": STATUS_COMPLETED, "time": "5:37:12", "nodes": "1"},
+            {"id": "123459", "name": "ml_training_job", "partition": "gpu",
+             "status": STATUS_RUNNING, "time": "12:05:22", "nodes": "2"},
+            {"id": "123460", "name": "failed_experiment", "partition": "debug",
+             "status": STATUS_FAILED, "time": "0:01:15", "nodes": "1"},
+        ]
+        # Randomly change status for demo refresh effect
+        for job in sample_jobs:
+            if random.random() < 0.1 and job["status"] == STATUS_PENDING:
+                job["status"] = STATUS_RUNNING
+                job["time"] = "0:00:10"
+            elif random.random() < 0.05 and job["status"] == STATUS_RUNNING:
+                job["status"] = STATUS_COMPLETED
+                job["time"] = f"{random.randint(1, 5)}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
 
-        self.cpu_progress.setValue(cpu_usage)
-        self.cpu_percent_label.setText(f"{cpu_usage}%")
-        self.mem_progress.setValue(mem_usage)
-        self.mem_percent_label.setText(f"{mem_usage}%")
-        self.gpu_progress.setValue(gpu_usage)
-        self.gpu_percent_label.setText(f"{gpu_usage}%")
-
-        # Populate partitions table
-        self.populate_partitions_table(partitions_data)
+        self.populate_jobs_table(sample_jobs)
+        self.filter_jobs(self.search_input.text())  # Re-apply filter after refresh
 
     def populate_partitions_table(self, partitions_data):
-        """Populates the partitions table with data received from the worker."""
-        print("Main Thread: Populating partitions table...")
+        """Populates the partitions table with data."""
         self.partitions_table.setRowCount(0)  # Clear table
         self.partitions_table.setSortingEnabled(False)
 
@@ -1259,15 +1259,51 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.partitions_table.setSortingEnabled(True)
 
-    def refresh_job_status(self):
-        """Deprecated: Use refresh_all() to trigger threaded refresh."""
-        print("refresh_job_status called directly - this is deprecated. Use refresh_all().")
-        self.refresh_all()  # Redirect to the new method
-
     def refresh_cluster_status(self):
-        """Deprecated: Use refresh_all() to trigger threaded refresh."""
-        print("refresh_cluster_status called directly - this is deprecated. Use refresh_all().")
-        self.refresh_all()  # Redirect to the new method
+        """Refreshes the cluster status widgets (demo)."""
+        print("Refreshing cluster status...")
+        # ** In a real application, call sinfo, scontrol show nodes, etc. parse output **
+        # try:
+        #    # Get partition info (sinfo)
+        #    # Get node info (sinfo -N -o "%N %t %c %m %f")
+        #    # Get job counts (squeue -t PD,R -h | wc -l)
+        #    # Aggregate data
+        # except Exception as e:
+        #    print(f"Error refreshing cluster status: {e}")
+
+        # --- Demo Data Update ---
+        total_nodes = 64
+        avail_nodes = random.randint(30, 55)
+        running_jobs = random.randint(10, 20)
+        pending_jobs = random.randint(5, 15)
+        cpu_usage = random.randint(40, 85)
+        mem_usage = random.randint(30, 70)
+        gpu_usage = random.randint(50, 90)  # Assuming some GPUs exist
+
+        # self.total_nodes_label.setText(str(total_nodes))
+        # self.avail_nodes_value.setText(str(avail_nodes))
+        # self.running_jobs_value.setText(str(running_jobs))
+        # self.pending_jobs_value.setText(str(pending_jobs))
+
+        # self.cpu_progress.setValue(cpu_usage)
+        # self.cpu_percent_label.setText(f"{cpu_usage}%")
+        # self.mem_progress.setValue(mem_usage)
+        # self.mem_percent_label.setText(f"{mem_usage}%")
+        # self.gpu_progress.setValue(gpu_usage)
+        # self.gpu_percent_label.setText(f"{gpu_usage}%")
+
+        # --- Demo Partition Data ---
+        sample_partitions = [
+            {"name": "compute", "avail": str(random.randint(20, 40)), "total": "48",
+             "usage": f"{random.randint(50, 80)}%", "state": "up"},
+            {"name": "gpu", "avail": str(random.randint(1, 6)), "total": "8",
+             "usage": f"{random.randint(60, 95)}%", "state": "up"},
+            {"name": "bigmem", "avail": str(random.randint(0, 4)), "total": "8",
+             "usage": f"{random.randint(40, 60)}%", "state": "up"},
+            {"name": "debug", "avail": str(random.randint(
+                0, 2)), "total": "2", "usage": f"{random.randint(0, 10)}%", "state": random.choice(["up", "down", "idle"])},
+        ]
+        # self.populate_partitions_table(sample_partitions)
 
     def save_settings(self):
         """Saves the current settings (demo)."""
@@ -1276,7 +1312,7 @@ class SlurmJobManagerApp(QMainWindow):
         print(f"Theme: {self.theme_combo.currentText()}")
         print(f"Cluster Address: {self.cluster_address.text()}")
         print(f"Username: {self.username.text()}")
-        # print(f"SSH Key Path: {self.ssh_key_path.text()}") # If using SSH key
+        print(f"SSH Key Path: {self.ssh_key_path.text()}")
         print(f"Desktop Notifications: {self.desktop_notify_check.isChecked()}")
         print(f"Email Notifications: {self.email_notify_check.isChecked()}")
         print(f"Sound Notifications: {self.sound_notify_check.isChecked()}")
@@ -1287,12 +1323,15 @@ class SlurmJobManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         """Handles the window close event."""
-        # Stop the worker thread gracefully before closing
-        if self.worker_thread.isRunning():
-            self.slurm_worker.stop()  # Signal the worker to stop
-            self.worker_thread.quit()  # Request the thread to quit
-            self.worker_thread.wait()  # Wait for the thread to finish
-
+        # Optional: Add confirmation dialog
+        # reply = QMessageBox.question(self, 'Confirm Exit',
+        #                              "Are you sure you want to exit?",
+        #                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        #                              QMessageBox.StandardButton.No)
+        # if reply == QMessageBox.StandardButton.Yes:
+        #     event.accept()
+        # else:
+        #     event.ignore()
         print("Closing application.")
         event.accept()
 

@@ -64,7 +64,7 @@ QLineEdit, QTextEdit, QSpinBox {{
     border-radius: 5px;
     padding: 5px;
     border: 1px solid {COLOR_DARK_BORDER};
-    
+    min-height:18px;
 }}
 QTableWidget {{
     background-color: {COLOR_DARK_BG};
