@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys, slurm_connection
 import threading
 import os
@@ -11,13 +12,15 @@ from PyQt6.QtWidgets import (
     QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea
 )
 from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
-from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from utils import *
+from job_queue_widget import JobQueueWidget
+import cluster_status_widget
 
 # --- Constants ---
 APP_TITLE = "SLURM Job Manager"
-MIN_WIDTH = 1200
-MIN_HEIGHT = 800
+MIN_WIDTH = 1600
+MIN_HEIGHT = 900
 REFRESH_INTERVAL_MS = 10000  # 10 seconds
 
 # Theme Keys
@@ -66,6 +69,14 @@ NODE_STATE_ALLOC = "ALLOCATED"  # Or RUNNING, MIXED
 NODE_STATE_DOWN = "DOWN"
 NODE_STATE_DRAIN = "DRAIN"
 NODE_STATE_UNKNOWN = "UNKNOWN"
+
+JOB_QUEUE_FIELDS = [
+    "Job ID", "Job Name", "User",
+    "Account", "Priority", "Status",
+    "Time Used", "Partition", "CPUs",
+    "Time Limit", "Reason", "RAM",
+    "GPUs", "Nodelist"
+]
 # --- Helper Functions ---
 
 
@@ -142,13 +153,14 @@ class SlurmJobManagerApp(QMainWindow):
         self.slurm_connection = slurm_connection.SlurmConnection(
             "/home/nicola/Desktop/slurm_gui/configs/slurm_config.yaml")
 
-        t = threading.Thread(target=self.slurm_connection.connect())
-        t.start()
+        self.slurm_connection.connect()
 
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
-        self.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png")
-                           )  # Add an icon path here if you have one
+        # self.setMaximumSize(MIN_WIDTH, MIN_HEIGHT)
+        self.setFixedHeight(MIN_HEIGHT)
+
+        self.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
 
         # --- Theme Setup ---
         self.themes = {
@@ -184,10 +196,12 @@ class SlurmJobManagerApp(QMainWindow):
         self.update_nav_styles(self.nav_buttons["Jobs"])  # Set initial active nav
         self.stacked_widget.setCurrentIndex(0)
         self.setup_refresh_timer()
-        self.refresh_all()  # Initial data load
         self.set_connection_status(self.slurm_connection.is_connected())
+        self.refresh_all()  # Initial data load
+        self.load_settings()
 
     def set_connection_status(self, connected: bool, connecting=False):
+        self.connection_status_ = True if connected else False
         if connecting:
             loading_movie = QMovie("/home/nicola/Desktop/slurm_gui/src_static/loading.gif")
             loading_movie.setScaledSize(QSize(32, 32))
@@ -283,8 +297,6 @@ class SlurmJobManagerApp(QMainWindow):
                                       Qt.TransformationMode.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
 
-        # logo_label.setWindowIconText(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
-
         nav_layout.addSpacing(15)
 
         # Navigation buttons
@@ -299,12 +311,12 @@ class SlurmJobManagerApp(QMainWindow):
 
         nav_layout.addStretch()
 
-        # User controls (Example: Search)
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Search jobs...")
-        self.search_input.setFixedWidth(250)  # Wider search
-        self.search_input.textChanged.connect(self.filter_jobs)  # Connect search
-        nav_layout.addWidget(self.search_input)
+        # # User controls (Example: Search)
+        # self.search_input = QLineEdit()
+        # self.search_input.setPlaceholderText("Search jobs...")
+        # self.search_input.setFixedWidth(250)  # Wider search
+        # self.search_input.textChanged.connect(self.filter_jobs)  # Connect search
+        # nav_layout.addWidget(self.search_input)
 
         self.connection_status = ClickableLabel(" Connection status...")
         self.connection_status.setObjectName("statusButton")  # Use object name for styling
@@ -472,389 +484,131 @@ class SlurmJobManagerApp(QMainWindow):
         return group
 
     def create_cluster_panel(self):
-        """Creates the panel displaying detailed cluster node status using a table."""
+        """Creates the panel displaying cluster status information."""
         cluster_panel = QWidget()
         cluster_layout = QVBoxLayout(cluster_panel)
         cluster_layout.setSpacing(15)
-        cluster_layout.setContentsMargins(15, 15, 15, 15)  # Consistent margins
 
-        # --- Header ---
+        # Header with refresh button
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
-        cluster_label = QLabel("Cluster Node Status")
-        cluster_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        cluster_label = QLabel("Cluster Status Overview")
+        cluster_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(cluster_label)
         header_layout.addStretch()
+
+        self.filter_jobs = QLineEdit()
+        self.filter_jobs.setClearButtonEnabled(True)
+        self.filter_jobs.setPlaceholderText("Filter jobs...")
+        self.filter_jobs.setFixedWidth(250)  # Wider search
+        header_layout.addWidget(self.filter_jobs)
+        self.filter_btn = QPushButton()
+        self.filter_btn.setIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/filter.png"))
+        self.filter_btn.setMaximumSize(32, 32)
+        header_layout.addWidget(self.filter_btn)
+        self.filter_btn.clicked.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+        self.filter_jobs.textChanged.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+
         refresh_cluster_btn = QPushButton("Refresh Status")
-        # Add an icon if desired: refresh_cluster_btn.setIcon(QIcon("path/to/refresh_icon.png"))
-        # The refresh logic itself will be implemented later by the user
-        # refresh_cluster_btn.clicked.connect(self.refresh_cluster_status_detailed) # Connect to a future refresh method
-        refresh_cluster_btn.setToolTip("Refresh functionality to be implemented later.")
+        refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
         header_layout.addWidget(refresh_cluster_btn)
+
         cluster_layout.addLayout(header_layout)
 
-        # --- Node Information Table ---
-        node_info_group = QGroupBox("Node Details")
-        node_info_group.setStyleSheet("QGroupBox { font-weight: bold; }")
-        node_info_layout = QVBoxLayout(node_info_group)
+        # --- Main Content Layout (Horizontal) ---
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(15)
 
-        self.nodes_table = QTableWidget()
-        # Define columns based on expected keys from _fetch_nodes_infos()
-        # Adjust these based on the actual keys available
-        self.node_table_headers = [
-            "NodeName", "State", "Partitions", "CPULoad",
-            "AllocCPUs", "TotalCPUs", "RealMemory", "AllocMem",
-            "FreeMem", "Features", "GRES", "Reason"
-        ]
-        self.nodes_table.setColumnCount(len(self.node_table_headers))
-        self.nodes_table.setHorizontalHeaderLabels(self.node_table_headers)
+        # --- Left Section: Job Queue ---
+        self.job_queue_widget = JobQueueWidget()  # Instantiate the new widget
+        content_layout.addWidget(self.job_queue_widget)  # Add it to the left side
 
-        self.nodes_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.nodes_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
-        self.nodes_table.setSortingEnabled(True)  # Allow sorting by column
-        self.nodes_table.verticalHeader().setVisible(False)  # Hide row numbers
-        # self.nodes_table.setAlternatingRowColors(True) # Optional: Improves readability
+        # --- Right Section: Cluster Overview (Nodes Status) ---
+        overview_group = QGroupBox("Real-time Usage")
+        overview_layout = QVBoxLayout(overview_group)
+        overview_layout.setContentsMargins(10, 10, 10, 10)
+        overview_layout.setSpacing(15)
 
-        # --- Column Resizing ---
-        header = self.nodes_table.horizontalHeader()
-        # Resize specific columns to content, stretch others
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)  # NodeName
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # State
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Partitions
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # CPULoad
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # AllocCPUs
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # TotalCPUs
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # RealMemory
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)  # AllocMem
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)  # FreeMem
-        header.setSectionResizeMode(9, QHeaderView.ResizeMode.Stretch)  # Features (can be long)
-        header.setSectionResizeMode(10, QHeaderView.ResizeMode.Stretch)  # GRES (can be long)
-        header.setSectionResizeMode(11, QHeaderView.ResizeMode.Stretch)  # Reason (can be long)
-        # Adjust initial widths if needed
-        self.nodes_table.setColumnWidth(0, 120)  # NodeName initial width
-        self.nodes_table.setColumnWidth(2, 100)  # Partitions initial width
+        # Set fixed width for the nodes status panel group box
+        overview_group.setFixedWidth(450)
 
-        node_info_layout.addWidget(self.nodes_table)
-        # Make the table expand to fill available space
-        cluster_layout.addWidget(node_info_group, 1)  # The '1' makes this section expand
+        self.cluster_status_overview_widget = cluster_status_widget.ClusterStatusWidget(
+            slurm_connection=self.slurm_connection)
+        overview_layout.addWidget(self.cluster_status_overview_widget,
+                                  alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-        # --- Placeholder for Initial Data Load (or call refresh method) ---
-        # You would call a method here to fetch and populate the table initially.
-        # For now, it's just set up.
-        self.populate_nodes_table()  # Example call to a future population method
+        content_layout.addWidget(overview_group)
 
-        # --- (Optional) Add Overall Stats Section ---
-        # You could add a summary section below the table if needed, similar to before.
-        # stats_group = QGroupBox("Overall Statistics")
-        # ... (add labels for total nodes, idle, alloc, down etc.) ...
-        # cluster_layout.addWidget(stats_group)
+        content_layout.setStretchFactor(self.job_queue_widget, 1)
+        content_layout.setStretchFactor(overview_group, 0)  # Fixed width, no stretch
 
-        # Add the main panel widget to the stacked widget
+        cluster_layout.addLayout(content_layout)
+
+        cluster_layout.addStretch()  # Push content to the top
         self.stacked_widget.addWidget(cluster_panel)
-
-    def populate_nodes_table(self):
-        """
-        Placeholder method to populate the nodes table.
-        (The actual data fetching and population logic will be added later)
-        """
-        print("Fetching node data (implementation pending)...")
-        try:
-            # --- Fetch data ---
-            # This is where you'll call your function
-            # nodes_data = self.slurm_connection._fetch_nodes_infos()
-            # --- Mock Data for Demonstration ---
-            nodes_data = [
-                {'NodeName': 'node01', 'State': 'IDLE', 'Partitions': 'compute', 'CPULoad': '0.10', 'AllocCPUs': '0', 'TotalCPUs': '32',
-                    'RealMemory': '128000', 'AllocMem': '0', 'FreeMem': '127500', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
-                {'NodeName': 'node02', 'State': 'ALLOCATED', 'Partitions': 'compute', 'CPULoad': '28.50', 'AllocCPUs': '32', 'TotalCPUs': '32',
-                    'RealMemory': '128000', 'AllocMem': '100000', 'FreeMem': '25000', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
-                {'NodeName': 'node03', 'State': 'MIXED', 'Partitions': 'compute', 'CPULoad': '15.00', 'AllocCPUs': '16', 'TotalCPUs': '32',
-                    'RealMemory': '128000', 'AllocMem': '64000', 'FreeMem': '63000', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'none'},
-                {'NodeName': 'node04', 'State': 'DOWN', 'Partitions': 'compute', 'CPULoad': 'N/A', 'AllocCPUs': '0', 'TotalCPUs': '32',
-                    'RealMemory': '128000', 'AllocMem': '0', 'FreeMem': 'N/A', 'Features': 'intel,skylake', 'GRES': 'gpu:tesla:2', 'Reason': 'Not responding'},
-                {'NodeName': 'gpu01', 'State': 'IDLE', 'Partitions': 'gpu', 'CPULoad': '0.50', 'AllocCPUs': '0', 'TotalCPUs': '64',
-                    'RealMemory': '256000', 'AllocMem': '0', 'FreeMem': '255000', 'Features': 'amd,epyc,a100', 'GRES': 'gpu:a100:4', 'Reason': 'none'},
-            ]
-            # --- End Mock Data ---
-
-            if not nodes_data:
-                print("No node data received.")
-                self.nodes_table.setRowCount(0)
-                return
-
-            self.nodes_table.setSortingEnabled(False)  # Disable sorting during population
-            self.nodes_table.setRowCount(len(nodes_data))
-
-            # --- Color mapping for states (adjust as needed) ---
-            state_colors = {
-                "IDLE": QColor(COLOR_GREEN),
-                "ALLOCATED": QColor(COLOR_BLUE),
-                "MIXED": QColor(COLOR_ORANGE),  # Or a different color for mixed
-                "DOWN": QColor(COLOR_RED),
-                "DRAIN": QColor(COLOR_ORANGE),
-                "MAINT": QColor(COLOR_ORANGE),
-                "UNKNOWN": QColor(COLOR_GRAY),
-                # Add other SLURM states as needed
-            }
-            default_color = QColor(COLOR_DARK_FG if self.current_theme == THEME_DARK else COLOR_LIGHT_FG)
-            state_column_index = self.node_table_headers.index("State")  # Find State column index
-
-            for row, node_info in enumerate(nodes_data):
-                node_state = node_info.get("State", "UNKNOWN").upper().split(
-                    '+')[0]  # Get base state (e.g., ignore +DRAINING)
-
-                for col, header in enumerate(self.node_table_headers):
-                    value = str(node_info.get(header, "N/A"))  # Get value or N/A
-                    item = QTableWidgetItem(value)
-
-                    # --- Apply State Coloring to the entire row (optional) ---
-                    # state_color = state_colors.get(node_state, default_color)
-                    # item.setBackground(state_color.lighter(180) if self.current_theme == THEME_DARK else state_color.lighter(110)) # Subtle background tint
-                    # item.setForeground(default_color) # Ensure text is readable
-
-                    # --- Or Apply Coloring only to the State cell ---
-                    if col == state_column_index:
-                        state_color = state_colors.get(node_state, default_color)
-                        item.setForeground(state_color)
-                        # Make state bold
-                        font = item.font()
-                        font.setBold(True)
-                        item.setFont(font)
-
-                    # --- Alignment for numeric columns (example) ---
-                    if header in ["CPULoad", "AllocCPUs", "TotalCPUs", "RealMemory", "AllocMem", "FreeMem"]:
-                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-                    self.nodes_table.setItem(row, col, item)
-
-            self.nodes_table.setSortingEnabled(True)  # Re-enable sorting
-
-        except Exception as e:
-            print(f"Error populating nodes table: {e}")
-            # Optionally display an error message in the UI
-            self.nodes_table.setRowCount(0)  # Clear table on error
-
-    # You will need a method like this, connected to the refresh button
-    # def refresh_cluster_status_detailed(self):
-    #    print("Refreshing detailed cluster status...")
-    #    self.populate_nodes_table() # Call the population method
-
-    # def create_cluster_panel(self):
-    #     """Creates the panel displaying cluster status using a node grid."""
-    #     self.slurm_connection._fetch_nodes_infos()
-    #     cluster_panel = QWidget()
-    #     cluster_layout = QVBoxLayout(cluster_panel)
-    #     cluster_layout.setSpacing(15)
-
-    #     # --- Header ---
-    #     header_layout = QHBoxLayout()
-    #     header_layout.setContentsMargins(0, 0, 0, 0)
-    #     cluster_label = QLabel("Cluster Node Status")  # Changed title
-    #     cluster_label.setStyleSheet("font-size: 16px; font-weight: bold;")  # Adjusted size
-    #     header_layout.addWidget(cluster_label)
-    #     header_layout.addStretch()
-    #     refresh_cluster_btn = QPushButton("Refresh Status")
-    #     # refresh_cluster_btn.setIcon(QIcon()) # Placeholder icon
-    #     refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
-    #     header_layout.addWidget(refresh_cluster_btn)
-    #     cluster_layout.addLayout(header_layout)
-
-    #     # --- Legend ---
-    #     legend_layout = QHBoxLayout()
-    #     legend_layout.setSpacing(10)
-    #     legend_layout.addWidget(QLabel("Legend:"))
-
-    #     def create_legend_item(color, text):
-    #         item_layout = QHBoxLayout()
-    #         color_label = QLabel()
-    #         color_label.setFixedSize(15, 15)
-    #         color_label.setStyleSheet(f"background-color: {color}; border: 1px solid gray;")
-    #         item_layout.addWidget(color_label)
-    #         item_layout.addWidget(QLabel(text))
-    #         widget = QWidget()
-    #         widget.setLayout(item_layout)
-    #         return widget
-
-    #     legend_layout.addWidget(create_legend_item(COLOR_GREEN, NODE_STATE_IDLE))
-    #     legend_layout.addWidget(create_legend_item(COLOR_BLUE, NODE_STATE_ALLOC))
-    #     legend_layout.addWidget(create_legend_item(COLOR_ORANGE, NODE_STATE_DRAIN))
-    #     legend_layout.addWidget(create_legend_item(COLOR_RED, NODE_STATE_DOWN))
-    #     legend_layout.addWidget(create_legend_item(COLOR_GRAY, NODE_STATE_UNKNOWN))
-    #     legend_layout.addStretch()
-    #     cluster_layout.addLayout(legend_layout)
-
-    #     # --- Node Grid Group ---
-    #     node_grid_group = QGroupBox("Node Occupancy")
-    #     node_grid_outer_layout = QVBoxLayout(node_grid_group)  # Use QVBoxLayout to contain the grid
-
-    #     # The grid layout itself
-    #     self.node_grid_layout = QGridLayout()
-    #     self.node_grid_layout.setSpacing(4)  # Small spacing between nodes
-
-    #     # We will populate this grid in refresh_cluster_status
-    #     # Add the grid layout to the group box layout
-    #     node_grid_outer_layout.addLayout(self.node_grid_layout)
-    #     node_grid_outer_layout.addStretch()  # Allow grid to be at the top
-
-    #     cluster_layout.addWidget(node_grid_group)
-
-    #     # --- Overall Stats (Optional - can be kept or removed) ---
-    #     # You might want to keep a summary section
-    #     stats_group = QGroupBox("Overall Statistics")
-    #     stats_layout = QFormLayout(stats_group)
-    #     self.total_nodes_label = QLabel("N/A")
-    #     self.idle_nodes_label = QLabel("N/A")
-    #     self.alloc_nodes_label = QLabel("N/A")
-    #     self.down_nodes_label = QLabel("N/A")
-    #     stats_layout.addRow("Total Nodes:", self.total_nodes_label)
-    #     stats_layout.addRow("Idle Nodes:", self.idle_nodes_label)
-    #     stats_layout.addRow("Allocated Nodes:", self.alloc_nodes_label)
-    #     stats_layout.addRow("Down/Drained Nodes:", self.down_nodes_label)
-    #     cluster_layout.addWidget(stats_group)
-    #     # --- End Optional Stats ---
-
-    #     cluster_layout.addStretch()  # Pushes content upwards
-    #     self.stacked_widget.addWidget(cluster_panel)
-    #     self.node_widgets = {}  # Dictionary to hold references to node labels {node_name: QLabel}
-
-    # def create_cluster_panel(self):
-    #     """Creates the panel displaying cluster status information."""
-    #     cluster_panel = QWidget()
-    #     cluster_layout = QVBoxLayout(cluster_panel)
-    #     cluster_layout.setSpacing(15)
-
-    #     # Header with refresh button
-    #     header_layout = QHBoxLayout()
-    #     header_layout.setContentsMargins(0, 0, 0, 0)
-    #     cluster_label = QLabel("Cluster Status Overview")
-    #     cluster_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # Slightly smaller title
-    #     header_layout.addWidget(cluster_label)
-    #     header_layout.addStretch()
-    #     refresh_cluster_btn = QPushButton("Refresh Status")
-    #     refresh_cluster_btn.setIcon(QIcon())  # Placeholder icon
-    #     refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
-    #     header_layout.addWidget(refresh_cluster_btn)
-    #     cluster_layout.addLayout(header_layout)
-
-    #     # --- Cluster Overview Group ---
-    #     overview_group = QGroupBox("Real-time Usage")
-    #     overview_layout = QVBoxLayout(overview_group)
-    #     overview_layout.setSpacing(15)
-
-    #     # Cluster stats grid
-    #     stats_layout = QHBoxLayout()
-    #     stats_layout.setSpacing(20)  # Space between stats
-
-    #     # Helper to create stat widgets
-    #     def create_stat_widget(label_text, value_id, object_name=None):
-    #         widget = QWidget()
-    #         layout = QVBoxLayout(widget)
-    #         layout.setContentsMargins(0, 0, 0, 0)
-    #         label = QLabel(label_text)
-    #         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    #         value = QLabel("N/A")  # Default value
-    #         value.setObjectName("clusterStatValue")
-    #         if object_name:
-    #             value.setProperty("statusColor", object_name)  # Custom property for styling if needed
-    #             value.setObjectName(f"clusterStatValue{object_name}")  # Specific object name for styling
-    #         value.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    #         layout.addWidget(label)
-    #         layout.addWidget(value)
-    #         setattr(self, value_id, value)  # Store value label reference
-    #         return widget
-
-    #     stats_layout.addWidget(create_stat_widget("Total Nodes", "total_nodes_value"))
-    #     stats_layout.addWidget(create_stat_widget("Available Nodes", "avail_nodes_value", "Avail"))
-    #     stats_layout.addWidget(create_stat_widget("Running Jobs", "running_jobs_value", "Running"))
-    #     stats_layout.addWidget(create_stat_widget("Pending Jobs", "pending_jobs_value", "Pending"))
-
-    #     overview_layout.addLayout(stats_layout)
-
-    #     # Usage bars
-    #     usage_layout = QFormLayout()  # Use form layout for better alignment
-    #     usage_layout.setSpacing(10)
-
-    #     # Helper to create progress bar row
-    #     def create_progress_row(label_text, progress_id, percent_id):
-    #         layout = QHBoxLayout()
-    #         layout.setContentsMargins(0, 0, 0, 0)
-    #         progress = QProgressBar()
-    #         progress.setValue(0)
-    #         progress.setTextVisible(False)  # Show percentage in separate label
-    #         percent_label = QLabel("0%")
-    #         percent_label.setFixedWidth(40)  # Fixed width for alignment
-    #         layout.addWidget(progress)
-    #         layout.addWidget(percent_label)
-    #         setattr(self, progress_id, progress)
-    #         setattr(self, percent_id, percent_label)
-    #         return label_text, layout
-
-    #     usage_layout.addRow(*create_progress_row("CPU Usage:", "cpu_progress", "cpu_percent_label"))
-    #     usage_layout.addRow(*create_progress_row("Memory Usage:", "mem_progress", "mem_percent_label"))
-    #     usage_layout.addRow(*create_progress_row("GPU Usage:", "gpu_progress", "gpu_percent_label"))
-
-    #     overview_layout.addLayout(usage_layout)
-    #     cluster_layout.addWidget(overview_group)
-
-    #     # --- Partition Status Group ---
-    #     partitions_group = QGroupBox("Partition Status")
-    #     partitions_layout = QVBoxLayout(partitions_group)
-
-    #     self.partitions_table = QTableWidget()
-    #     self.partitions_table.setColumnCount(5)
-    #     self.partitions_table.setHorizontalHeaderLabels(
-    #         ["Partition", "Available", "Total", "Usage %", "State"])
-    #     self.partitions_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-    #     self.partitions_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    #     # self.partitions_table.setAlternatingRowColors(True)
-    #     self.partitions_table.verticalHeader().setVisible(False)
-
-    #     header = self.partitions_table.horizontalHeader()
-    #     header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Partition name takes space
-    #     for i in range(1, 5):
-    #         header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)  # Other columns fit content
-
-    #     partitions_layout.addWidget(self.partitions_table)
-    #     cluster_layout.addWidget(partitions_group)
-
-    #     cluster_layout.addStretch()
-    #     self.stacked_widget.addWidget(cluster_panel)
 
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         settings_panel = QWidget()
         settings_layout = QVBoxLayout(settings_panel)
-        settings_layout.setSpacing(20)
-        settings_layout.setContentsMargins(25, 25, 25, 25)  # More padding for settings
+        # settings_layout.setSpacing(20)
+        settings_layout.setContentsMargins(25, 25, 25, 25)
 
         # Title
         settings_label = QLabel("Application Settings")
         settings_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         settings_layout.addWidget(settings_label)
 
-        # --- Appearance Section ---
+        # Appearance section
         appearance_group = QGroupBox("Appearance")
         appearance_layout = QFormLayout(appearance_group)
+        appearance_layout.setSpacing(10)
+        appearance_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(self.themes.keys())
         self.theme_combo.setCurrentText(self.current_theme)
         self.theme_combo.currentTextChanged.connect(self.change_theme)
+        self.theme_combo.setMaximumWidth(150)
         appearance_layout.addRow("UI Theme:", self.theme_combo)
-        settings_layout.addWidget(appearance_group)
 
+        # Jobs Queue Format Section
+        self.jobs_queue_options_group = QGroupBox("Jobs Queue Format")
+        jobs_queue_layout = QGridLayout(self.jobs_queue_options_group)
+
+        for i, label in enumerate(JOB_QUEUE_FIELDS):
+            if label:
+                checkbox = QCheckBox(label)
+                checkbox.setObjectName(label)
+                row = i // 3
+                col = i % 3
+                jobs_queue_layout.addWidget(checkbox, row, col)
+
+        # Save Button
+        save_appearance_btn = QPushButton("Save Appearence Settings")
+        save_appearance_btn.setObjectName(BTN_GREEN)
+        save_appearance_btn.setMaximumWidth(250)
+        save_appearance_btn.clicked.connect(self.save_appearence_settings)
+        save_layout = QHBoxLayout()
+        save_layout.addStretch()
+        jobs_queue_layout.addWidget(save_appearance_btn, row + 1, col + 1)
+        appearance_layout.addRow(self.jobs_queue_options_group)
+
+        settings_layout.addWidget(appearance_group)
         # --- SLURM Connection Settings ---
         connection_group = QGroupBox("SLURM Connection (Example)")
         connection_group.setMinimumHeight(150)
         connection_layout = QFormLayout(connection_group)
         self.cluster_address = QLineEdit(self.slurm_connection.host)
+        self.cluster_address.setClearButtonEnabled(True)
         connection_layout.addRow("Cluster Address:", self.cluster_address)
-        # self.username = QLineEdit(os.environ.get("USER", self.slurm_connection.use))
         self.username = QLineEdit(self.slurm_connection.user)
+        self.username.setClearButtonEnabled(True)
         connection_layout.addRow("Username:", self.username)
 
         # Replace SSH key with password field
         self.password = QLineEdit(self.slurm_connection.password)
+        self.password.setClearButtonEnabled(True)
         self.password.setEchoMode(QLineEdit.EchoMode.Password)  # Correct way to set password mode
         connection_layout.addRow("Password:", self.password)
 
@@ -865,14 +619,6 @@ class SlurmJobManagerApp(QMainWindow):
         button_layout.addStretch()
         button_layout.addWidget(connection_settings_btn)
         connection_layout.addRow(button_layout)
-
-        # self.ssh_key_path = QLineEdit(os.path.expanduser("~/.ssh/id_rsa"))
-        # browse_ssh_btn = QPushButton("Browse...")
-        # browse_ssh_btn.clicked.connect(self.browse_ssh_key)
-        # ssh_key_layout = QHBoxLayout()
-        # ssh_key_layout.addWidget(self.ssh_key_path)
-        # ssh_key_layout.addWidget(browse_ssh_btn)
-        # connection_layout.addRow("SSH Key:", ssh_key_layout)
         settings_layout.addWidget(connection_group)
 
         # --- Notifications Section ---
@@ -888,17 +634,6 @@ class SlurmJobManagerApp(QMainWindow):
         notifications_layout.addWidget(self.email_notify_check)
         notifications_layout.addWidget(self.sound_notify_check)
         settings_layout.addWidget(notifications_group)
-
-        # --- Job Defaults Section (Example - not fully implemented) ---
-        defaults_group = QGroupBox("Default Job Parameters")
-        defaults_layout = QFormLayout(defaults_group)
-        self.default_partition_combo = QComboBox()
-        self.default_partition_combo.addItems(["compute", "gpu", "bigmem", "debug"])
-        self.default_partition_combo.setCurrentText(DEFAULT_PARTITION)
-        defaults_layout.addRow("Default Partition:", self.default_partition_combo)
-        self.default_memory_input = QLineEdit(DEFAULT_MEMORY)
-        defaults_layout.addRow("Default Memory:", self.default_memory_input)
-        settings_layout.addWidget(defaults_group)
 
         # --- Save Button ---
         save_button = QPushButton("Save Settings")
@@ -919,12 +654,6 @@ class SlurmJobManagerApp(QMainWindow):
         print("Updateding connection settings...")
 
         self.set_connection_status(None, connecting=True)
-        # def update_fn_():
-
-        #     self.slurm_connection.update_credentials_and_reconnect(self.username.text(),
-        #                                                            self.cluster_address.text(),
-        #                                                            self.password.text())
-
         thread = threading.Thread(target=self.slurm_connection.update_credentials_and_reconnect, args=(
             self.username.text(),
             self.cluster_address.text(),
@@ -932,13 +661,6 @@ class SlurmJobManagerApp(QMainWindow):
         ))
 
         thread.start()
-
-        # self.slurm_connection.update_credentials_and_reconnect(
-        #     new_user=self.username.text(),
-        #     new_host=self.cluster_address.text(),
-        #     new_psw=self.password.text()
-        # )
-        # self.set_connection_status(self.slurm_connection.is_connected())
 
     def filter_jobs(self, text):
         """Filters the jobs table based on the search input."""
@@ -1223,103 +945,101 @@ class SlurmJobManagerApp(QMainWindow):
                 job["time"] = f"{random.randint(1, 5)}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
 
         self.populate_jobs_table(sample_jobs)
-        self.filter_jobs(self.search_input.text())  # Re-apply filter after refresh
-
-    def populate_partitions_table(self, partitions_data):
-        """Populates the partitions table with data."""
-        self.partitions_table.setRowCount(0)  # Clear table
-        self.partitions_table.setSortingEnabled(False)
-
-        for row, partition in enumerate(partitions_data):
-            self.partitions_table.insertRow(row)
-
-            # --- Create Items ---
-            item_name = QTableWidgetItem(partition.get("name", "N/A"))
-            item_avail = QTableWidgetItem(partition.get("avail", "N/A"))
-            item_total = QTableWidgetItem(partition.get("total", "N/A"))
-            item_usage = QTableWidgetItem(partition.get("usage", "N/A"))
-            item_state = QTableWidgetItem(partition.get("state", "N/A"))
-
-            # --- State Coloring ---
-            state = partition.get("state", "").lower()
-            if state == "up" or state == "idle" or state == "alloc":  # Consider different 'up' states
-                item_state.setForeground(QColor(COLOR_GREEN))
-            elif state == "down" or state == "drain":
-                item_state.setForeground(QColor(COLOR_RED))
-            else:
-                item_state.setForeground(QColor(COLOR_ORANGE))  # Unknown/other state
-
-            # Align numeric columns to the right
-            for col_idx, item in enumerate([item_avail, item_total, item_usage]):
-                item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.partitions_table.setItem(row, col_idx + 1, item)  # Offset by 1
-
-            self.partitions_table.setItem(row, 0, item_name)
-            self.partitions_table.setItem(row, 4, item_state)
-
-        self.partitions_table.setSortingEnabled(True)
+        # self.filter_jobs(self.search_input.text())  # Re-apply filter after refresh
 
     def refresh_cluster_status(self):
         """Refreshes the cluster status widgets (demo)."""
         print("Refreshing cluster status...")
-        # ** In a real application, call sinfo, scontrol show nodes, etc. parse output **
-        # try:
-        #    # Get partition info (sinfo)
-        #    # Get node info (sinfo -N -o "%N %t %c %m %f")
-        #    # Get job counts (squeue -t PD,R -h | wc -l)
-        #    # Aggregate data
-        # except Exception as e:
-        #    print(f"Error refreshing cluster status: {e}")
+        # Update the job queue widget
+        try:
+            queue_jobs = self.slurm_connection._fetch_squeue()
+        except ConnectionError as e:
+            print(e)
+            queue_jobs = []
+        if hasattr(self, 'job_queue_widget'):
+            self.job_queue_widget.update_queue_status(queue_jobs)
 
-        # --- Demo Data Update ---
-        total_nodes = 64
-        avail_nodes = random.randint(30, 55)
-        running_jobs = random.randint(10, 20)
-        pending_jobs = random.randint(5, 15)
-        cpu_usage = random.randint(40, 85)
-        mem_usage = random.randint(30, 70)
-        gpu_usage = random.randint(50, 90)  # Assuming some GPUs exist
+    def save_appearence_settings(self):
+        print("--- Saving Appearence Settings ---")
+        self.settings.beginGroup("AppearenceSettings")
+        self.settings.setValue("theme", self.theme_combo.currentText())
+        for i, obj in enumerate(self.jobs_queue_options_group.children()[1:-1]):
+            self.settings.setValue(obj.objectName(), bool(obj.checkState().value))
+        self.settings.endGroup()
 
-        # self.total_nodes_label.setText(str(total_nodes))
-        # self.avail_nodes_value.setText(str(avail_nodes))
-        # self.running_jobs_value.setText(str(running_jobs))
-        # self.pending_jobs_value.setText(str(pending_jobs))
-
-        # self.cpu_progress.setValue(cpu_usage)
-        # self.cpu_percent_label.setText(f"{cpu_usage}%")
-        # self.mem_progress.setValue(mem_usage)
-        # self.mem_percent_label.setText(f"{mem_usage}%")
-        # self.gpu_progress.setValue(gpu_usage)
-        # self.gpu_percent_label.setText(f"{gpu_usage}%")
-
-        # --- Demo Partition Data ---
-        sample_partitions = [
-            {"name": "compute", "avail": str(random.randint(20, 40)), "total": "48",
-             "usage": f"{random.randint(50, 80)}%", "state": "up"},
-            {"name": "gpu", "avail": str(random.randint(1, 6)), "total": "8",
-             "usage": f"{random.randint(60, 95)}%", "state": "up"},
-            {"name": "bigmem", "avail": str(random.randint(0, 4)), "total": "8",
-             "usage": f"{random.randint(40, 60)}%", "state": "up"},
-            {"name": "debug", "avail": str(random.randint(
-                0, 2)), "total": "2", "usage": f"{random.randint(0, 10)}%", "state": random.choice(["up", "down", "idle"])},
-        ]
-        # self.populate_partitions_table(sample_partitions)
+        self.settings.sync()
+        self.job_queue_widget.reload_settings_and_redraw()
 
     def save_settings(self):
-        """Saves the current settings (demo)."""
-        # In a real app, save to a config file (e.g., JSON, INI, QSettings)
-        print("--- Saving Settings (Demo) ---")
-        print(f"Theme: {self.theme_combo.currentText()}")
-        print(f"Cluster Address: {self.cluster_address.text()}")
-        print(f"Username: {self.username.text()}")
-        print(f"SSH Key Path: {self.ssh_key_path.text()}")
-        print(f"Desktop Notifications: {self.desktop_notify_check.isChecked()}")
-        print(f"Email Notifications: {self.email_notify_check.isChecked()}")
-        print(f"Sound Notifications: {self.sound_notify_check.isChecked()}")
-        print(f"Default Partition: {self.default_partition_combo.currentText()}")
-        print(f"Default Memory: {self.default_memory_input.text()}")
-        print("-----------------------------")
-        show_message(self, "Settings Saved", "Settings have been saved (demo).")
+        """Saves the current settings using QSettings."""
+        print("--- Saving Settings ---")  # You can keep the print for debugging if you like
+
+        # Use beginGroup to group related settings
+        self.settings.beginGroup("GeneralSettings")
+        self.settings.setValue("clusterAddress", self.slurm_connection.host)
+        self.settings.setValue("username", self.slurm_connection.user)
+        self.settings.setValue("psw", self.slurm_connection.password)
+        self.settings.endGroup()  # End the group
+
+        # self.settings.beginGroup("NotificationSettings")
+        # self.settings.setValue("desktopNotifications", self.desktop_notify_check.isChecked())
+        # self.settings.setValue("emailNotifications", self.email_notify_check.isChecked())
+        # self.settings.setValue("soundNotifications", self.sound_notify_check.isChecked())
+        # self.settings.endGroup()
+
+        # self.settings.beginGroup("JobDefaults")
+        # self.settings.setValue("defaultPartition", self.default_partition_combo.currentText())
+        # self.settings.setValue("defaultMemory", self.default_memory_input.text())
+        # self.settings.endGroup()
+
+        # You can call sync() to ensure settings are written to permanent storage immediately,
+        # although QSettings often does this automatically when the application exits.
+        self.settings.sync()
+
+        print("--- Settings Saved ---")
+        show_message(self, "Settings Saved", "Settings have been saved.")
+
+    def load_settings(self):
+        """Loads settings from QSettings."""
+        print("--- Loading Settings ---")
+
+        self.settings = QSettings(str(Path("./configs/settings.ini")),
+                                  QSettings.Format.IniFormat)  # Ensure settings object is available
+
+        # Load General Settings
+        self.settings.beginGroup("GeneralSettings")
+        theme = self.settings.value("theme", "Dark")  # Provide a default value
+        self.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
+
+        cluster_address = self.settings.value("clusterAddress", "")
+        self.cluster_address.setText(self.slurm_connection.host)
+
+        username = self.settings.value("username", "")
+        self.username.setText(username)
+
+        cluster_psw = self.settings.value("psw", "")
+        self.password.setText(self.slurm_connection.password)
+        self.settings.endGroup()
+
+        self.settings.beginGroup("AppearenceSettings")
+        for i, obj in enumerate(self.jobs_queue_options_group.children()[1:-1]):
+            value = self.settings.value(obj.objectName(), 'false', type=bool)
+            obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+
+        self.settings.endGroup()
+        # # Load Notification Settings
+        # self.settings.beginGroup("NotificationSettings")
+        # desktop_notify = self.settings.value("desktopNotifications", True, type=bool)  # Specify type for boolean
+        # self.desktop_notify_check.setChecked(desktop_notify)
+
+        # email_notify = self.settings.value("emailNotifications", False, type=bool)
+        # self.email_notify_check.setChecked(email_notify)
+
+        # sound_notify = self.settings.value("soundNotifications", True, type=bool)
+        # self.sound_notify_check.setChecked(sound_notify)
+        # self.settings.endGroup()
+
+        print("--- Settings Loaded ---")
 
     def closeEvent(self, event):
         """Handles the window close event."""
@@ -1332,22 +1052,20 @@ class SlurmJobManagerApp(QMainWindow):
         #     event.accept()
         # else:
         #     event.ignore()
+        self.slurm_connection.close()
         print("Closing application.")
         event.accept()
 
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Enable high DPI scaling for better visuals on modern displays
-    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
-    # QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 
     app = QApplication(sys.argv)
 
     # Apply a base font
     font = QFont("Inter", 10)  # Use Inter font if available, adjust size as needed
     app.setFont(font)
-
+    app.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
     window = SlurmJobManagerApp()
     window.show()
     sys.exit(app.exec())

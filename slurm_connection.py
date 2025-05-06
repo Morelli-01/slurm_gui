@@ -7,6 +7,17 @@ import os
 import tempfile
 from PyQt6.QtCore import QObject
 
+JOB_CODES = {
+    "CD": "COMPLETED",
+    "CG": "COMPLETING",
+    "F": "FAILED",
+    "PD": "PENDING",
+    "PR": "PREEMPTED",
+    "R": "RUNNING",
+    "S": "SUSPENDED",
+    "ST": "STOPPED",
+}
+
 
 class SlurmConnection:
     def __init__(self, config_path="slurm_config.yaml"):
@@ -253,6 +264,44 @@ class SlurmConnection:
 
         return nodes_arr
 
+    def _fetch_squeue(self):
+        JOB_QUEUE_FIELDS = [
+            "Job ID", "Job Name", "User",
+            "Account", "Priority", "Status",
+            "Time Used", "Partition", "CPUs",
+            "Time Limit", "Reason", "RAM",
+            "GPUs", "Nodelist"
+        ]
+        out, err = self.run_command(
+            "squeue --format='%.20i %.20P %.20j %.20u %.20a %.20t %.20M %.20l %.20C %.20Q %.20r %.20S %.20e %.20m %.30b %.20R'")
+        job_queue = []
+        for i, line in enumerate(out.splitlines()):
+            if i == 0:
+                continue
+            job_dict = {}
+            fields = line.split()
+            try:
+                job_dict["Job ID"] = fields[0]
+                job_dict["Partition"] = fields[1]
+                job_dict["Job Name"] = fields[2]
+                job_dict["User"] = fields[3]
+                job_dict["Account"] = fields[4]
+                job_dict["Status"] = JOB_CODES[fields[5]]
+                job_dict["Time Used"] = fields[6]
+                job_dict["Time Limit"] = fields[7]
+                job_dict["CPUs"] = fields[8]
+                job_dict["Priority"] = fields[9]
+                job_dict["Reason"] = fields[10]
+                job_dict["RAM"] = fields[13]
+                job_dict["GPUs"] = fields[14].split(":")[-1] if fields[14].split(":")[-1] != "N/A" else 0
+                job_dict["Nodelist"] = fields[15]
+            except IndexError as e:
+                print(e)
+
+            job_queue.append(job_dict)
+
+        return job_queue
+
     def close(self):
         if self.client:
             self.client.close()
@@ -262,12 +311,8 @@ class SlurmConnection:
 if __name__ == "__main__":
     sc_ = SlurmConnection("./configs/slurm_config.yaml")
     sc_.connect()
-    out = sc_._fetch_nodes_infos()
-    print(out[5])
-    sys.exit(0)
-    out, err = sc_.run_command("squeue")
-
-    print(out, err)
+    out = sc_._fetch_squeue()
+    print(out)
     print(sc_.remote_user)
     print(sc_.user_groups)
     print(sc_.num_nodes)
@@ -279,12 +324,12 @@ if __name__ == "__main__":
     print(sc_.accounts)     # ["project1", "project2"]
     print(sc_.gres)         # ["Name=gpu Type=rtx5000 Count=2 ..."]
 
-    try:
-        job_id = sc_.submit_job(job_name="test_", partition="all_serial", time_limit="00:10:00",
-                                command="nvidia-smi", account="tesi_nmorelli", gres="gpu:1")
-        print(job_id)
-        sleep(5)
-        out, err = sc_.get_job_logs(job_id)
-        print(out, err)
-    except RuntimeError as e:
-        print(e)
+    # try:
+    #     job_id = sc_.submit_job(job_name="test_", partition="all_serial", time_limit="00:10:00",
+    #                             command="nvidia-smi", account="tesi_nmorelli", gres="gpu:1")
+    #     print(job_id)
+    #     sleep(5)
+    #     out, err = sc_.get_job_logs(job_id)
+    #     print(out, err)
+    # except RuntimeError as e:
+    #     print(e)

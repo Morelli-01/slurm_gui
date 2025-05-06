@@ -9,7 +9,7 @@ from slurm_connection import SlurmConnection
 APP_TITLE = "Cluster Status Representation"
 # Using a more flexible size, but keeping a minimum
 MIN_WIDTH = 400
-MIN_HEIGHT = 900
+MIN_HEIGHT = 750
 REFRESH_INTERVAL_MS = 10000  # Refresh every 10 seconds
 
 # Theme Keys
@@ -20,6 +20,10 @@ COLOR_DARK_BG = "#1a1a2e"       # Deep background
 COLOR_DARK_FG = "#e9e9f4"       # Light foreground text
 COLOR_DARK_BG_ALT = "#2a2a4a"   # Slightly lighter background for contrast
 COLOR_DARK_BORDER = "#5a5a8a"   # Border color
+COLOR_DARK_BG_ALT = "#383a59"  # Alternate row background
+COLOR_DARK_BG_HOVER = "#44475a"  # Hover color
+COLOR_DARK_BORDER = "#6272a4"  # Border/Grid color
+COLOR_BLUE = "#8be9fd"     # Completed/Stopped status (Dracula Cyan)
 
 # More vibrant colors for blocks
 COLOR_AVAILABLE = "#4CAF50"     # Green for Available
@@ -57,6 +61,13 @@ def get_dark_theme_stylesheet():
             margin-top: 8px;
             margin-bottom: 8px;
         }}
+         QFrame#verticalSeparator {{
+            background-color: {COLOR_DARK_BORDER};
+            min-width: 1px;
+            max-width: 1px;
+            margin-left: 10px; /* Add some margin to the left */
+            margin-right: 10px; /* Add some margin to the right */
+        }}
         /* Common styles for the colored blocks */
         QWidget#coloredBlock {{
             border-radius: 2px;
@@ -76,6 +87,39 @@ def get_dark_theme_stylesheet():
             background-color: {BLOCK_COLOR_MAP['unavailable']};
             border: 1px solid {BLOCK_COLOR_MAP['unavailable']};
         }}
+        QGroupBox {{
+                border: 2px solid {COLOR_DARK_BORDER};
+                border-radius: 8px;
+                margin-top: 10px; /* Space for title */
+                font-size: 16px;
+                font-weight: bold;
+                color: {COLOR_DARK_FG};
+            }}
+            QTableWidget {{
+                background-color: {COLOR_DARK_BG};
+                color: {COLOR_DARK_FG};
+                selection-background-color: {COLOR_DARK_BG_HOVER};
+                selection-color: {COLOR_DARK_FG};
+                border: 1px solid {COLOR_DARK_BORDER};
+                border-radius: 5px;
+                gridline-color: {COLOR_DARK_BORDER};
+                font-size: 14px;
+            }}
+            QHeaderView::section {{
+                background-color: {COLOR_DARK_BG_ALT};
+                color: {COLOR_DARK_FG};
+                padding: 5px;
+                border: 1px solid {COLOR_DARK_BORDER};
+                border-bottom: 2px solid {COLOR_BLUE}; /* Highlight bottom border */
+                font-weight: bold;
+            }}
+            QTableWidget::item {{
+                padding: 5px; /* Add some padding to items */
+            }}
+            QTableWidget::item:selected {{
+                background-color: {COLOR_DARK_BG_HOVER};
+                color: {COLOR_DARK_FG};
+            }}
     """
 
 
@@ -101,6 +145,7 @@ def sort_nodes_data(nodes_data: list[dict]):
 class ClusterStatusWidget(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
+
         self.setWindowTitle(APP_TITLE)
         # Set minimum size, allow resizing
         self.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
@@ -123,15 +168,41 @@ class ClusterStatusWidget(QWidget):
         self.user_status_grid_layout.setHorizontalSpacing(3)  # Increased spacing for clarity
         self.user_status_grid_layout.setVerticalSpacing(6)   # Increased spacing between rows
 
+        # Create a horizontal layout for the title and legend
+        title_legend_layout = QHBoxLayout()
+        title_legend_layout.setContentsMargins(0, 0, 0, 0)
+        title_legend_layout.setSpacing(0)  # Set spacing to 0 here, spacing is handled by the vertical separator margins
+
+        # Add section title to the horizontal layout
         section_title = QLabel("Node Status")  # Changed title for clarity
         section_title.setObjectName("sectionTitle")
-        self.main_layout.addWidget(section_title)
+        title_legend_layout.addWidget(section_title)
+
+        # Add a vertical separator
+        vertical_separator = QFrame()
+        vertical_separator.setObjectName("verticalSeparator")
+        vertical_separator.setFrameShape(QFrame.Shape.VLine)
+        vertical_separator.setFrameShadow(QFrame.Shadow.Sunken)
+        title_legend_layout.addWidget(vertical_separator)
+
+        # Create and add the status key section to the horizontal layout
+        status_key_layout = self.create_status_key_section()
+        title_legend_layout.addLayout(status_key_layout)
+
+        # Add stretch to push the legend to the right
+        title_legend_layout.addStretch()
+
+        # Add the horizontal layout to the main layout
+        self.main_layout.addLayout(title_legend_layout)
+
+        # Add a separator line below the title and legend
+
         self.main_layout.addLayout(self.user_status_grid_layout)  # Add the grid layout to main layout
 
-        self.add_separator()
-        self.create_status_key_section()
-        self.add_separator()
-        self.create_overall_stats_section()
+        # self.add_separator() # Removed from here
+        # self.create_status_key_section() # Removed from here
+        # self.add_separator()
+        # self.create_overall_stats_section()
 
         self.main_layout.addStretch()  # Push content to the top
 
@@ -160,9 +231,9 @@ class ClusterStatusWidget(QWidget):
         status_key_layout.setContentsMargins(0, 0, 0, 0)
         status_key_layout.setSpacing(5)
 
-        section_title = QLabel("Status Legend")
-        section_title.setObjectName("sectionTitle")
-        status_key_layout.addWidget(section_title)
+        # section_title = QLabel("Status Legend") # Removed title from here
+        # section_title.setObjectName("sectionTitle")
+        # status_key_layout.addWidget(section_title)
 
         key_items = [
             ("used", "Used GPU"),
@@ -192,7 +263,8 @@ class ClusterStatusWidget(QWidget):
 
             status_key_layout.addLayout(key_row_layout)
 
-        self.main_layout.addLayout(status_key_layout)
+        # self.main_layout.addLayout(status_key_layout) # Removed from here
+        return status_key_layout  # Return the layout instead of adding directly
 
     def create_overall_stats_section(self):
         # This section will be updated dynamically
@@ -227,8 +299,8 @@ class ClusterStatusWidget(QWidget):
         available_gpus = total_gpus - used_gpus
         user_gpu_counts = stats_data.get("user_gpu_counts", {})
 
-        self.overall_stats_labels["gpu_stats"].setText(
-            f"Total GPUs: {total_gpus} \nUsed: {used_gpus} \nAvailable: {available_gpus}")
+        # self.overall_stats_labels["gpu_stats"].setText(
+        #     f"Total GPUs: {total_gpus} \nUsed: {used_gpus} \nAvailable: {available_gpus}")
 
         # Sort users by GPU count descending for better readability
         sorted_users = sorted(user_gpu_counts.items(), key=lambda item: item[1], reverse=True)
@@ -242,42 +314,26 @@ class ClusterStatusWidget(QWidget):
         """
         print("Fetching cluster status...")  # Debug print
 
+        # --- Actual Data Fetching ---
+        # Using the provided slurm_connection module
+        # Assuming slurm_config.yaml is in the correct path relative to where the script is run
         try:
-            # --- Actual Data Fetching ---
-            # Using the provided slurm_connection module
-            # Assuming slurm_config.yaml is in the correct path relative to where the script is run
-
             nodes_data = self.sc_._fetch_nodes_infos()  # Fetch node information
-            # You might need another method in slurm_connection to get per-user GPU usage
-            # For now, we'll use a simplified calculation based on node data
-            # If you have a method like sc_._fetch_user_gpu_usage(), use it here.
-            # user_gpu_usage_data = sc_._fetch_user_gpu_usage() # Example
+        except ConnectionError as e:
+            print(e)
+            nodes_data = []
+        # You might need another method in slurm_connection to get per-user GPU usage
+        # For now, we'll use a simplified calculation based on node data
+        # If you have a method like sc_._fetch_user_gpu_usage(), use it here.
+        # user_gpu_usage_data = sc_._fetch_user_gpu_usage() # Example
 
-            self.update_status(nodes_data)
-
-            # --- Calculate and Update Stats ---
-            # Calculate stats based on fetched nodes_data
-            stats_data = self.calculate_overall_stats(nodes_data)
-            # If you fetched user_gpu_usage_data separately, merge it into stats_data
-            # stats_data["user_gpu_counts"] = process_user_gpu_usage_data(user_gpu_usage_data) # Example
-
-            self.update_overall_stats(stats_data)
-
-        except FileNotFoundError:
-            print("Error: slurm_config.yaml not found. Please ensure it exists.")
-            # Update UI to show error
-            self.overall_stats_labels["gpu_stats"].setText("Error: slurm_config.yaml not found.")
-            self.overall_stats_labels["users_stats"].setText("")
-        except ImportError:
-            print("Error: slurm_connection module not found. Please ensure it is in your Python path.")
-            # Update UI to show error
-            self.overall_stats_labels["gpu_stats"].setText("Error: slurm_connection module not found.")
-            self.overall_stats_labels["users_stats"].setText("")
-        except Exception as e:
-            print(f"Error fetching or updating status: {e}")
-            # Optionally update a status label in the UI to show the error
-            self.overall_stats_labels["gpu_stats"].setText(f"Error: {e}")
-            self.overall_stats_labels["users_stats"].setText("")
+        self.update_status(nodes_data)
+        # --- Calculate and Update Stats ---
+        # Calculate stats based on fetched nodes_data
+        stats_data = self.calculate_overall_stats(nodes_data)
+        # If you fetched user_gpu_usage_data separately, merge it into stats_data
+        # stats_data["user_gpu_counts"] = process_user_gpu_usage_data(user_gpu_usage_data) # Example
+        self.update_overall_stats(stats_data)
 
     def calculate_overall_stats(self, nodes_data):
         """
@@ -461,10 +517,10 @@ class ClusterStatusWidget(QWidget):
                 self.user_status_grid_layout.addWidget(
                     block_widget, row_index + row_offset, 1 + col_offset - i)
 
-                # --- Layout Stretching ---
-                # Ensure the first column (node name) takes minimal space,
-                # block columns take fixed space, and any extra space is at the end.
-                # Set stretch for the name column (column 0) to 0
+        # --- Layout Stretching ---
+        # Ensure the first column (node name) takes minimal space,
+        # block columns take fixed space, and any extra space is at the end.
+        # Set stretch for the name column (column 0) to 0
         self.user_status_grid_layout.setColumnStretch(0, 0)
 
         # Set stretch for the block columns (from 1 up to max_gpu_count) to 0
