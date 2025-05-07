@@ -4,9 +4,6 @@ import sys, slurm_connection
 from networkx import nodes
 import threading
 import os
-import subprocess
-import re
-import random  # For demo refresh
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
@@ -23,7 +20,7 @@ import cluster_status_widget
 APP_TITLE = "SLURM Job Manager"
 MIN_WIDTH = 1600
 MIN_HEIGHT = 900
-REFRESH_INTERVAL_MS = 10000  # 10 seconds
+REFRESH_INTERVAL_MS = 5000  # 10 seconds
 
 # Theme Keys
 THEME_DARK = "Dark"
@@ -587,13 +584,30 @@ class SlurmJobManagerApp(QMainWindow):
         appearance_layout.setSpacing(10)
         appearance_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
+        widgets_layout = QHBoxLayout()
+
+        # Theme combo
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(self.themes.keys())
         self.theme_combo.setCurrentText(self.current_theme)
         self.theme_combo.currentTextChanged.connect(self.change_theme)
         self.theme_combo.setMaximumWidth(150)
-        appearance_layout.addRow("UI Theme:", self.theme_combo)
+        widgets_layout.addWidget(QLabel("UI Theme:"))
+        widgets_layout.addWidget(self.theme_combo)
 
+        # widgets_layout.addSpacing(20)  # Add some spacing between the widgets
+
+        # Refresh time
+        # widgets_layout.addWidget(QLabel("Refresh Timeout (ms):"))
+        # self.refresh_time = QLineEdit()
+        # self.refresh_time.setText(str(self.refresh_timeout))
+        # self.refresh_time.setMaximumWidth(150)
+        # widgets_layout.addWidget(self.refresh_time)
+
+        widgets_layout.addStretch()  # Add stretch to push widgets to the left
+
+        # Add the horizontal layout to the appearance layout
+        appearance_layout.addRow("", widgets_layout)
         # Jobs Queue Format Section
         self.jobs_queue_options_group = QGroupBox("Jobs Queue Format")
         jobs_queue_layout = QGridLayout(self.jobs_queue_options_group)
@@ -1002,13 +1016,13 @@ class SlurmJobManagerApp(QMainWindow):
         self.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
 
         cluster_address = self.settings.value("clusterAddress", "")
-        self.cluster_address.setText(self.slurm_connection.host)
+        self.cluster_address.setText(cluster_address)
 
         username = self.settings.value("username", "")
         self.username.setText(username)
 
         cluster_psw = self.settings.value("psw", "")
-        self.password.setText(self.slurm_connection.password)
+        self.password.setText(cluster_psw)
         self.settings.endGroup()
 
         self.settings.beginGroup("AppearenceSettings")

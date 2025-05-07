@@ -9,6 +9,36 @@ BTN_RED = "btnRed"
 BTN_BLUE = "btnBlue"
 
 
+def parse_memory_size(size_str):
+    """Convert memory size string with suffix to bytes as integer"""
+
+    # Strip any whitespace and make uppercase for consistency
+    size_str = size_str.strip().upper()
+
+    # Define the multipliers for each unit
+    multipliers = {
+        'B': 1,
+        'K': 1024,
+        'M': 1024 ** 2,
+        'G': 1024 ** 3,
+        'T': 1024 ** 4,
+        'P': 1024 ** 5
+    }
+
+    # Extract the number and unit
+    if size_str[-2:] in ['KB', 'MB', 'GB', 'TB', 'PB']:
+        number = float(size_str[:-2])
+        unit = size_str[-2:-1]
+    else:
+        number = float(size_str[:-1])
+        unit = size_str[-1]
+
+    # Convert to bytes
+    bytes_value = int(number * multipliers.get(unit, 1))
+
+    return bytes_value
+
+
 class ClickableLabel(QLabel):
     clicked = pyqtSignal()
 

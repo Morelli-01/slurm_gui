@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QGridLayout, QFrame, QSizePolicy)  # Import QSizePolicy
 from PyQt6.QtCore import Qt, QSize, QTimer
 from slurm_connection import SlurmConnection
-
+from utils import parse_memory_size
 # --- Constants ---
 APP_TITLE = "Cluster Status Representation"
 # Using a more flexible size, but keeping a minimum
@@ -31,6 +31,7 @@ COLOR_USED = "#2196F3"          # Blue for Used
 COLOR_UNAVAILABLE = "#F44336"   # Red for Unavailable (Drain/Down/Unknown)
 COLOR_USED_BY_STUD = "#00AAAA"
 COLOR_USED_PROD = "#AA00AA"
+COLOR_MID_CONSTRAINT = "#EBC83F"
 
 # Mapping internal states to colors
 BLOCK_COLOR_MAP = {
@@ -39,6 +40,8 @@ BLOCK_COLOR_MAP = {
     "unavailable": COLOR_UNAVAILABLE,  # GPU on DRAIN/DOWN/UNKNOWN node
     "stud_used": COLOR_USED,
     "prod_used": COLOR_USED_PROD,
+    "high-constraint": COLOR_UNAVAILABLE,
+    "mid-constraint": COLOR_MID_CONSTRAINT,
 }
 
 STUDENTS_JOBS_KEYWORD = [
@@ -87,6 +90,14 @@ def get_dark_theme_stylesheet():
         QWidget#coloredBlock[data-state="available"] {{
             background-color: transparent;
             border: 1px solid {BLOCK_COLOR_MAP['available']};
+        }}
+        QWidget#coloredBlock[data-state="mid-constraint"] {{
+            background-color: transparent;
+            border: 1px solid {BLOCK_COLOR_MAP['mid-constraint']};
+        }}
+        QWidget#coloredBlock[data-state="high-constraint"] {{
+            background-color: transparent;
+            border: 1px solid {BLOCK_COLOR_MAP['high-constraint']};
         }}
         /* Specific style for 'used' blocks */
          QWidget#coloredBlock[data-state="used"] {{
@@ -471,9 +482,21 @@ class ClusterStatusWidget(QWidget):
                     for k in STUDENTS_JOBS_KEYWORD:
                         if k in job["Account"]:
                             stud_used += int(job["GPUs"])
+                total_cpu = int(node_info.get("total_cpu", 1))
+                alloc_cpu = int(node_info.get("alloc_cpu", 0))
+                total_mem = parse_memory_size(node_info.get("total_mem", "1")) // 1024**3
+                alloc_mem = parse_memory_size(node_info.get("alloc_mem", "0")) // 1024**3
+                high_constraint_state = alloc_cpu / total_cpu >= 0.9 or alloc_mem / total_mem >= 0.9
+                mid_constraint_state = (alloc_cpu / total_cpu >= 0.7 or alloc_mem /
+                                        total_mem >= 0.7) and not high_constraint_state
+                available_state = not high_constraint_state and not mid_constraint_state
 
                 block_states = ["stud_used"] * stud_used + ["prod_used"] * \
-                    (used_gpus - stud_used) + ["available"] * (total_gpus - used_gpus)
+                    (used_gpus - stud_used) + \
+                    ["available"] * (total_gpus - used_gpus) * available_state + \
+                    ["mid-constraint"] * (total_gpus - used_gpus) * mid_constraint_state + \
+                    ["high-constraint"] * (total_gpus - used_gpus) * high_constraint_state
+
                 # block_states = ["used"] * used_gpus + ["available"] * (total_gpus - used_gpus)
             # Finally, assume idle if none of the above
             elif "IDLE" in state:
