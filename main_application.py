@@ -1,5 +1,7 @@
 from pathlib import Path
 import sys, slurm_connection
+
+from networkx import nodes
 import threading
 import os
 import subprocess
@@ -35,7 +37,7 @@ COLOR_DARK_BG_HOVER = "#3e3e5f"
 COLOR_DARK_BORDER = "#44475a"
 COLOR_GREEN = "#50fa7b"  # Brighter Green
 COLOR_RED = "#ff5555"   # Brighter Red
-COLOR_BLUE = "#6272a4"  # Brighter Blue
+COLOR_BLUE = "#2196F3"  # Brighter Blue
 COLOR_ORANGE = "#ffb86c"  # Brighter Orange
 COLOR_GRAY = "#6272a4"   # Gray (Unknown/Offline) - Was Blue
 
@@ -76,6 +78,12 @@ JOB_QUEUE_FIELDS = [
     "Time Used", "Partition", "CPUs",
     "Time Limit", "Reason", "RAM",
     "GPUs", "Nodelist"
+]
+
+STUDENTS_JOBS_KEYWORD = [
+    "tesi",
+    "cvcs",
+    "ai4bio"
 ]
 # --- Helper Functions ---
 
@@ -151,7 +159,7 @@ class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.slurm_connection = slurm_connection.SlurmConnection(
-            "/home/nicola/Desktop/slurm_gui/configs/slurm_config.yaml")
+            "./configs/settings.ini")
 
         self.slurm_connection.connect()
 
@@ -255,10 +263,20 @@ class SlurmJobManagerApp(QMainWindow):
 
     def refresh_all(self):
         """Refreshes data for all relevant panels."""
+        nodes_data = None
+        queue_jobs = None
+        try:
+            nodes_data = self.slurm_connection._fetch_nodes_infos()
+            queue_jobs = self.slurm_connection._fetch_squeue()
+        except ConnectionError as e:
+            print(e)
+
         print("Refreshing all data...")
         self.refresh_job_status()
-        self.refresh_cluster_status()
-        self.set_connection_status(self.slurm_connection.is_connected())
+        self.refresh_cluster_jobs_queue(queue_jobs)
+        self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
+
+        # self.set_connection_status(self.slurm_connection.is_connected())
 
     # --- Theme Handling ---
     def change_theme(self, theme_name):
@@ -497,6 +515,10 @@ class SlurmJobManagerApp(QMainWindow):
         header_layout.addWidget(cluster_label)
         header_layout.addStretch()
 
+        self.filter_btn_by_users = ButtonGroupWidget()
+        self.filter_btn_by_users.selectionChanged.connect(lambda text: self.filter_by_accounts(text))
+        header_layout.addWidget(self.filter_btn_by_users)
+
         self.filter_jobs = QLineEdit()
         self.filter_jobs.setClearButtonEnabled(True)
         self.filter_jobs.setPlaceholderText("Filter jobs...")
@@ -510,7 +532,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.filter_jobs.textChanged.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
         refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.clicked.connect(self.refresh_cluster_status)
+        refresh_cluster_btn.clicked.connect(self.refresh_all)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)
@@ -649,6 +671,16 @@ class SlurmJobManagerApp(QMainWindow):
         self.stacked_widget.addWidget(settings_panel)
 
     # --- Action & Data Methods ---
+
+    def filter_by_accounts(self, account_type):
+        if account_type == "ME":
+            self.job_queue_widget.filter_table(self.username.text())
+        elif account_type == "ALL":
+            self.job_queue_widget.filter_table("")
+        elif account_type == "STUD":
+            self.job_queue_widget.filter_table_by_list(STUDENTS_JOBS_KEYWORD)
+        elif account_type == "PROD":
+            self.job_queue_widget.filter_table_by_negative_keywords(STUDENTS_JOBS_KEYWORD)
 
     def update_connection_setting(self):
         print("Updateding connection settings...")
@@ -902,60 +934,18 @@ class SlurmJobManagerApp(QMainWindow):
 
     def refresh_job_status(self):
         """Refreshes the job list table (demo)."""
-        print("Refreshing job status...")
-        # ** In a real application, call squeue, parse output, and update table **
-        # try:
-        #    cmd = ["squeue", "-u", os.environ.get("USER"), "-o", "%i %j %P %T %M %D"] # Example format
-        #    result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
-        #    output_lines = result.stdout.strip().split('\n')
-        #    headers = output_lines[0].split() # Assuming first line is header
-        #    jobs_data = []
-        #    for line in output_lines[1:]:
-        #        # Parse line based on your squeue format
-        #        parts = line.split() # Simple split, might need regex for complex names
-        #        if len(parts) >= 6: # Basic check
-        #             job = {"id": parts[0], "name": parts[1], "partition": parts[2],
-        #                    "status": parts[3], "time": parts[4], "nodes": parts[5]}
-        #             jobs_data.append(job)
-        #    self.populate_jobs_table(jobs_data)
-        # except Exception as e:
-        #    print(f"Error refreshing job status: {e}")
-        #    # Maybe show an error indicator in the UI
+        ...
 
-        # --- Demo Data ---
-        sample_jobs = [
-            {"id": "123456", "name": "RNA-seq_analysis_long_name_test", "partition": "compute",
-             "status": STATUS_RUNNING, "time": "1:23:45", "nodes": "2"},
-            {"id": "123457", "name": "protein_folding_sim", "partition": "gpu",
-             "status": STATUS_PENDING, "time": "0:00:00", "nodes": "4"},
-            {"id": "123458", "name": "genome_assembly", "partition": "bigmem",
-             "status": STATUS_COMPLETED, "time": "5:37:12", "nodes": "1"},
-            {"id": "123459", "name": "ml_training_job", "partition": "gpu",
-             "status": STATUS_RUNNING, "time": "12:05:22", "nodes": "2"},
-            {"id": "123460", "name": "failed_experiment", "partition": "debug",
-             "status": STATUS_FAILED, "time": "0:01:15", "nodes": "1"},
-        ]
-        # Randomly change status for demo refresh effect
-        for job in sample_jobs:
-            if random.random() < 0.1 and job["status"] == STATUS_PENDING:
-                job["status"] = STATUS_RUNNING
-                job["time"] = "0:00:10"
-            elif random.random() < 0.05 and job["status"] == STATUS_RUNNING:
-                job["status"] = STATUS_COMPLETED
-                job["time"] = f"{random.randint(1, 5)}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
-
-        self.populate_jobs_table(sample_jobs)
-        # self.filter_jobs(self.search_input.text())  # Re-apply filter after refresh
-
-    def refresh_cluster_status(self):
+    def refresh_cluster_jobs_queue(self, queue_jobs=None):
         """Refreshes the cluster status widgets (demo)."""
         print("Refreshing cluster status...")
         # Update the job queue widget
-        try:
-            queue_jobs = self.slurm_connection._fetch_squeue()
-        except ConnectionError as e:
-            print(e)
-            queue_jobs = []
+        if queue_jobs is None:
+            try:
+                queue_jobs = self.slurm_connection._fetch_squeue()
+            except ConnectionError as e:
+                print(e)
+                queue_jobs = []
         if hasattr(self, 'job_queue_widget'):
             self.job_queue_widget.update_queue_status(queue_jobs)
 

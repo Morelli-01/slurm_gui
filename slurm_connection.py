@@ -1,3 +1,4 @@
+import configparser
 import yaml, sys
 import os
 from time import sleep
@@ -22,14 +23,7 @@ JOB_CODES = {
 class SlurmConnection:
     def __init__(self, config_path="slurm_config.yaml"):
         self.config_path = config_path
-        with open(self.config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-
-        ssh_config = self.config.get('ssh', {})
-        self.host = ssh_config.get('host')
-        self.user = ssh_config.get('user')
-        self.password = ssh_config.get('password')
-        self.identity_file = ssh_config.get('identity_file')
+        self.parse_configs(self.config_path)
 
         self.client = None
 
@@ -48,16 +42,22 @@ class SlurmConnection:
         self.gres = []
         self.remote_home = None
 
+    def parse_configs(self, config_path):
+        config = configparser.ConfigParser()
+        config.read(config_path)
+
+        # Access values
+
+        # Get a specific value
+        self.host = config['GeneralSettings']['clusterAddress']
+        self.password = config['GeneralSettings']['psw']
+        self.user = config['GeneralSettings']['username']
+
     def connect(self):
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
-            if self.identity_file and os.path.exists(self.identity_file):
-                self.client.connect(self.host, username=self.user, key_filename=self.identity_file)
-            elif self.password:
-                self.client.connect(self.host, username=self.user, password=self.password)
-            else:
-                raise ValueError("No valid authentication method provided.")
+            self.client.connect(self.host, username=self.user, password=self.password)
             print(f"Connected to {self.host}")
             self._fetch_basic_info()
             self._fetch_submission_options()
@@ -309,7 +309,7 @@ class SlurmConnection:
 
 
 if __name__ == "__main__":
-    sc_ = SlurmConnection("./configs/slurm_config.yaml")
+    sc_ = SlurmConnection("./configs/settings.ini")
     sc_.connect()
     out = sc_._fetch_squeue()
     print(out)

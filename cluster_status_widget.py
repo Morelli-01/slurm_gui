@@ -29,13 +29,24 @@ COLOR_BLUE = "#8be9fd"     # Completed/Stopped status (Dracula Cyan)
 COLOR_AVAILABLE = "#4CAF50"     # Green for Available
 COLOR_USED = "#2196F3"          # Blue for Used
 COLOR_UNAVAILABLE = "#F44336"   # Red for Unavailable (Drain/Down/Unknown)
+COLOR_USED_BY_STUD = "#00AAAA"
+COLOR_USED_PROD = "#AA00AA"
 
 # Mapping internal states to colors
 BLOCK_COLOR_MAP = {
     "available": COLOR_AVAILABLE,    # Available GPU on IDLE node
     "used": COLOR_USED,         # Used GPU on ALLOCATED/MIXED node
-    "unavailable": COLOR_UNAVAILABLE  # GPU on DRAIN/DOWN/UNKNOWN node
+    "unavailable": COLOR_UNAVAILABLE,  # GPU on DRAIN/DOWN/UNKNOWN node
+    "stud_used": COLOR_USED,
+    "prod_used": COLOR_USED_PROD,
 }
+
+STUDENTS_JOBS_KEYWORD = [
+    "tesi",
+    "cvcs",
+    "ai4bio"
+]
+
 
 # --- Helper Functions ---
 
@@ -86,6 +97,14 @@ def get_dark_theme_stylesheet():
         QWidget#coloredBlock[data-state="unavailable"] {{
             background-color: {BLOCK_COLOR_MAP['unavailable']};
             border: 1px solid {BLOCK_COLOR_MAP['unavailable']};
+        }}
+        QWidget#coloredBlock[data-state="stud_used"] {{
+            background-color: {BLOCK_COLOR_MAP['stud_used']};
+            border: 1px solid {BLOCK_COLOR_MAP['stud_used']};
+        }}
+        QWidget#coloredBlock[data-state="prod_used"] {{
+            background-color: {BLOCK_COLOR_MAP['prod_used']};
+            border: 1px solid {BLOCK_COLOR_MAP['prod_used']};
         }}
         QGroupBox {{
                 border: 2px solid {COLOR_DARK_BORDER};
@@ -199,17 +218,7 @@ class ClusterStatusWidget(QWidget):
 
         self.main_layout.addLayout(self.user_status_grid_layout)  # Add the grid layout to main layout
 
-        # self.add_separator() # Removed from here
-        # self.create_status_key_section() # Removed from here
-        # self.add_separator()
-        # self.create_overall_stats_section()
-
         self.main_layout.addStretch()  # Push content to the top
-
-        # Setup timer for periodic updates
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.fetch_and_update_status)
-        self.timer.start(REFRESH_INTERVAL_MS)
 
         # Initial data fetch and update
         if slurm_connection is None:
@@ -217,7 +226,6 @@ class ClusterStatusWidget(QWidget):
             self.sc_.connect()
         else:
             self.sc_ = slurm_connection
-        self.fetch_and_update_status()
 
     def add_separator(self):
         separator = QFrame()
@@ -236,7 +244,9 @@ class ClusterStatusWidget(QWidget):
         # status_key_layout.addWidget(section_title)
 
         key_items = [
-            ("used", "Used GPU"),
+            # ("used", "Used GPU"),
+            ("prod_used", "Used GPU for prod"),
+            ("stud_used", "Used GPU by stud"),
             ("available", "Available GPU"),
             ("unavailable", "Unavailable Node/GPU"),
         ]
@@ -307,34 +317,6 @@ class ClusterStatusWidget(QWidget):
         # users_text = "User GPU Usage:\n" + "\n".join([f"{user}: {count}" for user, count in sorted_users])
         # self.overall_stats_labels["users_stats"].setText(users_text)
 
-    def fetch_and_update_status(self):
-        """
-        Fetches the latest cluster status data and updates the visualization.
-        This now uses the slurm_connection module.
-        """
-        print("Fetching cluster status...")  # Debug print
-
-        # --- Actual Data Fetching ---
-        # Using the provided slurm_connection module
-        # Assuming slurm_config.yaml is in the correct path relative to where the script is run
-        try:
-            nodes_data = self.sc_._fetch_nodes_infos()  # Fetch node information
-        except ConnectionError as e:
-            print(e)
-            nodes_data = []
-        # You might need another method in slurm_connection to get per-user GPU usage
-        # For now, we'll use a simplified calculation based on node data
-        # If you have a method like sc_._fetch_user_gpu_usage(), use it here.
-        # user_gpu_usage_data = sc_._fetch_user_gpu_usage() # Example
-
-        self.update_status(nodes_data)
-        # --- Calculate and Update Stats ---
-        # Calculate stats based on fetched nodes_data
-        stats_data = self.calculate_overall_stats(nodes_data)
-        # If you fetched user_gpu_usage_data separately, merge it into stats_data
-        # stats_data["user_gpu_counts"] = process_user_gpu_usage_data(user_gpu_usage_data) # Example
-        self.update_overall_stats(stats_data)
-
     def calculate_overall_stats(self, nodes_data):
         """
         Calculates overall statistics from the nodes data.
@@ -378,7 +360,7 @@ class ClusterStatusWidget(QWidget):
             "user_gpu_counts": user_gpu_counts  # This needs refinement with squeue data
         }
 
-    def update_status(self, nodes_data):
+    def update_status(self, nodes_data, jobs_data):
         """
         Updates the visualization based on the provided scontrol show nodes data
         using a QGridLayout for better alignment.
@@ -402,10 +384,7 @@ class ClusterStatusWidget(QWidget):
         # This helps in setting column stretches correctly
         max_gpu_count = 0
         for node_info in nodes_data:
-            gres = node_info.get("Gres", "")
-            gres_match = re.search(r'gpu:[\w_]+:(\d+)', gres)
-            if gres_match:
-                max_gpu_count = max(max_gpu_count, int(gres_match.group(1)))
+            max_gpu_count = max(int(node_info.get("total_gres/gpu", 0)), max_gpu_count)
 
         # Populate with new data
         row_offset = 0
@@ -467,12 +446,10 @@ class ClusterStatusWidget(QWidget):
 
             if "total_gres/gpu" in node_info.keys():
                 total_gpus = int(node_info.get("total_gres/gpu", ""))
-                self.total_gpu += total_gpus
             else:
                 total_gpus = 0
             if "alloc_gres/gpu" in node_info.keys():
                 used_gpus = int(node_info.get("alloc_gres/gpu", ""))
-                self.total_gpu_used += used_gpus
             else:
                 used_gpus = 0
 
@@ -487,7 +464,17 @@ class ClusterStatusWidget(QWidget):
                 block_states = ["unavailable"] * total_gpus
             # Then check for allocated/mixed
             elif "ALLOCATED" in state or "MIXED" in state:
-                block_states = ["used"] * used_gpus + ["available"] * (total_gpus - used_gpus)
+                filtered_jobs = [job for job in jobs_data if node_info["NodeName"] == job.get("Nodelist", "")]
+                stud_used = 0
+                prod_used = 0
+                for job in filtered_jobs:
+                    for k in STUDENTS_JOBS_KEYWORD:
+                        if k in job["Account"]:
+                            stud_used += int(job["GPUs"])
+
+                block_states = ["stud_used"] * stud_used + ["prod_used"] * \
+                    (used_gpus - stud_used) + ["available"] * (total_gpus - used_gpus)
+                # block_states = ["used"] * used_gpus + ["available"] * (total_gpus - used_gpus)
             # Finally, assume idle if none of the above
             elif "IDLE" in state:
                 block_states = ["available"] * total_gpus

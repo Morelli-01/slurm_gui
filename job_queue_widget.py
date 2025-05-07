@@ -23,35 +23,34 @@ STATUS_PREEMPTED = "PREEMPTED"
 STATUS_SUSPENDED = "SUSPENDED"
 STATUS_STOPPED = "STOPPED"
 
-# Updated Color Palette (A more vibrant, modern dark theme inspired by Dracula/Nord)
-COLOR_DARK_BG = "#282a36"  # Dark background
-COLOR_DARK_FG = "#f8f8f2"  # Foreground text color
-COLOR_DARK_BG_ALT = "#383a59"  # Alternate row background
-COLOR_DARK_BG_HOVER = "#44475a"  # Hover color
-COLOR_DARK_BORDER = "#6272a4"  # Border/Grid color
-COLOR_GREEN = "#50fa7b"    # Running status (Dracula Green)
-COLOR_RED = "#ff5555"      # Failed/Preempted status (Dracula Red)
-COLOR_ORANGE = "#ffb86c"   # Pending/Completing/Suspended status (Dracula Orange)
-COLOR_BLUE = "#8be9fd"     # Completed/Stopped status (Dracula Cyan)
-COLOR_GRAY = "#6272a4"     # Default text color for non-status fields (Dracula Purple/Gray)
+# Updated Color Palette
+COLOR_DARK_BG = "#282a36"
+COLOR_DARK_FG = "#f8f8f2"
+COLOR_DARK_BG_ALT = "#383a59"
+COLOR_DARK_BG_HOVER = "#44475a"
+COLOR_DARK_BORDER = "#6272a4"
+COLOR_GREEN = "#50fa7b"
+COLOR_RED = "#ff5555"
+COLOR_ORANGE = "#ffb86c"
+COLOR_BLUE = "#8be9fd"
+COLOR_GRAY = "#6272a4"
 
 
 class JobQueueWidget(QGroupBox):
     """
-    A widget to display the current job queue with enhanced styling.
+    A widget to display the current job queue with enhanced styling
+    and filtering capabilities across all job data fields.
     """
 
     def __init__(self, parent=None):
         super().__init__("Job Queue", parent)
         self.displayable_fields = {}
-        self.current_jobs_data = []  # Store current job data
+        self.current_jobs_data = []  # Store current raw job data
 
-        # --- Added for sort persistence ---
         self._sorted_by_field_name = None
-        self._sorted_by_order = None  # Qt.SortOrder
-        # --- End of addition ---
+        self._sorted_by_order = None
 
-        self.load_settings()  # Load settings to populate displayable_fields
+        self.load_settings()
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
@@ -59,33 +58,29 @@ class JobQueueWidget(QGroupBox):
 
         self.queue_table = QTableWidget()
 
-        # Apply overall widget styling
         self.setStyleSheet(f"""
             QGroupBox {{
                 border: 2px solid {COLOR_DARK_BORDER};
                 border-radius: 8px;
-                margin-top: 10px; /* Space for title */
+                margin-top: 10px;
                 font-size: 16px;
                 font-weight: bold;
                 color: {COLOR_DARK_FG};
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
-                subcontrol-position: top left; /* Position title */
+                subcontrol-position: top left;
                 padding: 0 3px;
-                background-color: {COLOR_DARK_BG}; /* Match background */
+                background-color: {COLOR_DARK_BG};
                 color: {COLOR_DARK_FG};
                 margin-left: 5px;
             }}
         """)
 
-        self._setup_table()  # Initial table setup based on loaded settings
-
+        self._setup_table()
         self.layout.addWidget(self.queue_table)
-
         self.setMinimumHeight(200)
 
-        # Set palette for consistent dark mode appearance
         palette = self.palette()
         palette.setColor(QPalette.ColorRole.Window, QColor(COLOR_DARK_BG))
         palette.setColor(QPalette.ColorRole.WindowText, QColor(COLOR_DARK_FG))
@@ -96,15 +91,15 @@ class JobQueueWidget(QGroupBox):
         palette.setColor(QPalette.ColorRole.Text, QColor(COLOR_DARK_FG))
         palette.setColor(QPalette.ColorRole.Button, QColor(COLOR_DARK_BG_ALT))
         palette.setColor(QPalette.ColorRole.ButtonText, QColor(COLOR_DARK_FG))
-        palette.setColor(QPalette.ColorRole.BrightText, QColor(COLOR_GREEN))  # Example bright text
-        palette.setColor(QPalette.ColorRole.Link, QColor(COLOR_BLUE))  # Example link color
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(COLOR_DARK_BG_HOVER))  # Selection background
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(COLOR_DARK_FG))  # Selection text color
+        palette.setColor(QPalette.ColorRole.BrightText, QColor(COLOR_GREEN))
+        palette.setColor(QPalette.ColorRole.Link, QColor(COLOR_BLUE))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(COLOR_DARK_BG_HOVER))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(COLOR_DARK_FG))
         self.setPalette(palette)
         self.jobs_filter_text = ""
+        self.jobs_filter_list = []  # For filter_table_by_list
 
     def _setup_table(self):
-        """Sets up the table columns and headers based on current settings with styling."""
         self.visible_fields = [field for field in JOB_QUEUE_FIELDS if self.displayable_fields.get(field, False)]
 
         self.queue_table.setColumnCount(len(self.visible_fields))
@@ -114,7 +109,6 @@ class JobQueueWidget(QGroupBox):
         self.queue_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.queue_table.verticalHeader().setVisible(False)
 
-        # Apply table specific styling
         self.queue_table.setStyleSheet(f"""
             QTableWidget {{
                 background-color: {COLOR_DARK_BG};
@@ -131,11 +125,11 @@ class JobQueueWidget(QGroupBox):
                 color: {COLOR_DARK_FG};
                 padding: 5px;
                 border: 1px solid {COLOR_DARK_BORDER};
-                border-bottom: 2px solid {COLOR_BLUE}; /* Highlight bottom border */
+                border-bottom: 2px solid {COLOR_BLUE};
                 font-weight: bold;
             }}
             QTableWidget::item {{
-                padding: 5px; /* Add some padding to items */
+                padding: 5px;
             }}
             QTableWidget::item:selected {{
                 background-color: {COLOR_DARK_BG_HOVER};
@@ -144,7 +138,6 @@ class JobQueueWidget(QGroupBox):
         """)
 
         header = self.queue_table.horizontalHeader()
-        # Dynamically set resize mode based on visible fields
         for i, field in enumerate(self.visible_fields):
             if field == "Job Name":
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
@@ -156,84 +149,52 @@ class JobQueueWidget(QGroupBox):
         else:
             header.setStretchLastSection(False)
 
-        # --- Added for sort persistence ---
-        header.setSectionsClickable(True)  # Ensure clickable
-        try:  # Disconnect first to avoid multiple connections if _setup_table is called multiple times
+        header.setSectionsClickable(True)
+        try:
             header.sortIndicatorChanged.disconnect(self._on_sort_indicator_changed)
-        except TypeError:  # No connection existed
+        except TypeError:
             pass
         header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
-        # --- End of addition ---
 
-    # --- Added for sort persistence ---
     def _on_sort_indicator_changed(self, logical_index: int, order: Qt.SortOrder):
-        """
-        Callback when the user clicks a header to sort. Stores the sort preference.
-        """
         if 0 <= logical_index < len(self.visible_fields):
             self._sorted_by_field_name = self.visible_fields[logical_index]
             self._sorted_by_order = order
-            # print(f"User sorted by: {self._sorted_by_field_name}, Order: {self._sorted_by_order}")
         else:
-            # This case can happen if sort is cleared programmatically (e.g., set to -1)
             self._sorted_by_field_name = None
             self._sorted_by_order = None
-            # print("Sort indicator cleared or invalid index.")
-    # --- End of addition ---
 
     def update_queue_status(self, jobs_data):
         """
         Populates the job queue table with data for visible fields, applying status coloring.
-        Takes a list of job dictionaries as input.
+        Stores the original index of the job data in each table item's UserRole
+        to enable filtering on all job attributes (visible or not).
         Re-applies the current filter after updating.
         """
-        self.current_jobs_data = jobs_data
+        self.current_jobs_data = list(jobs_data)  # Keep a copy of the raw data
 
-        self.queue_table.setSortingEnabled(False)  # Disable sorting during population
-        self.queue_table.setRowCount(0)  # Clear existing rows
+        self.queue_table.setSortingEnabled(False)
+        self.queue_table.setRowCount(0)
 
-        for row, job in enumerate(jobs_data):
-            self.queue_table.insertRow(row)
-            column = 0
-            for field in self.visible_fields:
-                item_text = str(job.get(field, "N/A"))
+        for original_job_index, job_dict in enumerate(self.current_jobs_data):
+            current_table_row = self.queue_table.rowCount()
+            self.queue_table.insertRow(current_table_row)
+
+            for col_idx, field_name in enumerate(self.visible_fields):
+                item_text = str(job_dict.get(field_name, "N/A"))
                 item = QTableWidgetItem(item_text)
 
-                # Apply text color based on status for the 'Status' column
-                if field == "Status":
-                    status = job.get("Status", "").upper()
-                    color = QColor(COLOR_DARK_FG)  # Default color
+                # Store the original index from self.current_jobs_data.
+                # This allows filter functions to retrieve the full job_dict for this row,
+                # regardless of sorting or which columns are currently visible.
+                item.setData(Qt.ItemDataRole.UserRole, original_job_index)
 
-                    if status == STATUS_RUNNING:
-                        color = QColor(COLOR_GREEN)
-                    elif status == STATUS_PENDING:
-                        color = QColor(COLOR_ORANGE)
-                    elif status == STATUS_COMPLETED:
-                        color = QColor(COLOR_BLUE)
-                    elif status == STATUS_FAILED:
-                        color = QColor(COLOR_RED)
-                    elif status == STATUS_COMPLETING:
-                        color = QColor(COLOR_ORANGE)
-                    elif status == STATUS_PREEMPTED:
-                        color = QColor(COLOR_RED)
-                    elif status == STATUS_SUSPENDED:
-                        color = QColor(COLOR_ORANGE)
-                    elif status == STATUS_STOPPED:
-                        color = QColor(COLOR_BLUE)
-
-                    item.setForeground(QBrush(color))  # Use QBrush for color
-
-                # Set alternating row colors
-                if row % 2 == 0:
-                    item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
-                else:
-                    item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-
-                # Ensure text color is set for all items, not just status
+                # Default foreground for all items
                 item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
-                if field == "Status":  # Re-apply status color if it's the status column
-                    status = job.get("Status", "").upper()
-                    color = QColor(COLOR_DARK_FG)
+
+                if field_name == "Status":
+                    status = job_dict.get("Status", "").upper()
+                    color = QColor(COLOR_DARK_FG)  # Default
                     if status == STATUS_RUNNING:
                         color = QColor(COLOR_GREEN)
                     elif status == STATUS_PENDING:
@@ -252,12 +213,15 @@ class JobQueueWidget(QGroupBox):
                         color = QColor(COLOR_BLUE)
                     item.setForeground(QBrush(color))
 
-                self.queue_table.setItem(row, column, item)
-                column += 1
+                if current_table_row % 2 == 0:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
+                else:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
 
-        self.queue_table.setSortingEnabled(True)  # Re-enable sorting
+                self.queue_table.setItem(current_table_row, col_idx, item)
 
-        # --- Modified for sort persistence ---
+        self.queue_table.setSortingEnabled(True)
+
         applied_user_sort = False
         if self._sorted_by_field_name and self._sorted_by_order is not None:
             if self._sorted_by_field_name in self.visible_fields:
@@ -266,108 +230,274 @@ class JobQueueWidget(QGroupBox):
                     self.queue_table.sortItems(column_index_to_sort, self._sorted_by_order)
                     applied_user_sort = True
                 except ValueError:
-                    # This should not happen if self._sorted_by_field_name in self.visible_fields
-                    # print(f"Error: Could not find column for sorted field '{self._sorted_by_field_name}'")
-                    pass  # Fall through to default sort
-            # else:
-                # print(f"Previously sorted field '{self._sorted_by_field_name}' is no longer visible. Applying default sort.")
-                # Sorted field is not visible, fall through to default sort
+                    pass
 
         if not applied_user_sort:
-            # Apply original default sort logic if no user sort was applied or applicable
-            # Note: The original code's double sortItems call means the *last* one effectively
-            # becomes the primary sort key if both columns are visible.
-            # We replicate that behavior here.
-            # These calls will trigger _on_sort_indicator_changed, updating the "last sorted" state.
             try:
                 user_column_index = self.visible_fields.index("User")
                 self.queue_table.sortItems(user_column_index, Qt.SortOrder.AscendingOrder)
             except ValueError:
-                pass  # User column not visible
-
+                pass
             try:
                 status_column_index = self.visible_fields.index("Status")
                 self.queue_table.sortItems(status_column_index, Qt.SortOrder.DescendingOrder)
             except ValueError:
-                pass  # Status column not visible
-        # --- End of modification ---
+                pass
 
-        # --- Add this block to re-apply the filter after updating ---
-        current_filter_text = self.jobs_filter_text
-        if current_filter_text:  # Only apply filter if the text box is not empty
-            self.filter_table(current_filter_text)
-        # --- End of added block ---
+        # Re-apply the last used filter.
+        # This assumes either jobs_filter_text or jobs_filter_list was active.
+        # You might want a more sophisticated way to track the "active" filter type.
+        if self.jobs_filter_text:
+            self.filter_table(self.jobs_filter_text)
+        elif self.jobs_filter_list:  # Check if list filter was active
+            self.filter_table_by_list(self.jobs_filter_list)
 
     def load_settings(self):
-        """Loads settings from QSettings."""
-
-        # Using the original path structure
         self.settings = QSettings(str(Path("./configs/settings.ini")), QSettings.Format.IniFormat)
-
-        self.settings.beginGroup("AppearenceSettings")  # Original spelling
+        self.settings.beginGroup("AppearenceSettings")
         for field in JOB_QUEUE_FIELDS:
             self.displayable_fields[field] = self.settings.value(field, True, type=bool)
-
         self.settings.endGroup()
 
     def reload_settings_and_redraw(self):
-        """
-        Reloads display settings and redraws the widget with the current data
-        based on the new settings.
-        """
-        print("--- Reloading settings and redrawing widget ---")
-        self.load_settings()  # Re-load settings
-
-        # --- Added for sort persistence: Check if sorted field is still visible ---
-        # Determine what fields will be visible *after* loading settings
+        self.load_settings()
         newly_visible_fields = [field for field in JOB_QUEUE_FIELDS if self.displayable_fields.get(field, False)]
         if self._sorted_by_field_name and self._sorted_by_field_name not in newly_visible_fields:
-            # print(f"Sorted field '{self._sorted_by_field_name}' will be hidden. Resetting sort.")
             self._sorted_by_field_name = None
             self._sorted_by_order = None
-            # The sort indicator will be cleared/updated by update_queue_status or if no data, below
-        # --- End of addition ---
 
-        self.queue_table.setSortingEnabled(False)  # Disable sorting before clearing
-        self.queue_table.clear()  # Clear existing content and headers
-        self._setup_table()  # Setup table with new column configuration
+        self.queue_table.setSortingEnabled(False)
+        self.queue_table.clear()
+        self._setup_table()
 
-        # Repopulate with current data if available
         if self.current_jobs_data:
-            self.update_queue_status(self.current_jobs_data)  # This will handle applying sort
+            self.update_queue_status(self.current_jobs_data)
         else:
-            # If no data, but a sort order was remembered for a now-visible column, set the indicator
-            self.queue_table.setSortingEnabled(True)  # Must be enabled to show indicator
+            self.queue_table.setSortingEnabled(True)
             if self._sorted_by_field_name and self._sorted_by_field_name in self.visible_fields and self._sorted_by_order is not None:
                 try:
                     idx = self.visible_fields.index(self._sorted_by_field_name)
                     self.queue_table.horizontalHeader().setSortIndicator(idx, self._sorted_by_order)
-                except ValueError:  # Should not happen
-                    self.queue_table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)  # Clear
-            else:  # Clear sort indicator if no valid remembered sort or no data
+                except ValueError:
+                    self.queue_table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
+            else:
                 self.queue_table.horizontalHeader().setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-
-        print("--- Widget redraw complete ---")
 
     def filter_table(self, filter_text: str):
         """
-        Filters the table rows to show only those that contain the filter_text
-        in any visible column.
+        Filters table rows. Shows a row if filter_text is found in ANY field
+        (visible or not) of the corresponding job's data.
         """
-        # Ensure filter_text is a string and handle case-insensitivity
         filter_text = str(filter_text).lower()
         self.jobs_filter_text = filter_text
-        # Iterate through all rows
-        for row in range(self.queue_table.rowCount()):
-            row_matches = False
-            # Iterate through all visible columns for the current row
-            for col in range(self.queue_table.columnCount()):
-                item = self.queue_table.item(row, col)
-                if item is not None:
-                    # Get item text and check if filter_text is a substring (case-insensitive)
-                    if filter_text in item.text().lower():
-                        row_matches = True
-                        break  # Found a match in this row, no need to check other columns
+        self.jobs_filter_list = []  # Clear list filter when text filter is used
 
-            # Set the row visibility based on whether a match was found
-            self.queue_table.setRowHidden(row, not row_matches)
+        # If no actual data or no columns are displayed, effectively hide all rows or do nothing.
+        if not self.current_jobs_data or self.queue_table.columnCount() == 0:
+            for r_idx in range(self.queue_table.rowCount()):
+                self.queue_table.setRowHidden(r_idx, True)  # Hide if no data to reference
+            return
+
+        for table_row_idx in range(self.queue_table.rowCount()):
+            # Retrieve the first item in the current table row to get the UserRole data.
+            # This item should contain the original index of the job in self.current_jobs_data.
+            first_item_in_row = self.queue_table.item(table_row_idx, 0)
+
+            if not first_item_in_row:
+                # This case should ideally not happen if rows are populated correctly and columns exist.
+                self.queue_table.setRowHidden(table_row_idx, True)  # Hide if no item to get data from
+                continue
+
+            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
+
+            if original_job_idx is None or \
+               not (0 <= original_job_idx < len(self.current_jobs_data)):
+                # If UserRole data is missing or index is out of bounds for current_jobs_data
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            job_data_dict = self.current_jobs_data[original_job_idx]
+
+            row_should_be_visible = False
+            if not filter_text:  # If filter_text is empty, all rows are visible
+                row_should_be_visible = True
+            else:
+                # Iterate through ALL fields of the job_data_dict (from JOB_QUEUE_FIELDS)
+                for field_key in JOB_QUEUE_FIELDS:
+                    field_value_obj = job_data_dict.get(field_key)
+                    if field_value_obj is not None:
+                        field_value_str_lower = str(field_value_obj).lower()
+                        if filter_text in field_value_str_lower:
+                            row_should_be_visible = True
+                            break  # Match found in this job, no need to check other fields
+
+            self.queue_table.setRowHidden(table_row_idx, not row_should_be_visible)
+
+    def filter_table_by_list(self, filter_list: list):
+        """
+        Filters table rows. Shows a row if any string from filter_list is found
+        in ANY field (visible or not) of the corresponding job's data.
+        """
+        if not isinstance(filter_list, list):
+            processed_filter_list = []
+        else:
+            # Convert all filter strings to lowercase and remove empty/None items
+            processed_filter_list = [str(f).lower() for f in filter_list if f and str(f).strip()]
+
+        self.jobs_filter_list = processed_filter_list  # Store for potential re-application
+        self.jobs_filter_text = ""  # Clear text filter when list filter is used
+
+        if not self.current_jobs_data or self.queue_table.columnCount() == 0:
+            for r_idx in range(self.queue_table.rowCount()):
+                self.queue_table.setRowHidden(r_idx, True)
+            return
+
+        for table_row_idx in range(self.queue_table.rowCount()):
+            first_item_in_row = self.queue_table.item(table_row_idx, 0)
+
+            if not first_item_in_row:
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
+
+            if original_job_idx is None or \
+               not (0 <= original_job_idx < len(self.current_jobs_data)):
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            job_data_dict = self.current_jobs_data[original_job_idx]
+
+            row_should_be_visible = False
+            if not processed_filter_list:  # If filter list is empty, all rows are visible
+                row_should_be_visible = True
+            else:
+                # Iterate through ALL fields of the job_data_dict
+                for field_key in JOB_QUEUE_FIELDS:
+                    field_value_obj = job_data_dict.get(field_key)
+                    if field_value_obj is not None:
+                        field_value_str_lower = str(field_value_obj).lower()
+                        # Check if any string in the processed_filter_list is a substring
+                        for filter_item_lower in processed_filter_list:
+                            if filter_item_lower in field_value_str_lower:
+                                row_should_be_visible = True
+                                break  # Match found for this filter item
+                    if row_should_be_visible:
+                        break  # Match found for this job_data field
+
+            self.queue_table.setRowHidden(table_row_idx, not row_should_be_visible)
+
+    def filter_negative_table_by_list(self, filter_list: list):
+        """
+        Filters table rows. Shows a row if any string from filter_list is found
+        in ANY field (visible or not) of the corresponding job's data.
+        """
+        if not isinstance(filter_list, list):
+            processed_filter_list = []
+        else:
+            # Convert all filter strings to lowercase and remove empty/None items
+            processed_filter_list = [str(f).lower() for f in filter_list if f and str(f).strip()]
+
+        self.jobs_filter_list = processed_filter_list  # Store for potential re-application
+        self.jobs_filter_text = ""  # Clear text filter when list filter is used
+
+        if not self.current_jobs_data or self.queue_table.columnCount() == 0:
+            for r_idx in range(self.queue_table.rowCount()):
+                self.queue_table.setRowHidden(r_idx, True)
+            return
+
+        for table_row_idx in range(self.queue_table.rowCount()):
+            first_item_in_row = self.queue_table.item(table_row_idx, 0)
+
+            if not first_item_in_row:
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
+
+            if original_job_idx is None or \
+               not (0 <= original_job_idx < len(self.current_jobs_data)):
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            job_data_dict = self.current_jobs_data[original_job_idx]
+
+            row_should_be_visible = False
+            if not processed_filter_list:  # If filter list is empty, all rows are visible
+                row_should_be_visible = True
+            else:
+                # Iterate through ALL fields of the job_data_dict
+                for field_key in JOB_QUEUE_FIELDS:
+                    field_value_obj = job_data_dict.get(field_key)
+                    if field_value_obj is not None:
+                        field_value_str_lower = str(field_value_obj).lower()
+                        # Check if any string in the processed_filter_list is a substring
+                        for filter_item_lower in processed_filter_list:
+                            if filter_item_lower in field_value_str_lower:
+                                row_should_be_visible = True
+                                break  # Match found for this filter item
+                    if row_should_be_visible:
+                        break  # Match found for this job_data field
+
+            self.queue_table.setRowHidden(table_row_idx, not row_should_be_visible)
+
+    def filter_table_by_negative_keywords(self, negative_keyword_list: list):
+        """
+        Filters table rows. Hides a row if any string from negative_keyword_list
+        is found in ANY field (visible or not) of the corresponding job's data.
+        Otherwise, the row is shown. If the negative_keyword_list is empty, all rows are shown.
+        """
+        if not isinstance(negative_keyword_list, list):
+            processed_negative_list = []
+        else:
+            # Convert all filter strings to lowercase and remove empty/None items
+            processed_negative_list = [str(f).lower() for f in negative_keyword_list if f and str(f).strip()]
+
+        self.jobs_negative_filter_list = processed_negative_list
+        self.jobs_filter_text = ""  # Clear text filter
+        self.jobs_filter_list = []  # Clear list filter
+
+        # If no actual data or no columns are displayed, hide all rows that might exist.
+        # This is consistent with other filter methods.
+        if not self.current_jobs_data or self.queue_table.columnCount() == 0:
+            for r_idx in range(self.queue_table.rowCount()):
+                self.queue_table.setRowHidden(r_idx, True)
+            return
+
+        for table_row_idx in range(self.queue_table.rowCount()):
+            # Retrieve the first item in the current table row to get the UserRole data.
+            first_item_in_row = self.queue_table.item(table_row_idx, 0)
+
+            if not first_item_in_row:
+                # This case should ideally not happen if rows are populated correctly and columns exist.
+                self.queue_table.setRowHidden(table_row_idx, True)  # Hide if no item to get data from
+                continue
+
+            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
+
+            if original_job_idx is None or \
+               not (0 <= original_job_idx < len(self.current_jobs_data)):
+                # If UserRole data is missing or index is out of bounds for current_jobs_data
+                self.queue_table.setRowHidden(table_row_idx, True)
+                continue
+
+            job_data_dict = self.current_jobs_data[original_job_idx]
+
+            row_should_be_hidden = False  # Default to not hidden (i.e., visible)
+
+            # Only perform checks if there are actual negative keywords to process
+            if processed_negative_list:
+                # Iterate through ALL fields of the job_data_dict (from JOB_QUEUE_FIELDS)
+                for field_key in JOB_QUEUE_FIELDS:
+                    field_value_obj = job_data_dict.get(field_key)
+                    if field_value_obj is not None:
+                        field_value_str_lower = str(field_value_obj).lower()
+                        # Check if any string in the processed_negative_list is a substring
+                        for negative_item_lower in processed_negative_list:
+                            if negative_item_lower in field_value_str_lower:
+                                row_should_be_hidden = True  # Found a negative keyword, so hide the row
+                                break  # Found a match with a negative keyword, no need to check other negative keywords
+                    if row_should_be_hidden:
+                        break  # Row is already marked to be hidden, no need to check other fields
+
+            self.queue_table.setRowHidden(table_row_idx, row_should_be_hidden)
