@@ -1,0 +1,85 @@
+JOB_QUEUE_FIELDS = [
+    "Job ID", "Job Name", "User",
+    "Account", "Priority", "Status",
+    "Time Used", "Partition", "CPUs",
+    "Time Limit", "Reason", "RAM",
+    "GPUs", "Nodelist"
+]
+
+STUDENTS_JOBS_KEYWORD = [
+    "tesi",
+    "cvcs",
+    "ai4bio"
+]
+
+BTN_GREEN = "btnGreen"
+BTN_RED = "btnRed"
+BTN_BLUE = "btnBlue"
+
+THEME_DARK = "Dark"
+THEME_LIGHT = "Light"
+
+# SLURM Statuses
+STATUS_RUNNING = "RUNNING"
+STATUS_PENDING = "PENDING"
+STATUS_COMPLETED = "COMPLETED"
+STATUS_FAILED = "FAILED"
+STATUS_COMPLETING = "COMPLETING"
+STATUS_PREEMPTED = "PREEMPTED"
+STATUS_SUSPENDED = "SUSPENDED"
+STATUS_STOPPED = "STOPPED"
+
+
+# Colors (Catppuccin Macchiato inspired for Dark, simple Light)
+# COLOR_DARK_BG = "#1e1e2f"
+# COLOR_DARK_FG = "#f8f8f2"
+# COLOR_DARK_BG_ALT = "#2e2e3f"
+# COLOR_DARK_BG_HOVER = "#3e3e5f"
+# COLOR_DARK_BORDER = "#44475a"
+# COLOR_GREEN = "#50fa7b"  # Brighter Green
+# COLOR_RED = "#ff5555"   # Brighter Red
+# COLOR_BLUE = "#2196F3"  # Brighter Blue
+# COLOR_ORANGE = "#ffb86c"  # Brighter Orange
+# COLOR_GRAY = "#6272a4"   # Gray (Unknown/Offline) - Was Blue
+
+# general colors
+
+COLOR_LIGHT_BG = "#eff1f5"  # Light Background
+COLOR_LIGHT_FG = "#4c4f69"  # Light Foreground
+COLOR_LIGHT_BG_ALT = "#ccd0da"  # Light Alt Background
+COLOR_LIGHT_BG_HOVER = "#bcc0cc"  # Light Hover
+COLOR_LIGHT_BORDER = "#bcc0cc"  # Light Border
+
+COLOR_DARK_BG = "#282a36"
+COLOR_DARK_FG = "#f8f8f2"
+COLOR_DARK_BG_ALT = "#383a59"
+COLOR_DARK_BG_HOVER = "#44475a"
+COLOR_DARK_BORDER = "#6272a4"
+COLOR_GREEN = "#50fa7b"
+COLOR_RED = "#ff5555"
+COLOR_ORANGE = "#ffb86c"
+COLOR_BLUE = "#8be9fd"
+COLOR_GRAY = "#6272a4"
+
+# color for thw cluster status widget
+COLOR_AVAILABLE = "#4CAF50"     # Green for Available
+COLOR_USED = "#2196F3"          # Blue for Used
+COLOR_UNAVAILABLE = "#F44336"   # Red for Unavailable (Drain/Down/Unknown)
+COLOR_USED_BY_STUD = "#00AAAA"
+COLOR_USED_PROD = "#AA00AA"
+COLOR_MID_CONSTRAINT = "#EBC83F"
+COLOR_UNAVAILABLE_RAM = "#d41406"
+COLOR_MID_CONSTRAINT_RAM = "#dba021"
+
+# Mapping internal states to colors
+BLOCK_COLOR_MAP = {
+    "available": COLOR_AVAILABLE,    # Available GPU on IDLE node
+    "used": COLOR_USED,         # Used GPU on ALLOCATED/MIXED node
+    "unavailable": COLOR_UNAVAILABLE,  # GPU on DRAIN/DOWN/UNKNOWN node
+    "stud_used": COLOR_USED,
+    "prod_used": COLOR_USED_PROD,
+    "high-constraint": COLOR_UNAVAILABLE,
+    "mid-constraint": COLOR_MID_CONSTRAINT,
+    "high-constraint-ram_cpu": COLOR_UNAVAILABLE_RAM,
+    "mid-constraint-ram_cpu": COLOR_MID_CONSTRAINT_RAM,
+}

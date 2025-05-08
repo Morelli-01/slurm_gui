@@ -1,4 +1,5 @@
 from pathlib import Path
+from modules.settings_widget import SettingsWidget
 import sys, slurm_connection
 
 from networkx import nodes
@@ -13,9 +14,9 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from utils import *
-from job_queue_widget import JobQueueWidget
-import cluster_status_widget
-
+from modules.job_queue_widget import JobQueueWidget
+import modules.cluster_status_widget as cluster_status_widget
+from modules.defaults import *
 # --- Constants ---
 APP_TITLE = "SLURM Job Manager"
 MIN_WIDTH = 1600
@@ -23,26 +24,7 @@ MIN_HEIGHT = 900
 REFRESH_INTERVAL_MS = 5000  # 10 seconds
 
 # Theme Keys
-THEME_DARK = "Dark"
-THEME_LIGHT = "Light"
 
-# Colors (Catppuccin Macchiato inspired for Dark, simple Light)
-COLOR_DARK_BG = "#1e1e2f"
-COLOR_DARK_FG = "#f8f8f2"
-COLOR_DARK_BG_ALT = "#2e2e3f"
-COLOR_DARK_BG_HOVER = "#3e3e5f"
-COLOR_DARK_BORDER = "#44475a"
-COLOR_GREEN = "#50fa7b"  # Brighter Green
-COLOR_RED = "#ff5555"   # Brighter Red
-COLOR_BLUE = "#2196F3"  # Brighter Blue
-COLOR_ORANGE = "#ffb86c"  # Brighter Orange
-COLOR_GRAY = "#6272a4"   # Gray (Unknown/Offline) - Was Blue
-
-COLOR_LIGHT_BG = "#eff1f5"  # Light Background
-COLOR_LIGHT_FG = "#4c4f69"  # Light Foreground
-COLOR_LIGHT_BG_ALT = "#ccd0da"  # Light Alt Background
-COLOR_LIGHT_BG_HOVER = "#bcc0cc"  # Light Hover
-COLOR_LIGHT_BORDER = "#bcc0cc"  # Light Border
 
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
@@ -69,19 +51,7 @@ NODE_STATE_DOWN = "DOWN"
 NODE_STATE_DRAIN = "DRAIN"
 NODE_STATE_UNKNOWN = "UNKNOWN"
 
-JOB_QUEUE_FIELDS = [
-    "Job ID", "Job Name", "User",
-    "Account", "Priority", "Status",
-    "Time Used", "Partition", "CPUs",
-    "Time Limit", "Reason", "RAM",
-    "GPUs", "Nodelist"
-]
 
-STUDENTS_JOBS_KEYWORD = [
-    "tesi",
-    "cvcs",
-    "ai4bio"
-]
 # --- Helper Functions ---
 
 
@@ -106,48 +76,6 @@ def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
     msg_box.setIcon(icon)
     msg_box.exec()
 
-# --- Stylesheet Definitions ---
-
-
-def get_dark_theme_stylesheet():
-    with open("src_static/dark_theme.txt", "r") as f:
-        stylesheet_template = f.read()
-
-    return stylesheet_template.format(
-        COLOR_DARK_BG=COLOR_DARK_BG,
-        COLOR_DARK_FG=COLOR_DARK_FG,
-        COLOR_DARK_BG_ALT=COLOR_DARK_BG_ALT,
-        COLOR_DARK_BG_HOVER=COLOR_DARK_BG_HOVER,
-        COLOR_DARK_BORDER=COLOR_DARK_BORDER,
-        COLOR_GREEN=COLOR_GREEN,
-        COLOR_RED=COLOR_RED,
-        COLOR_BLUE=COLOR_BLUE,
-        COLOR_ORANGE=COLOR_ORANGE,
-        BTN_GREEN=BTN_GREEN,
-        BTN_RED=BTN_RED,
-        BTN_BLUE=BTN_BLUE,
-    )
-
-
-def get_light_theme_stylesheet():
-    """Loads and returns the CSS stylesheet for the light theme from a file."""
-    with open("/home/nicola/Desktop/slurm_gui/src_static/light_theme.txt", "r") as f:
-        stylesheet = f.read()
-
-    return stylesheet.format(
-        COLOR_LIGHT_BG=COLOR_LIGHT_BG,
-        COLOR_LIGHT_FG=COLOR_LIGHT_FG,
-        COLOR_LIGHT_BG_ALT=COLOR_LIGHT_BG_ALT,
-        COLOR_LIGHT_BG_HOVER=COLOR_LIGHT_BG_HOVER,
-        COLOR_LIGHT_BORDER=COLOR_LIGHT_BORDER,
-        COLOR_GREEN=COLOR_GREEN,
-        COLOR_RED=COLOR_RED,
-        COLOR_BLUE=COLOR_BLUE,
-        COLOR_ORANGE=COLOR_ORANGE,
-        BTN_GREEN=BTN_GREEN,
-        BTN_RED=BTN_RED,
-        BTN_BLUE=BTN_BLUE,
-    )
 
 # --- Main Application Class ---
 
@@ -177,7 +105,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         # --- Central Widget and Layout ---
         self.central_widget = QWidget()
-        self.central_widget.setMinimumSize(QSize(600, 900))
+        self.central_widget.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(15, 15, 15, 15)  # Increased margins
@@ -281,9 +209,12 @@ class SlurmJobManagerApp(QMainWindow):
         if theme_name in self.themes:
             self.current_theme = theme_name
             self.setStyleSheet(self.themes[theme_name])
+            self.cluster_status_overview_widget.setStyleSheet(
+                self.cluster_status_overview_widget.themes[theme_name]
+            )
+
             # Update separator color based on theme
             separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
-            # Find and update the main separator (assuming it's the first QFrame after nav)
             for i in range(self.main_layout.count()):
                 widget = self.main_layout.itemAt(i).widget()
                 if isinstance(widget, QFrame) and widget.frameShape() == QFrame.Shape.HLine:
@@ -325,13 +256,6 @@ class SlurmJobManagerApp(QMainWindow):
             self.nav_buttons[name] = btn  # Store button reference
 
         nav_layout.addStretch()
-
-        # # User controls (Example: Search)
-        # self.search_input = QLineEdit()
-        # self.search_input.setPlaceholderText("Search jobs...")
-        # self.search_input.setFixedWidth(250)  # Wider search
-        # self.search_input.textChanged.connect(self.filter_jobs)  # Connect search
-        # nav_layout.addWidget(self.search_input)
 
         self.connection_status = ClickableLabel(" Connection status...")
         self.connection_status.setObjectName("statusButton")  # Use object name for styling
@@ -506,9 +430,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Header with refresh button
         header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
         cluster_label = QLabel("Cluster Status Overview")
-        cluster_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(cluster_label)
         header_layout.addStretch()
 
@@ -545,7 +467,6 @@ class SlurmJobManagerApp(QMainWindow):
         # --- Right Section: Cluster Overview (Nodes Status) ---
         overview_group = QGroupBox("Real-time Usage")
         overview_layout = QVBoxLayout(overview_group)
-        overview_layout.setContentsMargins(10, 10, 10, 10)
         overview_layout.setSpacing(15)
 
         # Set fixed width for the nodes status panel group box
@@ -568,127 +489,18 @@ class SlurmJobManagerApp(QMainWindow):
 
     def create_settings_panel(self):
         """Creates the panel for application settings."""
-        settings_panel = QWidget()
-        settings_layout = QVBoxLayout(settings_panel)
-        # settings_layout.setSpacing(20)
-        settings_layout.setContentsMargins(25, 25, 25, 25)
-
-        # Title
-        settings_label = QLabel("Application Settings")
-        settings_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        settings_layout.addWidget(settings_label)
-
-        # Appearance section
-        appearance_group = QGroupBox("Appearance")
-        appearance_layout = QFormLayout(appearance_group)
-        appearance_layout.setSpacing(10)
-        appearance_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-
-        widgets_layout = QHBoxLayout()
-
-        # Theme combo
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(self.themes.keys())
-        self.theme_combo.setCurrentText(self.current_theme)
-        self.theme_combo.currentTextChanged.connect(self.change_theme)
-        self.theme_combo.setMaximumWidth(150)
-        widgets_layout.addWidget(QLabel("UI Theme:"))
-        widgets_layout.addWidget(self.theme_combo)
-
-        # widgets_layout.addSpacing(20)  # Add some spacing between the widgets
-
-        # Refresh time
-        # widgets_layout.addWidget(QLabel("Refresh Timeout (ms):"))
-        # self.refresh_time = QLineEdit()
-        # self.refresh_time.setText(str(self.refresh_timeout))
-        # self.refresh_time.setMaximumWidth(150)
-        # widgets_layout.addWidget(self.refresh_time)
-
-        widgets_layout.addStretch()  # Add stretch to push widgets to the left
-
-        # Add the horizontal layout to the appearance layout
-        appearance_layout.addRow("", widgets_layout)
-        # Jobs Queue Format Section
-        self.jobs_queue_options_group = QGroupBox("Jobs Queue Format")
-        jobs_queue_layout = QGridLayout(self.jobs_queue_options_group)
-
-        for i, label in enumerate(JOB_QUEUE_FIELDS):
-            if label:
-                checkbox = QCheckBox(label)
-                checkbox.setObjectName(label)
-                row = i // 3
-                col = i % 3
-                jobs_queue_layout.addWidget(checkbox, row, col)
-
-        # Save Button
-        save_appearance_btn = QPushButton("Save Appearence Settings")
-        save_appearance_btn.setObjectName(BTN_GREEN)
-        save_appearance_btn.setMaximumWidth(250)
-        save_appearance_btn.clicked.connect(self.save_appearence_settings)
-        save_layout = QHBoxLayout()
-        save_layout.addStretch()
-        jobs_queue_layout.addWidget(save_appearance_btn, row + 1, col + 1)
-        appearance_layout.addRow(self.jobs_queue_options_group)
-
-        settings_layout.addWidget(appearance_group)
-        # --- SLURM Connection Settings ---
-        connection_group = QGroupBox("SLURM Connection (Example)")
-        connection_group.setMinimumHeight(150)
-        connection_layout = QFormLayout(connection_group)
-        self.cluster_address = QLineEdit(self.slurm_connection.host)
-        self.cluster_address.setClearButtonEnabled(True)
-        connection_layout.addRow("Cluster Address:", self.cluster_address)
-        self.username = QLineEdit(self.slurm_connection.user)
-        self.username.setClearButtonEnabled(True)
-        connection_layout.addRow("Username:", self.username)
-
-        # Replace SSH key with password field
-        self.password = QLineEdit(self.slurm_connection.password)
-        self.password.setClearButtonEnabled(True)
-        self.password.setEchoMode(QLineEdit.EchoMode.Password)  # Correct way to set password mode
-        connection_layout.addRow("Password:", self.password)
-
-        connection_settings_btn = QPushButton("Save connection settings")
-        connection_settings_btn.setObjectName(BTN_GREEN)
-        connection_settings_btn.clicked.connect(self.update_connection_setting)
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(connection_settings_btn)
-        connection_layout.addRow(button_layout)
-        settings_layout.addWidget(connection_group)
-
-        # --- Notifications Section ---
-        notifications_group = QGroupBox("Notifications")
-        notifications_layout = QVBoxLayout(notifications_group)
-        notifications_layout.setSpacing(10)
-        self.desktop_notify_check = QCheckBox("Enable Desktop Notifications")
-        self.desktop_notify_check.setChecked(True)
-        self.email_notify_check = QCheckBox("Send Email Notifications (if email provided in job)")
-        self.email_notify_check.setChecked(True)
-        self.sound_notify_check = QCheckBox("Play Sound on Job Completion/Failure")
-        notifications_layout.addWidget(self.desktop_notify_check)
-        notifications_layout.addWidget(self.email_notify_check)
-        notifications_layout.addWidget(self.sound_notify_check)
-        settings_layout.addWidget(notifications_group)
-
-        # --- Save Button ---
-        save_button = QPushButton("Save Settings")
-        save_button.setObjectName(BTN_GREEN)
-        save_button.setIcon(QIcon())  # Placeholder icon
-        save_button.clicked.connect(self.save_settings)
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(save_button)
-        settings_layout.addLayout(button_layout)
-
-        settings_layout.addStretch()  # Pushes settings to the top
-        self.stacked_widget.addWidget(settings_panel)
+        self.settings_panel = SettingsWidget()
+        self.settings_panel.theme_combo.currentTextChanged.connect(self.change_theme)
+        self.settings_panel.save_appearance_btn.clicked.connect(self.save_appearence_settings)
+        self.settings_panel.connection_settings_btn.clicked.connect(self.update_connection_setting)
+        self.settings_panel.save_button.clicked.connect(self.save_settings)
+        self.stacked_widget.addWidget(self.settings_panel)
 
     # --- Action & Data Methods ---
 
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
-            self.job_queue_widget.filter_table(self.username.text())
+            self.job_queue_widget.filter_table(self.settings_panel.username.text())
         elif account_type == "ALL":
             self.job_queue_widget.filter_table("")
         elif account_type == "STUD":
@@ -966,8 +778,8 @@ class SlurmJobManagerApp(QMainWindow):
     def save_appearence_settings(self):
         print("--- Saving Appearence Settings ---")
         self.settings.beginGroup("AppearenceSettings")
-        self.settings.setValue("theme", self.theme_combo.currentText())
-        for i, obj in enumerate(self.jobs_queue_options_group.children()[1:-1]):
+        self.settings.setValue("theme", self.settings_panel.theme_combo.currentText())
+        for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
             self.settings.setValue(obj.objectName(), bool(obj.checkState().value))
         self.settings.endGroup()
 
@@ -1013,20 +825,20 @@ class SlurmJobManagerApp(QMainWindow):
         # Load General Settings
         self.settings.beginGroup("GeneralSettings")
         theme = self.settings.value("theme", "Dark")  # Provide a default value
-        self.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
+        self.settings_panel.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
 
         cluster_address = self.settings.value("clusterAddress", "")
-        self.cluster_address.setText(cluster_address)
+        self.settings_panel.cluster_address.setText(cluster_address)
 
         username = self.settings.value("username", "")
-        self.username.setText(username)
+        self.settings_panel.username.setText(username)
 
         cluster_psw = self.settings.value("psw", "")
-        self.password.setText(cluster_psw)
+        self.settings_panel.password.setText(cluster_psw)
         self.settings.endGroup()
 
         self.settings.beginGroup("AppearenceSettings")
-        for i, obj in enumerate(self.jobs_queue_options_group.children()[1:-1]):
+        for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
             value = self.settings.value(obj.objectName(), 'false', type=bool)
             obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
 
@@ -1047,15 +859,6 @@ class SlurmJobManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         """Handles the window close event."""
-        # Optional: Add confirmation dialog
-        # reply = QMessageBox.question(self, 'Confirm Exit',
-        #                              "Are you sure you want to exit?",
-        #                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        #                              QMessageBox.StandardButton.No)
-        # if reply == QMessageBox.StandardButton.Yes:
-        #     event.accept()
-        # else:
-        #     event.ignore()
         self.slurm_connection.close()
         print("Closing application.")
         event.accept()

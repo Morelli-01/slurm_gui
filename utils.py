@@ -3,6 +3,8 @@ from PyQt6.QtCore import pyqtSignal
 import sys
 from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
 from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
+from modules.defaults import *
+
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
 BTN_RED = "btnRed"
@@ -188,3 +190,46 @@ class ButtonGroupWidget(QWidget):  # Assuming this is a QWidget subclass
         if checked_btn:
             return checked_btn.text()
         return None
+
+# --- Stylesheet Definitions ---
+
+
+def get_dark_theme_stylesheet():
+    with open("src_static/dark_theme.txt", "r") as f:
+        stylesheet_template = f.read()
+
+    return stylesheet_template.format(
+        COLOR_DARK_BG=COLOR_DARK_BG,
+        COLOR_DARK_FG=COLOR_DARK_FG,
+        COLOR_DARK_BG_ALT=COLOR_DARK_BG_ALT,
+        COLOR_DARK_BG_HOVER=COLOR_DARK_BG_HOVER,
+        COLOR_DARK_BORDER=COLOR_DARK_BORDER,
+        COLOR_GREEN=COLOR_GREEN,
+        COLOR_RED=COLOR_RED,
+        COLOR_BLUE=COLOR_BLUE,
+        COLOR_ORANGE=COLOR_ORANGE,
+        BTN_GREEN=BTN_GREEN,
+        BTN_RED=BTN_RED,
+        BTN_BLUE=BTN_BLUE,
+    )
+
+
+def get_light_theme_stylesheet():
+    """Loads and returns the CSS stylesheet for the light theme from a file."""
+    with open("/home/nicola/Desktop/slurm_gui/src_static/light_theme.txt", "r") as f:
+        stylesheet = f.read()
+
+    return stylesheet.format(
+        COLOR_LIGHT_BG=COLOR_LIGHT_BG,
+        COLOR_LIGHT_FG=COLOR_LIGHT_FG,
+        COLOR_LIGHT_BG_ALT=COLOR_LIGHT_BG_ALT,
+        COLOR_LIGHT_BG_HOVER=COLOR_LIGHT_BG_HOVER,
+        COLOR_LIGHT_BORDER=COLOR_LIGHT_BORDER,
+        COLOR_GREEN=COLOR_GREEN,
+        COLOR_RED=COLOR_RED,
+        COLOR_BLUE=COLOR_BLUE,
+        COLOR_ORANGE=COLOR_ORANGE,
+        BTN_GREEN=BTN_GREEN,
+        BTN_RED=BTN_RED,
+        BTN_BLUE=BTN_BLUE,
+    )

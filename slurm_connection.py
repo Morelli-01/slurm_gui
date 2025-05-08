@@ -265,41 +265,79 @@ class SlurmConnection:
         return nodes_arr
 
     def _fetch_squeue(self):
-        JOB_QUEUE_FIELDS = [
-            "Job ID", "Job Name", "User",
-            "Account", "Priority", "Status",
-            "Time Used", "Partition", "CPUs",
-            "Time Limit", "Reason", "RAM",
-            "GPUs", "Nodelist"
-        ]
-        out, err = self.run_command(
-            "squeue --format='%.20i %.20P %.20j %.20u %.20a %.20t %.20M %.20l %.20C %.20Q %.20r %.20S %.20e %.20m %.30b %.20R'")
+        # out, err = self.run_command(
+        #     "squeue --format='%.20i %.20P %.20j %.20u %.20a %.20t %.20M %.20l %.20C %.20Q %.20r %.20S %.20e %.20m %.30b %.20R'")
+        # filtered_out = [job for job in out.splitlines() if "gervasoni" in job]
+
+        # job_queue = []
+        # for i, line in enumerate(out.splitlines()):
+        #     if i == 0:
+        #         continue
+        #     job_dict = {}
+        #     fields = line.split()
+        #     try:
+        #         job_dict["Job ID"] = fields[0]
+        #         job_dict["Partition"] = fields[1]
+        #         job_dict["Job Name"] = fields[2]
+        #         job_dict["User"] = fields[3]
+        #         job_dict["Account"] = fields[4]
+        #         job_dict["Status"] = JOB_CODES[fields[5]]
+        #         job_dict["Time Used"] = fields[6]
+        #         job_dict["Time Limit"] = fields[7]
+        #         job_dict["CPUs"] = fields[8]
+        #         job_dict["Priority"] = fields[9]
+        #         job_dict["Reason"] = fields[10]
+        #         job_dict["RAM"] = fields[13]
+        #         job_dict["GPUs"] = fields[14].split(":")[-1] if fields[14].split(":")[-1] != "N/A" else 0
+        #         job_dict["Nodelist"] = fields[15]
+        #     except IndexError as e:
+        #         print(e)
+
+        #     job_queue.append(job_dict)
+
+        new_cmd = "squeue -O jobarrayid:\\;,Reason:\\;,NodeList:\\;,Username:\\;,tres-per-job:\\;,tres-per-task:\\;,tres-per-node:\\;,Name:\\" + \
+            ";,Partition:\\;,StateCompact:\\;,Tmelimit:\\;,TimeUsed:\\;,NumNodes:\\;,NumTasks:\\;,Reason:\\;,MinMemory:\\;,MinCpus:\\;,Account:\\" + \
+            ";,PriorityLong:\\;,jobid:\\;,tres:\\;,nice:"
+        out, _ = self.run_command(new_cmd)
         job_queue = []
         for i, line in enumerate(out.splitlines()):
             if i == 0:
                 continue
             job_dict = {}
-            fields = line.split()
+            fields = line.split(";")
             try:
                 job_dict["Job ID"] = fields[0]
-                job_dict["Partition"] = fields[1]
-                job_dict["Job Name"] = fields[2]
+                job_dict["Reason"] = fields[1]
+                job_dict["Nodelist"] = fields[2]
                 job_dict["User"] = fields[3]
-                job_dict["Account"] = fields[4]
-                job_dict["Status"] = JOB_CODES[fields[5]]
-                job_dict["Time Used"] = fields[6]
-                job_dict["Time Limit"] = fields[7]
-                job_dict["CPUs"] = fields[8]
-                job_dict["Priority"] = fields[9]
-                job_dict["Reason"] = fields[10]
-                job_dict["RAM"] = fields[13]
-                job_dict["GPUs"] = fields[14].split(":")[-1] if fields[14].split(":")[-1] != "N/A" else 0
-                job_dict["Nodelist"] = fields[15]
+                job_dict["Job Name"] = fields[7]
+                job_dict["Partition"] = fields[8]
+                job_dict["Status"] = JOB_CODES[fields[9]]
+                job_dict["Time Limit"] = fields[10]
+                job_dict["Time Used"] = fields[11]
+                job_dict["Account"] = fields[17]
+                job_dict["Priority"] = fields[18]
+                alloc_gres = fields[20].split(",")
+
+                for f in alloc_gres:
+                    f = f.split("=")
+                    if f[0] == "cpu":
+                        job_dict["CPUs"] = f[1]
+                    elif f[0] == "mem":
+                        job_dict["RAM"] = f[1]
+                    elif f[0] == "gres/gpu":
+                        job_dict["GPUs"] = f[1]
+                    elif f[0] == "billing":
+                        job_dict["Billing"] = f[1]
+
+                if "GPUs" not in job_dict.keys():
+                    job_dict["GPUs"] = 0
+                if job_dict["Status"] == "PENDING":
+                    job_dict["Nodelist"] = job_dict["Reason"]
+
+                job_queue.append(job_dict)
             except IndexError as e:
                 print(e)
-
-            job_queue.append(job_dict)
-
         return job_queue
 
     def close(self):

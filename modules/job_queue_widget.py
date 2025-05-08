@@ -4,36 +4,28 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QColor, QFont, QBrush, QPalette
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
+from modules.defaults import *
+from utils import get_dark_theme_stylesheet
+# JOB_QUEUE_FIELDS = [
+#     "Job ID", "Job Name", "User",
+#     "Account", "Priority", "Status",
+#     "Time Used", "Partition", "CPUs",
+#     "Time Limit", "Reason", "RAM",
+#     "GPUs", "Nodelist"
+# ]
 
-JOB_QUEUE_FIELDS = [
-    "Job ID", "Job Name", "User",
-    "Account", "Priority", "Status",
-    "Time Used", "Partition", "CPUs",
-    "Time Limit", "Reason", "RAM",
-    "GPUs", "Nodelist"
-]
-
-# SLURM Statuses
-STATUS_RUNNING = "RUNNING"
-STATUS_PENDING = "PENDING"
-STATUS_COMPLETED = "COMPLETED"
-STATUS_FAILED = "FAILED"
-STATUS_COMPLETING = "COMPLETING"
-STATUS_PREEMPTED = "PREEMPTED"
-STATUS_SUSPENDED = "SUSPENDED"
-STATUS_STOPPED = "STOPPED"
 
 # Updated Color Palette
-COLOR_DARK_BG = "#282a36"
-COLOR_DARK_FG = "#f8f8f2"
-COLOR_DARK_BG_ALT = "#383a59"
-COLOR_DARK_BG_HOVER = "#44475a"
-COLOR_DARK_BORDER = "#6272a4"
-COLOR_GREEN = "#50fa7b"
-COLOR_RED = "#ff5555"
-COLOR_ORANGE = "#ffb86c"
-COLOR_BLUE = "#8be9fd"
-COLOR_GRAY = "#6272a4"
+# COLOR_DARK_BG = "#282a36"
+# COLOR_DARK_FG = "#f8f8f2"
+# COLOR_DARK_BG_ALT = "#383a59"
+# COLOR_DARK_BG_HOVER = "#44475a"
+# COLOR_DARK_BORDER = "#6272a4"
+# COLOR_GREEN = "#50fa7b"
+# COLOR_RED = "#ff5555"
+# COLOR_ORANGE = "#ffb86c"
+# COLOR_BLUE = "#8be9fd"
+# COLOR_GRAY = "#6272a4"
 
 
 class JobQueueWidget(QGroupBox):
@@ -81,21 +73,6 @@ class JobQueueWidget(QGroupBox):
         self.layout.addWidget(self.queue_table)
         self.setMinimumHeight(200)
 
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(COLOR_DARK_BG))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(COLOR_DARK_FG))
-        palette.setColor(QPalette.ColorRole.Base, QColor(COLOR_DARK_BG))
-        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(COLOR_DARK_BG_ALT))
-        palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(COLOR_DARK_BG))
-        palette.setColor(QPalette.ColorRole.ToolTipText, QColor(COLOR_DARK_FG))
-        palette.setColor(QPalette.ColorRole.Text, QColor(COLOR_DARK_FG))
-        palette.setColor(QPalette.ColorRole.Button, QColor(COLOR_DARK_BG_ALT))
-        palette.setColor(QPalette.ColorRole.ButtonText, QColor(COLOR_DARK_FG))
-        palette.setColor(QPalette.ColorRole.BrightText, QColor(COLOR_GREEN))
-        palette.setColor(QPalette.ColorRole.Link, QColor(COLOR_BLUE))
-        palette.setColor(QPalette.ColorRole.Highlight, QColor(COLOR_DARK_BG_HOVER))
-        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(COLOR_DARK_FG))
-        self.setPalette(palette)
         self.jobs_filter_text = ""
         self.jobs_filter_list = []  # For filter_table_by_list
 
