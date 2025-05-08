@@ -1,4 +1,5 @@
 import configparser
+import functools
 import yaml, sys
 import os
 from time import sleep
@@ -20,11 +21,20 @@ JOB_CODES = {
 }
 
 
+def require_connection(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not self.check_connection():
+            raise ConnectionError("SSH connection not established. Please connect first.")
+        return func(self, *args, **kwargs)
+    return wrapper
+
+
 class SlurmConnection:
     def __init__(self, config_path="slurm_config.yaml"):
         self.config_path = config_path
         self.parse_configs(self.config_path)
-
+        self.connected_status = False
         self.client = None
 
         # Info raccolte
@@ -42,6 +52,9 @@ class SlurmConnection:
         self.gres = []
         self.remote_home = None
 
+    def check_connection(self):
+        return self.connected_status
+
     def parse_configs(self, config_path):
         config = configparser.ConfigParser()
         config.read(config_path)
@@ -53,20 +66,22 @@ class SlurmConnection:
         self.password = config['GeneralSettings']['psw']
         self.user = config['GeneralSettings']['username']
 
-    def connect(self):
+    def connect(self) -> bool:
         self.client = paramiko.SSHClient()
         self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
             self.client.connect(self.host, username=self.user, password=self.password)
+            self.connected_status = True
             print(f"Connected to {self.host}")
             self._fetch_basic_info()
             self._fetch_submission_options()
             self.remote_home, _ = self.run_command("echo $HOME")
             self.remote_home = self.remote_home.strip()
             self.run_command(f"mkdir -p {self.remote_home}/.logs")
-
+            return True
         except Exception as e:
             print(f"Connection failed: {e}")
+            return False
 
     def is_connected(self):
         try:
@@ -76,24 +91,31 @@ class SlurmConnection:
                 channel = transport.open_session(timeout=1)
                 if channel:
                     channel.close()
+                    self.connected_status = True
                     return True
                 else:
+                    self.connected_status = False
                     return False
             else:
+                self.connected_status = False
                 return False
         except paramiko.SSHException as e:
             print(f"SSH error: {e}")
+            self.connected_status = False
             return False
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
+            self.connected_status = False
             return False
 
+    @require_connection
     def run_command(self, command):
         if not self.is_connected():
             raise ConnectionError("SSH connection not established.")
         stdin, stdout, stderr = self.client.exec_command(command)
         return stdout.read().decode().strip(), stderr.read().decode().strip()
 
+    @require_connection
     def _fetch_basic_info(self):
         try:
             self.remote_user, _ = self.run_command("whoami")
@@ -104,6 +126,7 @@ class SlurmConnection:
         except Exception as e:
             print(f"Failed to fetch system info: {e}")
 
+    @require_connection
     def _fetch_submission_options(self):
         try:
             partitions_out, _ = self.run_command("sinfo -h -o '%P'")
@@ -126,6 +149,7 @@ class SlurmConnection:
         except Exception as e:
             print(f"Failed to fetch submission options: {e}")
 
+    @require_connection
     def submit_job(self, job_name, partition, time_limit, command, account,
                    constraint=None, qos=None,
                    gres=None, nodes=1, ntasks=1,
@@ -191,6 +215,7 @@ class SlurmConnection:
         except Exception as e:
             raise RuntimeError(f"Job submission failed: {e}")
 
+    @require_connection
     def get_job_logs(self, job_id):
         if not self.is_connected():
             raise ConnectionError("SSH connection not established.")
@@ -214,23 +239,11 @@ class SlurmConnection:
 
         return stdout, stderr
 
-    def update_credentials_and_reconnect(self, new_user, new_host, new_psw=None, new_identity_file=None):
-        self.config['ssh'] = {
-            'user': new_user,
-            'host': new_host,
-            'password': new_psw,
-            'identity_file': new_identity_file
-        }
-        try:
-            with open(self.config_path, "w") as f:
-                yaml.dump(self.config, f)
-            if self.is_connected():
-                self.client.close()
-            self.__init__(self.config_path)
-            self.connect()
-        except Exception as e:
-            raise IOError(f"Failed to update YAML configuration file: {e}")
+    def update_credentials_and_reconnect(self):
+        self.__init__(self.config_path)
+        self.connect()
 
+    @require_connection
     def _read_maintenances(self):
         msg_out, MSG_ERRQUEUE = self.run_command("scontrol show reservation 2>/dev/null")
         if "No reservations in the system" in msg_out:
@@ -238,6 +251,7 @@ class SlurmConnection:
         else:
             return msg_out
 
+    @require_connection
     def _fetch_nodes_infos(self):
         msg_out, msg_err = self.run_command("scontrol show nodes")
         nodes = msg_out.split("\n\n")
@@ -264,6 +278,7 @@ class SlurmConnection:
 
         return nodes_arr
 
+    @require_connection
     def _fetch_squeue(self):
         # out, err = self.run_command(
         #     "squeue --format='%.20i %.20P %.20j %.20u %.20a %.20t %.20M %.20l %.20C %.20Q %.20r %.20S %.20e %.20m %.30b %.20R'")
@@ -296,7 +311,7 @@ class SlurmConnection:
         #     job_queue.append(job_dict)
 
         new_cmd = "squeue -O jobarrayid:\\;,Reason:\\;,NodeList:\\;,Username:\\;,tres-per-job:\\;,tres-per-task:\\;,tres-per-node:\\;,Name:\\" + \
-            ";,Partition:\\;,StateCompact:\\;,Tmelimit:\\;,TimeUsed:\\;,NumNodes:\\;,NumTasks:\\;,Reason:\\;,MinMemory:\\;,MinCpus:\\;,Account:\\" + \
+            ";,Partition:\\;,StateCompact:\\;,Timelimit:\\;,TimeUsed:\\;,NumNodes:\\;,NumTasks:\\;,Reason:\\;,MinMemory:\\;,MinCpus:\\;,Account:\\" + \
             ";,PriorityLong:\\;,jobid:\\;,tres:\\;,nice:"
         out, _ = self.run_command(new_cmd)
         job_queue = []
@@ -340,6 +355,7 @@ class SlurmConnection:
                 print(e)
         return job_queue
 
+    @require_connection
     def close(self):
         if self.client:
             self.client.close()

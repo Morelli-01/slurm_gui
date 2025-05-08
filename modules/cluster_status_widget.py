@@ -428,6 +428,8 @@ class NodeStatusTab(QWidget):
         """
         Updates the node status visualization based on the provided data.
         """
+        if nodes_data is None:
+            return
         nodes_data = sort_nodes_data(nodes_data)
         self.total_gpu_used = 0
         self.total_gpu = 0
@@ -520,6 +522,7 @@ class NodeStatusTab(QWidget):
                 block_states = ["unavailable"] * total_gpus
             # Then check for allocated/mixed
             elif "ALLOCATED" in state or "MIXED" in state:
+
                 filtered_jobs = [job for job in jobs_data if node_info["NodeName"] == job.get("Nodelist", "")]
                 stud_used = 0
                 prod_used = 0
@@ -998,7 +1001,7 @@ class ClusterStatusWidget(QWidget):
         self.setWindowTitle(APP_TITLE)
         # Set minimum size, allow resizing
         self.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
-        self.resize(MIN_WIDTH, MIN_HEIGHT)  # Start with minimum size
+        # self.resize(MIN_WIDTH, MIN_HEIGHT)  # Start with minimum size
 
         self.themes = {
             THEME_DARK: get_dark_theme_stylesheet(),
@@ -1047,6 +1050,7 @@ class ClusterStatusWidget(QWidget):
         """Fetches data from Slurm and updates all tabs."""
 
         # Update content of each tab
+
         self.node_status_tab.update_content(nodes_data, jobs_data)
         self.cpu_usage_tab.update_content(nodes_data, jobs_data)
         self.ram_usage_tab.update_content(nodes_data, jobs_data)

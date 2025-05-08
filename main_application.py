@@ -1,35 +1,36 @@
 from pathlib import Path
+import shutil
 from modules.settings_widget import SettingsWidget
 import sys, slurm_connection
 
-from networkx import nodes
 import threading
 import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QComboBox, QFrame, QSizePolicy, QStackedWidget, QFormLayout, QGroupBox,
-    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea
+    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea,
+    QDialog, QDialogButtonBox  # Import QDialog and QDialogButtonBox
 )
 from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
+
+# Get the script directory to construct relative paths
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Import utils and defaults after getting script_dir if they use relative paths internally
+# Assuming utils and defaults do not need script_dir at import time, keep them here.
 from utils import *
 from modules.job_queue_widget import JobQueueWidget
 import modules.cluster_status_widget as cluster_status_widget
 from modules.defaults import *
+
 # --- Constants ---
-APP_TITLE = "SLURM Job Manager"
+APP_TITLE = "SlurmAIO"
 MIN_WIDTH = 1600
 MIN_HEIGHT = 900
 REFRESH_INTERVAL_MS = 5000  # 10 seconds
 
-# Theme Keys
-
-
-# Object Names for Styling
-BTN_GREEN = "btnGreen"
-BTN_RED = "btnRed"
-BTN_BLUE = "btnBlue"
 
 # Default Job Values
 DEFAULT_PARTITION = "compute"
@@ -38,18 +39,8 @@ DEFAULT_TASKS = 1
 DEFAULT_MEMORY = "4G"
 DEFAULT_TIME = "1:00:00"
 
-# SLURM Statuses
-STATUS_RUNNING = "RUNNING"
-STATUS_PENDING = "PENDING"
-STATUS_COMPLETED = "COMPLETED"
-STATUS_FAILED = "FAILED"  # Added for completeness
 
 # SLURM Statuses (Node States - simplified)
-NODE_STATE_IDLE = "IDLE"
-NODE_STATE_ALLOC = "ALLOCATED"  # Or RUNNING, MIXED
-NODE_STATE_DOWN = "DOWN"
-NODE_STATE_DRAIN = "DRAIN"
-NODE_STATE_UNKNOWN = "UNKNOWN"
 
 
 # --- Helper Functions ---
@@ -76,6 +67,54 @@ def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
     msg_box.setIcon(icon)
     msg_box.exec()
 
+# --- New Connection Setup Dialog ---
+
+
+class ConnectionSetupDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Setup Initial Connection")
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+
+        info_label = QLabel(
+            "Settings file not found. Please enter connection details to set up the first SSH connection.")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        form_layout = QFormLayout()
+        self.cluster_address_input = QLineEdit()
+        self.cluster_address_input.setPlaceholderText("e.g., your.cluster.address")
+        form_layout.addRow("Cluster Address:", self.cluster_address_input)
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("Your username")
+        form_layout.addRow("Username:", self.username_input)
+
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("Your password (optional, or use key)")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)  # Hide password
+        form_layout.addRow("Password:", self.password_input)
+
+        # Note: SSH Key path input is more complex and might require a file dialog.
+        # For simplicity in this initial setup dialog, we'll focus on password/basic connection.
+        # A more advanced dialog could include key path selection.
+
+        layout.addLayout(form_layout)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def get_connection_details(self):
+        """Returns the entered connection details."""
+        return {
+            "clusterAddress": self.cluster_address_input.text().strip(),
+            "username": self.username_input.text().strip(),
+            "psw": self.password_input.text().strip(),
+        }
 
 # --- Main Application Class ---
 
@@ -83,17 +122,31 @@ def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
 class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        # The slurm_connection is initialized here, assuming settings.ini exists
+        # or has been created by the setup dialog before this point.
         self.slurm_connection = slurm_connection.SlurmConnection(
             "./configs/settings.ini")
 
-        self.slurm_connection.connect()
+        # Attempt to connect immediately
+        try:
+            self.slurm_connection.connect()
+        except Exception as e:
+            # Handle potential connection errors during initial connection
+            # (e.g., show a message, allow user to go to settings)
+            print(f"Initial connection failed: {e}")
+            # You might want to show an error message here or automatically
+            # navigate to the settings tab if connection fails.
+            show_message(self, "Connection Error",
+                         f"Failed to connect to the cluster:\n{e}\nPlease check settings.", QMessageBox.Icon.Critical)
 
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
         # self.setMaximumSize(MIN_WIDTH, MIN_HEIGHT)
-        self.setFixedHeight(MIN_HEIGHT)
+        # self.setFixedHeight(MIN_HEIGHT)
 
-        self.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
+        # Use relative path for the window icon
+        window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+        self.setWindowIcon(QIcon(window_icon_path))
 
         # --- Theme Setup ---
         self.themes = {
@@ -131,12 +184,14 @@ class SlurmJobManagerApp(QMainWindow):
         self.setup_refresh_timer()
         self.set_connection_status(self.slurm_connection.is_connected())
         self.refresh_all()  # Initial data load
-        self.load_settings()
+        self.load_settings()  # Load settings again after potential initial save
 
     def set_connection_status(self, connected: bool, connecting=False):
         self.connection_status_ = True if connected else False
         if connecting:
-            loading_movie = QMovie("/home/nicola/Desktop/slurm_gui/src_static/loading.gif")
+            # Use relative path for loading gif
+            loading_gif_path = os.path.join(script_dir, "src_static", "loading.gif")
+            loading_movie = QMovie(loading_gif_path)
             loading_movie.setScaledSize(QSize(32, 32))
             loading_movie.start()
             self.connection_status.setMovie(loading_movie)
@@ -155,8 +210,10 @@ class SlurmJobManagerApp(QMainWindow):
 
         if connected:
             self.connection_status.setToolTip("Connected")
+            # Use relative path for good_connection icon
+            good_connection_icon_path = os.path.join(script_dir, "src_static", "good_connection.png")
             self.connection_status.setPixmap(
-                QIcon("/home/nicola/Desktop/slurm_gui/src_static/good_connection.png").pixmap(QSize(32, 32)))
+                QIcon(good_connection_icon_path).pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
                 QPushButton#statusButton {
                     background-color: #4caf50;
@@ -168,8 +225,10 @@ class SlurmJobManagerApp(QMainWindow):
             """)
         else:
             self.connection_status.setToolTip("Disconnected")
+            # Use relative path for bad_connection icon
+            bad_connection_icon_path = os.path.join(script_dir, "src_static", "bad_connection.png")
             self.connection_status.setPixmap(
-                QIcon("/home/nicola/Desktop/slurm_gui/src_static/bad_connection.png").pixmap(QSize(32, 32)))
+                QIcon(bad_connection_icon_path).pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
                 QPushButton#statusButton {
                     background-color: #f44336;
@@ -193,17 +252,19 @@ class SlurmJobManagerApp(QMainWindow):
         try:
             nodes_data = self.slurm_connection._fetch_nodes_infos()
             queue_jobs = self.slurm_connection._fetch_squeue()
+            self.set_connection_status(True)
+            print("Refreshing all data...")
+            self.refresh_job_status()
+            self.refresh_cluster_jobs_queue(queue_jobs)
+            self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
         except ConnectionError as e:
             print(e)
-
-        print("Refreshing all data...")
-        self.refresh_job_status()
-        self.refresh_cluster_jobs_queue(queue_jobs)
-        self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
+            self.set_connection_status(False)
 
         # self.set_connection_status(self.slurm_connection.is_connected())
 
     # --- Theme Handling ---
+
     def change_theme(self, theme_name):
         """Applies the selected theme stylesheet."""
         if theme_name in self.themes:
@@ -238,7 +299,9 @@ class SlurmJobManagerApp(QMainWindow):
         logo_label.setFixedSize(35, 35)  # Slightly larger
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
-        pixmap = QPixmap("/home/nicola/Desktop/slurm_gui/src_static/logo.png")  # Use .svg or .ico if needed
+        # Use relative path for the logo
+        logo_path = os.path.join(script_dir, "src_static", "logo.png")
+        pixmap = QPixmap(logo_path)  # Use .svg or .ico if needed
         scaled_pixmap = pixmap.scaled(35, 35, Qt.AspectRatioMode.KeepAspectRatio,
                                       Qt.TransformationMode.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
@@ -259,8 +322,11 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.connection_status = ClickableLabel(" Connection status...")
         self.connection_status.setObjectName("statusButton")  # Use object name for styling
+        # Initial connection status icon (use relative path)
+        initial_status_icon_path = os.path.join(
+            script_dir, "src_static", "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png")
         self.connection_status.setPixmap(
-            QPixmap("/home/nicola/Desktop/slurm_gui/src_static/cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png"))
+            QPixmap(initial_status_icon_path))
         self.connection_status.clicked.connect(self.update_connection_setting)
         nav_layout.addWidget(self.connection_status)
 
@@ -444,7 +510,9 @@ class SlurmJobManagerApp(QMainWindow):
         self.filter_jobs.setFixedWidth(250)  # Wider search
         header_layout.addWidget(self.filter_jobs)
         self.filter_btn = QPushButton()
-        self.filter_btn.setIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/filter.png"))
+        # Use relative path for the filter icon
+        filter_icon_path = os.path.join(script_dir, "src_static", "filter.png")
+        self.filter_btn.setIcon(QIcon(filter_icon_path))
         self.filter_btn.setMaximumSize(32, 32)
         header_layout.addWidget(self.filter_btn)
         self.filter_btn.clicked.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
@@ -509,14 +577,10 @@ class SlurmJobManagerApp(QMainWindow):
             self.job_queue_widget.filter_table_by_negative_keywords(STUDENTS_JOBS_KEYWORD)
 
     def update_connection_setting(self):
-        print("Updateding connection settings...")
-
+        print("Updating connection settings...")
+        self.save_settings()
         self.set_connection_status(None, connecting=True)
-        thread = threading.Thread(target=self.slurm_connection.update_credentials_and_reconnect, args=(
-            self.username.text(),
-            self.cluster_address.text(),
-            self.password.text()
-        ))
+        thread = threading.Thread(target=self.slurm_connection.update_credentials_and_reconnect)
 
         thread.start()
 
@@ -760,7 +824,31 @@ class SlurmJobManagerApp(QMainWindow):
 
     def refresh_job_status(self):
         """Refreshes the job list table (demo)."""
-        ...
+        # In a real application, fetch actual job data here
+        # For demo, let's simulate some data
+        # try:
+        #     jobs_data = self.slurm_connection._fetch_squeue()
+        #     self.populate_jobs_table(jobs_data)
+        # except ConnectionError as e:
+        #     print(f"Failed to refresh job status: {e}")
+        #     self.set_connection_status(False)
+        #     # Optionally clear the table or show an error message in the table area
+        # except Exception as e:
+        #      print(f"An unexpected error occurred during job status refresh: {e}")
+        #      self.set_connection_status(False)
+
+        # Demo data (replace with actual fetch)
+        demo_jobs = [
+            {"id": "12345", "name": "my_script", "partition": "compute",
+                "status": STATUS_RUNNING, "time": "0:05:10", "nodes": "node01"},
+            {"id": "12346", "name": "analysis", "partition": "gpu",
+                "status": STATUS_PENDING, "time": "0:00:00", "nodes": "gpu01"},
+            {"id": "12340", "name": "old_job", "partition": "bigmem",
+                "status": STATUS_COMPLETED, "time": "1:20:30", "nodes": "bigmem01"},
+            {"id": "12339", "name": "failed_job", "partition": "compute",
+                "status": STATUS_FAILED, "time": "0:01:05", "nodes": "node02"},
+        ]
+        self.populate_jobs_table(demo_jobs)
 
     def refresh_cluster_jobs_queue(self, queue_jobs=None):
         """Refreshes the cluster status widgets (demo)."""
@@ -792,9 +880,9 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Use beginGroup to group related settings
         self.settings.beginGroup("GeneralSettings")
-        self.settings.setValue("clusterAddress", self.slurm_connection.host)
-        self.settings.setValue("username", self.slurm_connection.user)
-        self.settings.setValue("psw", self.slurm_connection.password)
+        self.settings.setValue("clusterAddress", self.settings_panel.cluster_address.text())
+        self.settings.setValue("username", self.settings_panel.username.text())
+        self.settings.setValue("psw", self.settings_panel.password.text())
         self.settings.endGroup()  # End the group
 
         # self.settings.beginGroup("NotificationSettings")
@@ -813,7 +901,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.settings.sync()
 
         print("--- Settings Saved ---")
-        show_message(self, "Settings Saved", "Settings have been saved.")
+        # show_message(self, "Settings Saved", "Settings have been saved.")
 
     def load_settings(self):
         """Loads settings from QSettings."""
@@ -825,22 +913,28 @@ class SlurmJobManagerApp(QMainWindow):
         # Load General Settings
         self.settings.beginGroup("GeneralSettings")
         theme = self.settings.value("theme", "Dark")  # Provide a default value
-        self.settings_panel.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
+        # Check if settings_panel is initialized before accessing its widgets
+        if hasattr(self, 'settings_panel') and self.settings_panel.theme_combo:
+            self.settings_panel.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
 
         cluster_address = self.settings.value("clusterAddress", "")
-        self.settings_panel.cluster_address.setText(cluster_address)
+        if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
+            self.settings_panel.cluster_address.setText(cluster_address)
 
         username = self.settings.value("username", "")
-        self.settings_panel.username.setText(username)
+        if hasattr(self, 'settings_panel') and self.settings_panel.username:
+            self.settings_panel.username.setText(username)
 
         cluster_psw = self.settings.value("psw", "")
-        self.settings_panel.password.setText(cluster_psw)
+        if hasattr(self, 'settings_panel') and self.settings_panel.password:
+            self.settings_panel.password.setText(cluster_psw)
         self.settings.endGroup()
 
         self.settings.beginGroup("AppearenceSettings")
-        for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-            value = self.settings.value(obj.objectName(), 'false', type=bool)
-            obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+        if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
+            for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
+                value = self.settings.value(obj.objectName(), 'false', type=bool)
+                obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
 
         self.settings.endGroup()
         # # Load Notification Settings
@@ -867,12 +961,68 @@ class SlurmJobManagerApp(QMainWindow):
 # --- Main Execution ---
 if __name__ == "__main__":
 
-    app = QApplication(sys.argv)
+    # Get the script directory to construct relative paths
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_path = os.path.join(script_dir, "configs", "settings.ini")
+    configs_dir = os.path.join(script_dir, "configs")
+    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 
-    # Apply a base font
-    font = QFont("Inter", 10)  # Use Inter font if available, adjust size as needed
-    app.setFont(font)
-    app.setWindowIcon(QIcon("/home/nicola/Desktop/slurm_gui/src_static/logo.png"))
-    window = SlurmJobManagerApp()
-    window.show()
-    sys.exit(app.exec())
+    # Check if the settings file exists
+    if not os.path.isfile(settings_path):
+        print(f"Settings file not found at: {settings_path}")
+
+        # Ensure configs directory exists
+        if not os.path.exists(configs_dir):
+            os.makedirs(configs_dir)
+            print(f"Created configs directory at: {configs_dir}")
+
+        # Copy the default settings file to the expected location
+        shutil.copy2(default_settings_path, settings_path)
+        print(f"Created settings file at: {settings_path} using defaults")
+
+        # Show the connection setup dialog
+        app = QApplication(sys.argv)  # Create QApplication instance early for the dialog
+        dialog = ConnectionSetupDialog()
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # User clicked OK, save the settings
+            connection_details = dialog.get_connection_details()
+
+            # Save details to settings.ini (this will modify the newly copied settings.ini)
+            settings = QSettings(settings_path, QSettings.Format.IniFormat)
+            settings.beginGroup("GeneralSettings")
+            settings.setValue("clusterAddress", connection_details["clusterAddress"])
+            settings.setValue("username", connection_details["username"])
+            settings.setValue("psw", connection_details["psw"])
+            settings.endGroup()
+            settings.sync()
+            print(f"Updated settings file at: {settings_path} with user input")
+
+            # Continue with application startup
+            # QApplication instance is already created
+            font = QFont("Inter", 10)
+            app.setFont(font)
+            # Use relative path for the window icon during initial setup as well
+            window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+            app.setWindowIcon(QIcon(window_icon_path))
+            window = SlurmJobManagerApp()
+            window.show()
+            sys.exit(app.exec())
+
+        else:
+            # User clicked Cancel, exit the application
+            print("Connection setup cancelled. Exiting.")
+            sys.exit(0)  # Exit code 0 indicates successful termination
+
+    else:
+        # Settings file found, proceed with normal startup
+        print(f"Settings file found at: {settings_path}")
+        app = QApplication(sys.argv)
+        # Apply a base font
+        font = QFont("Inter", 10)  # Use Inter font if available, adjust size as needed
+        app.setFont(font)
+        # Use relative path for the window icon
+        window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+        app.setWindowIcon(QIcon(window_icon_path))
+        window = SlurmJobManagerApp()
+        window.show()
+        sys.exit(app.exec())
