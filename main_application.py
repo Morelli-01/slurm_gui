@@ -145,7 +145,7 @@ class SlurmJobManagerApp(QMainWindow):
         # self.setFixedHeight(MIN_HEIGHT)
 
         # Use relative path for the window icon
-        window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
         self.setWindowIcon(QIcon(window_icon_path))
 
         # --- Theme Setup ---
@@ -273,7 +273,7 @@ class SlurmJobManagerApp(QMainWindow):
             self.cluster_status_overview_widget.setStyleSheet(
                 self.cluster_status_overview_widget.themes[theme_name]
             )
-
+            self.job_queue_widget.setStyleSheet(self.themes[theme_name])    
             # Update separator color based on theme
             separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
             for i in range(self.main_layout.count()):
@@ -300,7 +300,7 @@ class SlurmJobManagerApp(QMainWindow):
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
         # Use relative path for the logo
-        logo_path = os.path.join(script_dir, "src_static", "logo.png")
+        logo_path = os.path.join(script_dir, "src_static", "icon3.png")
         pixmap = QPixmap(logo_path)  # Use .svg or .ico if needed
         scaled_pixmap = pixmap.scaled(35, 35, Qt.AspectRatioMode.KeepAspectRatio,
                                       Qt.TransformationMode.SmoothTransformation)
@@ -367,7 +367,7 @@ class SlurmJobManagerApp(QMainWindow):
                               THEME_DARK else COLOR_LIGHT_BORDER))
         # --- Job List Section ---
         jobs_layout.addWidget(self._create_job_list_group())
-        jobs_layout.addStretch()
+        #jobs_layout.addStretch()
         self.stacked_widget.addWidget(jobs_panel)
 
     def _create_job_submission_group(self):
@@ -531,14 +531,16 @@ class SlurmJobManagerApp(QMainWindow):
         # --- Left Section: Job Queue ---
         self.job_queue_widget = JobQueueWidget()  # Instantiate the new widget
         content_layout.addWidget(self.job_queue_widget)  # Add it to the left side
+        self.job_queue_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # --- Right Section: Cluster Overview (Nodes Status) ---
         overview_group = QGroupBox("Real-time Usage")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setSpacing(15)
+        overview_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Set fixed width for the nodes status panel group box
-        overview_group.setFixedWidth(450)
+        # overview_group.setFixedWidth(450)
 
         self.cluster_status_overview_widget = cluster_status_widget.ClusterStatusWidget(
             slurm_connection=self.slurm_connection)
@@ -552,7 +554,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         cluster_layout.addLayout(content_layout)
 
-        cluster_layout.addStretch()  # Push content to the top
+        # cluster_layout.addStretch()  # Push content to the top
         self.stacked_widget.addWidget(cluster_panel)
 
     def create_settings_panel(self):
@@ -1002,7 +1004,7 @@ if __name__ == "__main__":
             font = QFont("Inter", 10)
             app.setFont(font)
             # Use relative path for the window icon during initial setup as well
-            window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+            window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
             window.show()
@@ -1021,7 +1023,7 @@ if __name__ == "__main__":
         font = QFont("Inter", 10)  # Use Inter font if available, adjust size as needed
         app.setFont(font)
         # Use relative path for the window icon
-        window_icon_path = os.path.join(script_dir, "src_static", "logo.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()
         window.show()

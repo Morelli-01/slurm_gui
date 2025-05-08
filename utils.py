@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtCore import pyqtSignal
-import sys
+import sys, os
 from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
 from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
 from modules.defaults import *
@@ -195,7 +195,12 @@ class ButtonGroupWidget(QWidget):  # Assuming this is a QWidget subclass
 
 
 def get_dark_theme_stylesheet():
-    with open("src_static/dark_theme.txt", "r") as f:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_path = os.path.join(script_dir, "configs", "settings.ini")
+    configs_dir = os.path.join(script_dir, "configs")
+    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
+    dark_theme_path = os.path.join(script_dir, "src_static", "dark_theme.txt")
+    with open(str(dark_theme_path), "r") as f:
         stylesheet_template = f.read()
 
     return stylesheet_template.format(
@@ -216,7 +221,12 @@ def get_dark_theme_stylesheet():
 
 def get_light_theme_stylesheet():
     """Loads and returns the CSS stylesheet for the light theme from a file."""
-    with open("/home/nicola/Desktop/slurm_gui/src_static/light_theme.txt", "r") as f:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    settings_path = os.path.join(script_dir, "configs", "settings.ini")
+    configs_dir = os.path.join(script_dir, "configs")
+    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
+    light_theme_path = os.path.join(script_dir, "src_static", "light_theme.txt")
+    with open(str(light_theme_path), "r") as f:
         stylesheet = f.read()
 
     return stylesheet.format(
