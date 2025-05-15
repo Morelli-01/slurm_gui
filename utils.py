@@ -1,9 +1,14 @@
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLabel, QFrame
 from PyQt6.QtCore import pyqtSignal
 import sys, os
 from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
 from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
 from modules.defaults import *
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+settings_path = os.path.join(script_dir, "configs", "settings.ini")
+configs_dir = os.path.join(script_dir, "configs")
+default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
@@ -243,3 +248,15 @@ def get_light_theme_stylesheet():
         BTN_RED=BTN_RED,
         BTN_BLUE=BTN_BLUE,
     )
+
+def create_separator(shape=QFrame.Shape.HLine, color=COLOR_DARK_BORDER):
+    """Creates a styled separator QFrame."""
+    separator = QFrame()
+    separator.setFrameShape(shape)
+    separator.setFrameShadow(QFrame.Shadow.Sunken)
+    separator.setStyleSheet(f"background-color: {color};")
+    if shape == QFrame.Shape.HLine:
+        separator.setFixedHeight(1)
+    else:
+        separator.setFixedWidth(1)
+    return separator

@@ -24,6 +24,7 @@ from utils import *
 from modules.job_queue_widget import JobQueueWidget
 import modules.cluster_status_widget as cluster_status_widget
 from modules.defaults import *
+from modules.job_panel import JobsPanel
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
@@ -44,20 +45,6 @@ DEFAULT_TIME = "1:00:00"
 
 
 # --- Helper Functions ---
-
-
-def create_separator(shape=QFrame.Shape.HLine, color=COLOR_DARK_BORDER):
-    """Creates a styled separator QFrame."""
-    separator = QFrame()
-    separator.setFrameShape(shape)
-    separator.setFrameShadow(QFrame.Shadow.Sunken)
-    separator.setStyleSheet(f"background-color: {color};")
-    if shape == QFrame.Shape.HLine:
-        separator.setFixedHeight(1)
-    else:
-        separator.setFixedWidth(1)
-    return separator
-
 
 def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
     """Displays a simple message box."""
@@ -141,8 +128,6 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
-        # self.setMaximumSize(MIN_WIDTH, MIN_HEIGHT)
-        # self.setFixedHeight(MIN_HEIGHT)
 
         # Use relative path for the window icon
         window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
@@ -254,7 +239,7 @@ class SlurmJobManagerApp(QMainWindow):
             queue_jobs = self.slurm_connection._fetch_squeue()
             self.set_connection_status(True)
             print("Refreshing all data...")
-            self.refresh_job_status()
+            # self.refresh_job_status()
             self.refresh_cluster_jobs_queue(queue_jobs)
             self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
         except ConnectionError as e:
@@ -359,16 +344,18 @@ class SlurmJobManagerApp(QMainWindow):
     # --- Panel Creation Methods ---
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
-        jobs_panel = QWidget()
-        jobs_layout = QVBoxLayout(jobs_panel, spacing=15)
-        # --- Job Submission Section ---
-        jobs_layout.addWidget(self._create_job_submission_group())
-        jobs_layout.addWidget(create_separator(color=COLOR_DARK_BORDER if self.current_theme ==
-                              THEME_DARK else COLOR_LIGHT_BORDER))
-        # --- Job List Section ---
-        jobs_layout.addWidget(self._create_job_list_group())
+        self.jobs_panel = JobsPanel()
+        # jobs_panel = QWidget()
+        # jobs_layout = QVBoxLayout(jobs_panel, spacing=15)
+        # # --- Job Submission Section ---
+        # jobs_layout.addWidget(self._create_job_submission_group())
+        # jobs_layout.addWidget(create_separator(color=COLOR_DARK_BORDER if self.current_theme ==
+        #                       THEME_DARK else COLOR_LIGHT_BORDER))
+        # # --- Job List Section ---
+        # jobs_layout.addWidget(self._create_job_list_group())
         #jobs_layout.addStretch()
-        self.stacked_widget.addWidget(jobs_panel)
+        # self.stacked_widget.addWidget(jobs_panel)
+        self.stacked_widget.addWidget(self.jobs_panel)
 
     def _create_job_submission_group(self):
         """Helper to create the 'Submit SLURM Job' group box."""
@@ -497,6 +484,9 @@ class SlurmJobManagerApp(QMainWindow):
         # Header with refresh button
         header_layout = QHBoxLayout()
         cluster_label = QLabel("Cluster Status Overview")
+        cluster_label.setFont(QFont("Inter", 20))
+        cluster_label.setStyleSheet("font-weight: bold;")
+
         header_layout.addWidget(cluster_label)
         header_layout.addStretch()
 
@@ -963,11 +953,6 @@ class SlurmJobManagerApp(QMainWindow):
 # --- Main Execution ---
 if __name__ == "__main__":
 
-    # Get the script directory to construct relative paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    settings_path = os.path.join(script_dir, "configs", "settings.ini")
-    configs_dir = os.path.join(script_dir, "configs")
-    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 
     # Check if the settings file exists
     if not os.path.isfile(settings_path):
