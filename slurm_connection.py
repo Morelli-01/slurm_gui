@@ -8,6 +8,7 @@ import yaml
 import os
 import tempfile
 from PyQt6.QtCore import QObject
+from datetime import datetime, timedelta
 
 JOB_CODES = {
     "CD": "COMPLETED",
@@ -28,6 +29,25 @@ def require_connection(func):
             raise ConnectionError("SSH connection not established. Please connect first.")
         return func(self, *args, **kwargs)
     return wrapper
+
+
+def parse_duration(s):
+    days = 0
+    if '-' in s:
+        # Format: D-HH:MM:SS
+        day_part, time_part = s.split('-')
+        days = int(day_part)
+    else:
+        time_part = s
+    parts = time_part.split(':')
+    parts = [int(p) for p in parts]
+    if len(parts) == 2:        # MM:SS
+        h, m, s = 0, parts[0], parts[1]
+    elif len(parts) == 3:      # HH:MM:SS
+        h, m, s = parts
+    else:
+        raise ValueError(f"Invalid format: {s}")
+    return timedelta(days=days, hours=h, minutes=m, seconds=s)
 
 
 class SlurmConnection:
@@ -329,21 +349,21 @@ class SlurmConnection:
                 job_dict["Partition"] = fields[8]
                 job_dict["Status"] = JOB_CODES[fields[9]]
                 job_dict["Time Limit"] = fields[10]
-                job_dict["Time Used"] = fields[11]
+                job_dict["Time Used"] =  [fields[11], parse_duration(fields[11])]
                 job_dict["Account"] = fields[17]
-                job_dict["Priority"] = fields[18]
+                job_dict["Priority"] = int(fields[18])
                 alloc_gres = fields[20].split(",")
 
                 for f in alloc_gres:
                     f = f.split("=")
                     if f[0] == "cpu":
-                        job_dict["CPUs"] = f[1]
+                        job_dict["CPUs"] = int(f[1])
                     elif f[0] == "mem":
                         job_dict["RAM"] = f[1]
                     elif f[0] == "gres/gpu":
-                        job_dict["GPUs"] = f[1]
+                        job_dict["GPUs"] = int(f[1])
                     elif f[0] == "billing":
-                        job_dict["Billing"] = f[1]
+                        job_dict["Billing"] = int(f[1])
 
                 if "GPUs" not in job_dict.keys():
                     job_dict["GPUs"] = 0

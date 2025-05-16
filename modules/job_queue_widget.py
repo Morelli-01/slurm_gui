@@ -6,27 +6,10 @@ from PyQt6.QtGui import QColor, QFont, QBrush, QPalette
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from modules.defaults import *
 from utils import get_dark_theme_stylesheet
-# JOB_QUEUE_FIELDS = [
-#     "Job ID", "Job Name", "User",
-#     "Account", "Priority", "Status",
-#     "Time Used", "Partition", "CPUs",
-#     "Time Limit", "Reason", "RAM",
-#     "GPUs", "Nodelist"
-# ]
 
-
-# Updated Color Palette
-# COLOR_DARK_BG = "#282a36"
-# COLOR_DARK_FG = "#f8f8f2"
-# COLOR_DARK_BG_ALT = "#383a59"
-# COLOR_DARK_BG_HOVER = "#44475a"
-# COLOR_DARK_BORDER = "#6272a4"
-# COLOR_GREEN = "#50fa7b"
-# COLOR_RED = "#ff5555"
-# COLOR_ORANGE = "#ffb86c"
-# COLOR_BLUE = "#8be9fd"
-# COLOR_GRAY = "#6272a4"
-
+from PyQt6.QtWidgets import QTableWidgetItem
+from PyQt6.QtCore import Qt
+from datetime import datetime, timedelta
 
 class JobQueueWidget(QGroupBox):
     """
@@ -78,6 +61,11 @@ class JobQueueWidget(QGroupBox):
 
     def _setup_table(self):
         self.visible_fields = [field for field in JOB_QUEUE_FIELDS if self.displayable_fields.get(field, False)]
+        
+        # self.queue_table.verticalScrollBar()
+        self.queue_table.verticalScrollBar().setStyleSheet(scroll_bar_stylesheet)
+        self.queue_table.horizontalScrollBar().setStyleSheet(scroll_bar_stylesheet)
+        
 
         self.queue_table.setColumnCount(len(self.visible_fields))
         self.queue_table.setHorizontalHeaderLabels(self.visible_fields)
@@ -158,9 +146,18 @@ class JobQueueWidget(QGroupBox):
             self.queue_table.insertRow(current_table_row)
 
             for col_idx, field_name in enumerate(self.visible_fields):
-                item_text = str(job_dict.get(field_name, "N/A"))
-                item = QTableWidgetItem(item_text)
+                item_data = job_dict.get(field_name, "N/A")
+                if isinstance(item_data, int):
 
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data)
+                elif isinstance(item_data, str):
+                    item = QTableWidgetItem(item_data)
+                else:
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                    item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                    # item.setText(str(item_data[0]))
                 # Store the original index from self.current_jobs_data.
                 # This allows filter functions to retrieve the full job_dict for this row,
                 # regardless of sorting or which columns are currently visible.

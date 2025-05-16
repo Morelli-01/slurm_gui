@@ -89,3 +89,23 @@ BLOCK_COLOR_MAP = {
     "high-constraint-ram_cpu": COLOR_UNAVAILABLE_RAM,
     "mid-constraint-ram_cpu": COLOR_MID_CONSTRAINT_RAM,
 }
+
+scroll_bar_stylesheet = """
+            QScrollBar:vertical {
+                border: none;
+                background: #2A2F3A;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #5D6167;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """
