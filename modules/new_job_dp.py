@@ -27,7 +27,6 @@ class CheckableComboBox(QComboBox):
         self.lineEdit().setReadOnly(True)
         self.setPlaceholderText("Select constraints...")
 
-
         self.model = QStandardItemModel()
         self.setModel(self.model)
         self.view = QListView(self)
@@ -153,7 +152,7 @@ class NewJobDialog(QDialog):
             QComboBox::down-arrow {{
                 width: 14px;
                 height: 14px;
-                image: url({os.path.join(script_dir, "src_static", "down_arrow.svg")});
+                image: url({os.path.join(script_dir, "src_static", "down_arrow.svg").replace('\\', '/')});
             }}
             QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button, QTimeEdit::up-button, QTimeEdit::down-button {{
                 background-color: {COLOR_DARK_BORDER};
@@ -161,13 +160,13 @@ class NewJobDialog(QDialog):
             }}
             QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QTimeEdit::up-arrow {{
                 background-color: transparent;
-                image: url({os.path.join(script_dir, "src_static", "up_arrow.svg")});
+                image: url({os.path.join(script_dir, "src_static", "up_arrow.svg").replace('\\', '/')});
                 width: 10px;
                 height: 10px;
             }}
             QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QTimeEdit::down-arrow {{
                 background-color: transparent;
-                image: url({os.path.join(script_dir, "src_static", "down_arrow.svg")});
+                image: url({os.path.join(script_dir, "src_static", "down_arrow.svg").replace('\\', '/')});
                 width: 10px;
                 height: 10px;
             }}
@@ -257,7 +256,7 @@ class NewJobDialog(QDialog):
             QCheckBox::indicator:checked {{
                 background-color: {COLOR_BLUE};
                 border: 1px solid {COLOR_BLUE};
-                image: url({os.path.join(script_dir, "src_static", "check.svg")});
+                image: url({os.path.join(script_dir, "src_static", "check.svg").replace('\\', '/')});
             }}
             QScrollBar:vertical {{
                 border: none;
@@ -292,7 +291,7 @@ class NewJobDialog(QDialog):
                 background-color: {COLOR_RED};
                 border: 2px solid {COLOR_RED};
                 border-radius: 3px;
-                image: url({os.path.join(script_dir, "src_static", "err.svg")});  /* Optional: you can add a checkmark image */
+                image: url({os.path.join(script_dir, "src_static", "err.svg").replace('\\', '/')});  /* Optional: you can add a checkmark image */
 
             }}
 
@@ -300,7 +299,7 @@ class NewJobDialog(QDialog):
                 background-color: #0ab836;
                 border: 2px solid #0ab836;
                 border-radius: 3px;
-                image: url({os.path.join(script_dir, "src_static", "checkmark.svg")});  /* Optional: you can add a checkmark image */
+                image: url({os.path.join(script_dir, "src_static", "checkmark.svg").replace('\\', '/')});  /* Optional: you can add a checkmark image */
             }}
             QListView {{
                 background-color: {COLOR_DARK_BG_ALT};
@@ -360,7 +359,7 @@ class NewJobDialog(QDialog):
 
         # Command tab
         self.command_tab = QWidget()
-        self.tabs.addTab(self.command_tab, "Command & Script")
+        self.tabs.addTab(self.command_tab, "Command Script")
         self._setup_command_tab()
 
         # NEW: Job Array Tab
@@ -632,17 +631,17 @@ class NewJobDialog(QDialog):
         layout.addWidget(self.command_text)
 
         # Load from file option
-        file_layout = QHBoxLayout()
+        # file_layout = QHBoxLayout()
 
-        self.load_script_button = QPushButton("Load Script from File")
-        self.load_script_button.setObjectName(BTN_BLUE)
-        self.load_script_button.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "file.svg")))
-        self.load_script_button.clicked.connect(self._load_script_from_file)
+        # self.load_script_button = QPushButton("Load Script from File")
+        # self.load_script_button.setObjectName(BTN_BLUE)
+        # self.load_script_button.setIcon(
+        #     QIcon(os.path.join(script_dir, "src_static", "file.svg")))
+        # self.load_script_button.clicked.connect(self._load_script_from_file)
 
-        file_layout.addWidget(self.load_script_button)
-        file_layout.addStretch()
-        layout.addLayout(file_layout)
+        # file_layout.addWidget(self.load_script_button)
+        # file_layout.addStretch()
+        # layout.addLayout(file_layout)
 
         # Separator
         layout.addWidget(create_separator())
@@ -883,18 +882,6 @@ class NewJobDialog(QDialog):
         dep_id_layout.addWidget(self.dep_id_display_combo)
         dep_id_layout.addWidget(self.singleton_label)
 
-        # Add a button to remove selected dependency
-        self.remove_dependency_button = QPushButton(
-            "Remove Selected Dependency")
-        self.remove_dependency_button.setFixedWidth(300)
-        self.remove_dependency_button.setObjectName(BTN_RED)
-        self.remove_dependency_button.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
-        self.remove_dependency_button.clicked.connect(
-            self._remove_selected_dependency)
-        dep_id_layout.addWidget(
-            self.remove_dependency_button, alignment=Qt.AlignmentFlag.AlignHCenter)
-
         dependency_layout.addWidget(dep_id_widget)
 
         # Connect dependency type change to update UI (singleton label and preview)
@@ -934,6 +921,26 @@ class NewJobDialog(QDialog):
         dependency_layout.addWidget(self.running_jobs_group)
 
         layout.addWidget(self.dependency_group)
+
+        # NEW: GroupBox for removing dependencies, moved to the very bottom
+        self.remove_dependency_group = QGroupBox("Remove Dependent Job ID")
+        remove_dep_layout = QHBoxLayout(self.remove_dependency_group)
+        remove_dep_layout.setContentsMargins(
+            10, 20, 10, 10)  # Adjusted margins for better spacing
+
+        self.remove_dependency_button = QPushButton(
+            "Remove Selected Dependency")
+        self.remove_dependency_button.setFixedWidth(300)
+        self.remove_dependency_button.setObjectName(BTN_RED)
+        self.remove_dependency_button.setIcon(
+            QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
+        self.remove_dependency_button.clicked.connect(
+            self._remove_selected_dependency)
+        remove_dep_layout.addStretch()
+        remove_dep_layout.addWidget(self.remove_dependency_button)
+        remove_dep_layout.addStretch()
+
+        layout.addWidget(self.remove_dependency_group)  # Add the new group box here
         layout.addStretch()  # Push everything to the top
 
         # Initial update for dependency inputs
@@ -1045,20 +1052,6 @@ class NewJobDialog(QDialog):
         if directory:
             self.working_dir_edit.setText(directory)
             self._update_preview()  # Update preview after changing working directory
-
-    def _load_script_from_file(self):
-        """Load job script from a file"""
-        file_name, _ = QFileDialog.getOpenFileName(
-            self, "Select Script File", "", "All Files (*)")
-        if file_name:
-            try:
-                with open(file_name, 'r') as file:
-                    content = file.read()
-                    self.command_text.setText(content)
-                    # Also update the preview
-                    self._update_preview()
-            except Exception as e:
-                print(f"Error loading script file: {e}")
 
     def _update_preview(self):
         """Update the preview of the SLURM submission script"""

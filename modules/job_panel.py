@@ -11,6 +11,7 @@ from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
 
 # Assuming these modules/files exist in your project structure
+from modules import project_store
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
 from modules.defaults import *
 from modules.project_store import ProjectStore
@@ -444,6 +445,9 @@ class ProjectGroup(QGroupBox):
         # Keep track of the currently selected widget
         self._selected_project_widget = None
 
+
+
+    def start(self):
         self.projects_keys = self.parent.project_storer.all_projects()
         for proj in self.projects_keys:
             self.add_new_project(proj)
@@ -625,7 +629,11 @@ class JobsPanel(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
-        self.project_storer = ProjectStore(self.slurm_connection)
+        try:
+            self.project_storer = ProjectStore(self.slurm_connection)
+        except ConnectionError as e:
+            print(e)
+            self.project_storer = None
         self.current_project = None  # Add attribute to store selected project
 
         # Use a base layout for the main content (ProjectGroup and JobsGroup)
@@ -635,6 +643,8 @@ class JobsPanel(QWidget):
 
         self.jobs_group = JobsGroup()
         self.project_group = ProjectGroup(parent=self)
+        if self.project_storer is not None:
+            self.project_group.start()
 
         self.base_layout.addWidget(self.project_group)
         self.base_layout.addWidget(self.jobs_group)
@@ -681,7 +691,7 @@ class JobsPanel(QWidget):
 
         # --- Initial Project Selection ---
         # After loading projects, select the first one if available
-        if self.project_group.projects_keys:
+        if self.project_storer is not None and self.project_group.projects_keys:
             first_project_name = self.project_group.projects_keys[-1]
             # Programmatically trigger the selection
             self.project_group.handle_project_selection(first_project_name)
@@ -714,3 +724,13 @@ class JobsPanel(QWidget):
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
                                   self.height() - self.new_jobs_button.height() - 20)
         super().resizeEvent(event)
+
+    def setup_project_storer(self):
+        try:
+            self.project_storer = ProjectStore(self.slurm_connection)
+            self.project_storer._init(self.slurm_connection, remote_path=None)
+            # while not hasattr(self.project_storer, "_projects"): continue
+            self.project_group.start()
+        except ConnectionError as e:
+            print(e)
+            self.project_storer = None

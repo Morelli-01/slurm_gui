@@ -156,6 +156,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.main_layout.addWidget(self.stacked_widget)
 
         # Create panels (views)
+        
         self.create_jobs_panel()
         self.create_cluster_panel()
         self.create_settings_panel()
@@ -170,6 +171,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.load_settings()  # Load settings again after potential initial save
 
     def set_connection_status(self, connected: bool, connecting=False):
+        if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
+            self.jobs_panel.setup_project_storer()
         self.connection_status_ = True if connected else False
         if connecting:
             # Use relative path for loading gif

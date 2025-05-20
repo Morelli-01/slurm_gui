@@ -1,3 +1,4 @@
+import functools
 import json
 import tempfile
 from dataclasses import dataclass, field, asdict
@@ -94,8 +95,8 @@ class ProjectStore:
     # initialisation & helpers
     # ------------------------------------------------------------------
     def _init(self, slurm: SlurmConnection, remote_path: Optional[str]):
-        if not slurm.check_connection():
-            raise RuntimeError("SlurmConnection must be *connected* before using ProjectStore")
+        # if not slurm.check_connection():
+        #     raise RuntimeError("SlurmConnection must be *connected* before using ProjectStore")
 
         self.slurm = slurm
 
@@ -112,7 +113,8 @@ class ProjectStore:
         self._tmp_local = Path(tempfile.mkdtemp()) / "project_settings.ini"
 
         self._download_remote()
-        self.settings = QSettings(str(self._tmp_local), QSettings.Format.IniFormat)
+        self.settings = QSettings(
+            str(self._tmp_local), QSettings.Format.IniFormat)
         self.settings.setFallbacksEnabled(False)
 
         self._projects: Dict[str, Project] = self._read_from_settings()
@@ -211,4 +213,3 @@ class ProjectStore:
     # ------------------------------------------------------------------
     def __repr__(self) -> str:  # pragma: no cover – convenience only
         return f"<ProjectStore {self._projects}>"
-
