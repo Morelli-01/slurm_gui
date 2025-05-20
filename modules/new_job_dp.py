@@ -27,6 +27,7 @@ class CheckableComboBox(QComboBox):
         self.lineEdit().setReadOnly(True)
         self.setPlaceholderText("Select constraints...")
 
+
         self.model = QStandardItemModel()
         self.setModel(self.model)
         self.view = QListView(self)
@@ -861,33 +862,6 @@ class NewJobDialog(QDialog):
             self._update_preview)  # Connect to update preview
         dependency_layout.addWidget(self.dep_type_combo)
 
-        # Job ID input for dependencies (now a QComboBox)
-        dep_id_widget = QWidget()
-        dep_id_layout = QVBoxLayout(dep_id_widget)
-        dep_id_layout.setContentsMargins(0, 0, 0, 0)
-        dep_id_layout.setSpacing(10)
-
-        # Changed to QComboBox for displaying added dependencies
-        self.dep_id_display_combo = QComboBox()
-        self.dep_id_display_combo.setPlaceholderText(
-            "Added job IDs will appear here")
-        self.dep_id_display_combo.currentIndexChanged.connect(
-            self._update_preview)  # Connect to update preview
-
-        self.singleton_label = QLabel(
-            "No job IDs needed for singleton dependency type")
-        self.singleton_label.setVisible(False)
-
-        dep_id_layout.addWidget(self._create_label("Dependent Job IDs:"))
-        dep_id_layout.addWidget(self.dep_id_display_combo)
-        dep_id_layout.addWidget(self.singleton_label)
-
-        dependency_layout.addWidget(dep_id_widget)
-
-        # Connect dependency type change to update UI (singleton label and preview)
-        self.dep_type_combo.currentIndexChanged.connect(
-            self._update_dependency_inputs)
-
         # Running jobs selection
         self.running_jobs_group = QGroupBox("Select from Running Jobs")
         running_jobs_layout = QVBoxLayout(self.running_jobs_group)
@@ -920,27 +894,48 @@ class NewJobDialog(QDialog):
 
         dependency_layout.addWidget(self.running_jobs_group)
 
-        layout.addWidget(self.dependency_group)
+        # NEW: Group box for displaying and deleting dependencies
+        self.delete_dependency_group = QGroupBox("Manage Added Dependencies")
+        delete_dep_layout = QVBoxLayout(self.delete_dependency_group)
+        delete_dep_layout.setSpacing(10)
+        delete_dep_layout.setContentsMargins(10, 20, 10, 10) # Add some padding
 
-        # NEW: GroupBox for removing dependencies, moved to the very bottom
-        self.remove_dependency_group = QGroupBox("Remove Dependent Job ID")
-        remove_dep_layout = QHBoxLayout(self.remove_dependency_group)
-        remove_dep_layout.setContentsMargins(
-            10, 20, 10, 10)  # Adjusted margins for better spacing
+        # Job ID input for dependencies (now a QComboBox) - MOVED HERE
+        self.dep_id_widget = QWidget()
+        dep_id_layout = QVBoxLayout(self.dep_id_widget)
+        dep_id_layout.setContentsMargins(0, 0, 0, 0)
+        dep_id_layout.setSpacing(10)
 
+        # Changed to QComboBox for displaying added dependencies
+        self.dep_id_display_combo = QComboBox()
+        self.dep_id_display_combo.setPlaceholderText(
+            "Added job IDs will appear here")
+        self.dep_id_display_combo.currentIndexChanged.connect(
+            self._update_preview)  # Connect to update preview
+
+        self.singleton_label = QLabel(
+            "No job IDs needed for singleton dependency type")
+        self.singleton_label.setVisible(False)
+
+        dep_id_layout.addWidget(self._create_label("Dependent Job IDs:"))
+        dep_id_layout.addWidget(self.dep_id_display_combo)
+        dep_id_layout.addWidget(self.singleton_label)
+
+        delete_dep_layout.addWidget(self.dep_id_widget) # Add the dep_id_widget to this new group box
+
+        # Add a button to remove selected dependency
         self.remove_dependency_button = QPushButton(
             "Remove Selected Dependency")
-        self.remove_dependency_button.setFixedWidth(300)
         self.remove_dependency_button.setObjectName(BTN_RED)
         self.remove_dependency_button.setIcon(
             QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
         self.remove_dependency_button.clicked.connect(
             self._remove_selected_dependency)
-        remove_dep_layout.addStretch()
-        remove_dep_layout.addWidget(self.remove_dependency_button)
-        remove_dep_layout.addStretch()
+        delete_dep_layout.addWidget(self.remove_dependency_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(self.remove_dependency_group)  # Add the new group box here
+
+        layout.addWidget(self.dependency_group)
+        layout.addWidget(self.delete_dependency_group) # Add the new group box
         layout.addStretch()  # Push everything to the top
 
         # Initial update for dependency inputs
