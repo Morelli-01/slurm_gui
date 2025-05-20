@@ -1,7 +1,13 @@
+from modules.job_panel import JobsPanel
+from modules.defaults import *
+import modules.cluster_status_widget as cluster_status_widget
+from modules.job_queue_widget import JobQueueWidget
+from utils import *
 from pathlib import Path
 import shutil
 from modules.settings_widget import SettingsWidget
-import sys, slurm_connection
+import sys
+import slurm_connection
 
 import threading
 import os
@@ -20,25 +26,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Import utils and defaults after getting script_dir if they use relative paths internally
 # Assuming utils and defaults do not need script_dir at import time, keep them here.
-from utils import *
-from modules.job_queue_widget import JobQueueWidget
-import modules.cluster_status_widget as cluster_status_widget
-from modules.defaults import *
-from modules.job_panel import JobsPanel
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
 MIN_WIDTH = 1600
 MIN_HEIGHT = 900
 REFRESH_INTERVAL_MS = 5000  # 10 seconds
-
-
-# Default Job Values
-DEFAULT_PARTITION = "compute"
-DEFAULT_NODES = 1
-DEFAULT_TASKS = 1
-DEFAULT_MEMORY = "4G"
-DEFAULT_TIME = "1:00:00"
 
 
 # SLURM Statuses (Node States - simplified)
@@ -72,7 +65,8 @@ class ConnectionSetupDialog(QDialog):
 
         form_layout = QFormLayout()
         self.cluster_address_input = QLineEdit()
-        self.cluster_address_input.setPlaceholderText("e.g., your.cluster.address")
+        self.cluster_address_input.setPlaceholderText(
+            "e.g., your.cluster.address")
         form_layout.addRow("Cluster Address:", self.cluster_address_input)
 
         self.username_input = QLineEdit()
@@ -80,8 +74,10 @@ class ConnectionSetupDialog(QDialog):
         form_layout.addRow("Username:", self.username_input)
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Your password (optional, or use key)")
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)  # Hide password
+        self.password_input.setPlaceholderText(
+            "Your password (optional, or use key)")
+        self.password_input.setEchoMode(
+            QLineEdit.EchoMode.Password)  # Hide password
         form_layout.addRow("Password:", self.password_input)
 
         # Note: SSH Key path input is more complex and might require a file dialog.
@@ -90,7 +86,8 @@ class ConnectionSetupDialog(QDialog):
 
         layout.addLayout(form_layout)
 
-        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
@@ -111,8 +108,7 @@ class SlurmJobManagerApp(QMainWindow):
         super().__init__()
         # The slurm_connection is initialized here, assuming settings.ini exists
         # or has been created by the setup dialog before this point.
-        self.slurm_connection = slurm_connection.SlurmConnection(
-            "./configs/settings.ini")
+        self.slurm_connection = slurm_connection.SlurmConnection(settings_path)
 
         # Attempt to connect immediately
         try:
@@ -146,7 +142,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.central_widget.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(15, 15, 15, 15)  # Increased margins
+        self.main_layout.setContentsMargins(
+            15, 15, 15, 15)  # Increased margins
         self.main_layout.setSpacing(15)  # Increased spacing
 
         # --- UI Elements ---
@@ -164,7 +161,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.create_settings_panel()
 
         # --- Initialization ---
-        self.update_nav_styles(self.nav_buttons["Jobs"])  # Set initial active nav
+        # Set initial active nav
+        self.update_nav_styles(self.nav_buttons["Jobs"])
         self.stacked_widget.setCurrentIndex(0)
         self.setup_refresh_timer()
         self.set_connection_status(self.slurm_connection.is_connected())
@@ -175,7 +173,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.connection_status_ = True if connected else False
         if connecting:
             # Use relative path for loading gif
-            loading_gif_path = os.path.join(script_dir, "src_static", "loading.gif")
+            loading_gif_path = os.path.join(
+                script_dir, "src_static", "loading.gif")
             loading_movie = QMovie(loading_gif_path)
             loading_movie.setScaledSize(QSize(32, 32))
             loading_movie.start()
@@ -196,7 +195,8 @@ class SlurmJobManagerApp(QMainWindow):
         if connected:
             self.connection_status.setToolTip("Connected")
             # Use relative path for good_connection icon
-            good_connection_icon_path = os.path.join(script_dir, "src_static", "good_connection.png")
+            good_connection_icon_path = os.path.join(
+                script_dir, "src_static", "good_connection.png")
             self.connection_status.setPixmap(
                 QIcon(good_connection_icon_path).pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
@@ -211,7 +211,8 @@ class SlurmJobManagerApp(QMainWindow):
         else:
             self.connection_status.setToolTip("Disconnected")
             # Use relative path for bad_connection icon
-            bad_connection_icon_path = os.path.join(script_dir, "src_static", "bad_connection.png")
+            bad_connection_icon_path = os.path.join(
+                script_dir, "src_static", "bad_connection.png")
             self.connection_status.setPixmap(
                 QIcon(bad_connection_icon_path).pixmap(QSize(32, 32)))
             self.connection_status.setStyleSheet("""
@@ -241,7 +242,8 @@ class SlurmJobManagerApp(QMainWindow):
             print("Refreshing all data...")
             # self.refresh_job_status()
             self.refresh_cluster_jobs_queue(queue_jobs)
-            self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
+            self.cluster_status_overview_widget.update_status(
+                nodes_data, queue_jobs)
         except ConnectionError as e:
             print(e)
             self.set_connection_status(False)
@@ -258,13 +260,14 @@ class SlurmJobManagerApp(QMainWindow):
             self.cluster_status_overview_widget.setStyleSheet(
                 self.cluster_status_overview_widget.themes[theme_name]
             )
-            self.job_queue_widget.setStyleSheet(self.themes[theme_name])    
+            self.job_queue_widget.setStyleSheet(self.themes[theme_name])
             # Update separator color based on theme
             separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
             for i in range(self.main_layout.count()):
                 widget = self.main_layout.itemAt(i).widget()
                 if isinstance(widget, QFrame) and widget.frameShape() == QFrame.Shape.HLine:
-                    widget.setStyleSheet(f"background-color: {separator_color};")
+                    widget.setStyleSheet(
+                        f"background-color: {separator_color};")
                     break
             self.update_nav_styles()  # Update nav styles to reflect theme change
         else:
@@ -275,7 +278,8 @@ class SlurmJobManagerApp(QMainWindow):
         """Creates the top navigation bar with logo, buttons, and search."""
         nav_widget = QWidget()
         nav_layout = QHBoxLayout(nav_widget)
-        nav_layout.setContentsMargins(0, 0, 0, 0)  # No margins for the nav layout itself
+        # No margins for the nav layout itself
+        nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(10)
 
         # Logo
@@ -299,14 +303,16 @@ class SlurmJobManagerApp(QMainWindow):
             btn = QPushButton(name)
             btn.setObjectName("navButton")  # Use object name for styling
             btn.setCheckable(True)  # Make buttons checkable for active state
-            btn.clicked.connect(lambda checked, index=i, button=btn: self.switch_panel(index, button))
+            btn.clicked.connect(lambda checked, index=i,
+                                button=btn: self.switch_panel(index, button))
             nav_layout.addWidget(btn)
             self.nav_buttons[name] = btn  # Store button reference
 
         nav_layout.addStretch()
 
         self.connection_status = ClickableLabel(" Connection status...")
-        self.connection_status.setObjectName("statusButton")  # Use object name for styling
+        self.connection_status.setObjectName(
+            "statusButton")  # Use object name for styling
         # Initial connection status icon (use relative path)
         initial_status_icon_path = os.path.join(
             script_dir, "src_static", "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png")
@@ -344,7 +350,7 @@ class SlurmJobManagerApp(QMainWindow):
     # --- Panel Creation Methods ---
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
-        self.jobs_panel = JobsPanel()
+        self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
         # jobs_panel = QWidget()
         # jobs_layout = QVBoxLayout(jobs_panel, spacing=15)
         # # --- Job Submission Section ---
@@ -353,7 +359,7 @@ class SlurmJobManagerApp(QMainWindow):
         #                       THEME_DARK else COLOR_LIGHT_BORDER))
         # # --- Job List Section ---
         # jobs_layout.addWidget(self._create_job_list_group())
-        #jobs_layout.addStretch()
+        # jobs_layout.addStretch()
         # self.stacked_widget.addWidget(jobs_panel)
         self.stacked_widget.addWidget(self.jobs_panel)
 
@@ -362,7 +368,8 @@ class SlurmJobManagerApp(QMainWindow):
         group = QGroupBox("Submit SLURM Job")
         layout = QFormLayout(group)
         layout.setSpacing(10)  # Spacing within the form
-        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)  # Allow fields to expand
+        layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)  # Allow fields to expand
 
         # Job Name
         self.job_name_input = QLineEdit()
@@ -388,7 +395,8 @@ class SlurmJobManagerApp(QMainWindow):
         # Left column
         params_left_layout = QFormLayout()
         self.partition_combo = QComboBox()
-        self.partition_combo.addItems(["compute", "gpu", "bigmem", "debug"])  # TODO: Populate dynamically?
+        # TODO: Populate dynamically?
+        self.partition_combo.addItems(["compute", "gpu", "bigmem", "debug"])
         params_left_layout.addRow("Partition:", self.partition_combo)
         self.nodes_spin = QSpinBox()
         self.nodes_spin.setMinimum(1)
@@ -399,14 +407,16 @@ class SlurmJobManagerApp(QMainWindow):
         self.tasks_spin.setMinimum(1)
         self.tasks_spin.setMaximum(256)  # Increased max
         self.tasks_spin.setValue(DEFAULT_TASKS)
-        params_left_layout.addRow("Tasks per Node:", self.tasks_spin)  # Clarified label
+        params_left_layout.addRow(
+            "Tasks per Node:", self.tasks_spin)  # Clarified label
         parameters_layout.addLayout(params_left_layout)
 
         # Right column
         params_right_layout = QFormLayout()
         self.memory_input = QLineEdit(DEFAULT_MEMORY)
         self.memory_input.setPlaceholderText("e.g., 4G, 500M")
-        params_right_layout.addRow("Memory per Node:", self.memory_input)  # Clarified label
+        params_right_layout.addRow(
+            "Memory per Node:", self.memory_input)  # Clarified label
         self.time_input = QLineEdit(DEFAULT_TIME)
         self.time_input.setPlaceholderText("HH:MM:SS")
         params_right_layout.addRow("Time Limit:", self.time_input)
@@ -420,7 +430,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Additional SLURM options
         self.additional_options = QTextEdit()
-        self.additional_options.setPlaceholderText("Enter additional SLURM directives (e.g., --gres=gpu:1)")
+        self.additional_options.setPlaceholderText(
+            "Enter additional SLURM directives (e.g., --gres=gpu:1)")
         self.additional_options.setMaximumHeight(100)
         layout.addRow("Additional Options:", self.additional_options)
 
@@ -458,19 +469,23 @@ class SlurmJobManagerApp(QMainWindow):
         self.jobs_table.setColumnCount(7)
         self.jobs_table.setHorizontalHeaderLabels(
             ["Job ID", "Name", "Partition", "Status", "Time Used", "Nodes", "Actions"])
-        self.jobs_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)  # Select whole row
-        self.jobs_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
+        self.jobs_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)  # Select whole row
+        self.jobs_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
         # self.jobs_table.setAlternatingRowColors(True)  # Improves readability
         self.jobs_table.verticalHeader().setVisible(False)  # Hide row numbers
 
         header = self.jobs_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Name takes available space
+        # Name takes available space
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)  # Actions fixed size
+        header.setSectionResizeMode(
+            6, QHeaderView.ResizeMode.ResizeToContents)  # Actions fixed size
 
         layout.addWidget(self.jobs_table)
         return group
@@ -491,7 +506,8 @@ class SlurmJobManagerApp(QMainWindow):
         header_layout.addStretch()
 
         self.filter_btn_by_users = ButtonGroupWidget()
-        self.filter_btn_by_users.selectionChanged.connect(lambda text: self.filter_by_accounts(text))
+        self.filter_btn_by_users.selectionChanged.connect(
+            lambda text: self.filter_by_accounts(text))
         header_layout.addWidget(self.filter_btn_by_users)
 
         self.filter_jobs = QLineEdit()
@@ -505,8 +521,10 @@ class SlurmJobManagerApp(QMainWindow):
         self.filter_btn.setIcon(QIcon(filter_icon_path))
         self.filter_btn.setMaximumSize(32, 32)
         header_layout.addWidget(self.filter_btn)
-        self.filter_btn.clicked.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
-        self.filter_jobs.textChanged.connect(lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+        self.filter_btn.clicked.connect(
+            lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+        self.filter_jobs.textChanged.connect(
+            lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
         refresh_cluster_btn = QPushButton("Refresh Status")
         refresh_cluster_btn.clicked.connect(self.refresh_all)
@@ -520,14 +538,17 @@ class SlurmJobManagerApp(QMainWindow):
 
         # --- Left Section: Job Queue ---
         self.job_queue_widget = JobQueueWidget()  # Instantiate the new widget
-        content_layout.addWidget(self.job_queue_widget)  # Add it to the left side
-        self.job_queue_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Add it to the left side
+        content_layout.addWidget(self.job_queue_widget)
+        self.job_queue_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # --- Right Section: Cluster Overview (Nodes Status) ---
         overview_group = QGroupBox("Real-time Usage")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setSpacing(15)
-        overview_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        overview_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Set fixed width for the nodes status panel group box
         # overview_group.setFixedWidth(450)
@@ -540,7 +561,8 @@ class SlurmJobManagerApp(QMainWindow):
         content_layout.addWidget(overview_group)
 
         content_layout.setStretchFactor(self.job_queue_widget, 1)
-        content_layout.setStretchFactor(overview_group, 0)  # Fixed width, no stretch
+        content_layout.setStretchFactor(
+            overview_group, 0)  # Fixed width, no stretch
 
         cluster_layout.addLayout(content_layout)
 
@@ -550,9 +572,12 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        self.settings_panel.theme_combo.currentTextChanged.connect(self.change_theme)
-        self.settings_panel.save_appearance_btn.clicked.connect(self.save_appearence_settings)
-        self.settings_panel.connection_settings_btn.clicked.connect(self.update_connection_setting)
+        self.settings_panel.theme_combo.currentTextChanged.connect(
+            self.change_theme)
+        self.settings_panel.save_appearance_btn.clicked.connect(
+            self.save_appearence_settings)
+        self.settings_panel.connection_settings_btn.clicked.connect(
+            self.update_connection_setting)
         self.settings_panel.save_button.clicked.connect(self.save_settings)
         self.stacked_widget.addWidget(self.settings_panel)
 
@@ -560,19 +585,22 @@ class SlurmJobManagerApp(QMainWindow):
 
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
-            self.job_queue_widget.filter_table(self.settings_panel.username.text())
+            self.job_queue_widget.filter_table(
+                self.settings_panel.username.text())
         elif account_type == "ALL":
             self.job_queue_widget.filter_table("")
         elif account_type == "STUD":
             self.job_queue_widget.filter_table_by_list(STUDENTS_JOBS_KEYWORD)
         elif account_type == "PROD":
-            self.job_queue_widget.filter_table_by_negative_keywords(STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_negative_keywords(
+                STUDENTS_JOBS_KEYWORD)
 
     def update_connection_setting(self):
         print("Updating connection settings...")
         self.save_settings()
         self.set_connection_status(None, connecting=True)
-        thread = threading.Thread(target=self.slurm_connection.update_credentials_and_reconnect)
+        thread = threading.Thread(
+            target=self.slurm_connection.update_credentials_and_reconnect)
 
         thread.start()
 
@@ -612,15 +640,18 @@ class SlurmJobManagerApp(QMainWindow):
 
         # --- Input Validation ---
         if not job_name:
-            show_message(self, "Input Error", "Job Name cannot be empty.", QMessageBox.Icon.Warning)
+            show_message(self, "Input Error",
+                         "Job Name cannot be empty.", QMessageBox.Icon.Warning)
             self.job_name_input.setFocus()
             return
         if not script_path:
-            show_message(self, "Input Error", "Script File path cannot be empty.", QMessageBox.Icon.Warning)
+            show_message(
+                self, "Input Error", "Script File path cannot be empty.", QMessageBox.Icon.Warning)
             self.script_path_input.setFocus()
             return
         if not os.path.exists(script_path):
-            show_message(self, "Input Error", f"Script file not found:\n{script_path}", QMessageBox.Icon.Warning)
+            show_message(
+                self, "Input Error", f"Script file not found:\n{script_path}", QMessageBox.Icon.Warning)
             self.script_path_input.setFocus()
             return
         # Add more validation for time, memory format etc. if needed
@@ -630,14 +661,16 @@ class SlurmJobManagerApp(QMainWindow):
         sbatch_cmd.extend(["-J", job_name])
         sbatch_cmd.extend(["-p", self.partition_combo.currentText()])
         sbatch_cmd.extend(["-N", str(self.nodes_spin.value())])
-        sbatch_cmd.extend(["-n", str(self.tasks_spin.value())])  # tasks per node
+        # tasks per node
+        sbatch_cmd.extend(["-n", str(self.tasks_spin.value())])
         sbatch_cmd.extend(["--mem", self.memory_input.text()])
         sbatch_cmd.extend(["-t", self.time_input.text()])
 
         email = self.email_input.text().strip()
         if email:
             sbatch_cmd.extend(["--mail-user", email])
-            sbatch_cmd.extend(["--mail-type", "ALL"])  # Notify on BEGIN, END, FAIL
+            # Notify on BEGIN, END, FAIL
+            sbatch_cmd.extend(["--mail-type", "ALL"])
 
         additional_opts = self.additional_options.toPlainText().strip()
         if additional_opts:
@@ -645,7 +678,8 @@ class SlurmJobManagerApp(QMainWindow):
             for opt in additional_opts.split("\n"):
                 opt_strip = opt.strip()
                 if opt_strip:
-                    sbatch_cmd.extend(opt_strip.split())  # Split option and value if needed
+                    # Split option and value if needed
+                    sbatch_cmd.extend(opt_strip.split())
 
         sbatch_cmd.append(script_path)
 
@@ -698,7 +732,8 @@ class SlurmJobManagerApp(QMainWindow):
     def populate_jobs_table(self, jobs_data):
         """Populates the jobs table with data."""
         self.jobs_table.setRowCount(0)  # Clear existing rows
-        self.jobs_table.setSortingEnabled(False)  # Disable sorting during population
+        # Disable sorting during population
+        self.jobs_table.setSortingEnabled(False)
 
         for row, job in enumerate(jobs_data):
             self.jobs_table.insertRow(row)
@@ -732,7 +767,8 @@ class SlurmJobManagerApp(QMainWindow):
             self.jobs_table.setItem(row, 5, item_nodes)
 
             # --- Action Buttons ---
-            actions_widget = self._create_job_action_buttons(job.get("id"), status)
+            actions_widget = self._create_job_action_buttons(
+                job.get("id"), status)
             self.jobs_table.setCellWidget(row, 6, actions_widget)
 
         self.jobs_table.setSortingEnabled(True)  # Re-enable sorting
@@ -750,7 +786,8 @@ class SlurmJobManagerApp(QMainWindow):
         details_btn.setObjectName(BTN_BLUE)
         details_btn.setFixedSize(70, 28)  # Consistent size
         if job_id:  # Only connect if job_id is valid
-            details_btn.clicked.connect(lambda _, jid=job_id: self.show_job_details(jid))
+            details_btn.clicked.connect(
+                lambda _, jid=job_id: self.show_job_details(jid))
         else:
             details_btn.setEnabled(False)
         layout.addWidget(details_btn)
@@ -761,7 +798,8 @@ class SlurmJobManagerApp(QMainWindow):
             cancel_btn.setObjectName(BTN_RED)
             cancel_btn.setFixedSize(70, 28)
             if job_id:
-                cancel_btn.clicked.connect(lambda _, jid=job_id: self.cancel_job(jid))
+                cancel_btn.clicked.connect(
+                    lambda _, jid=job_id: self.cancel_job(jid))
             else:
                 cancel_btn.setEnabled(False)
             layout.addWidget(cancel_btn)
@@ -782,7 +820,8 @@ class SlurmJobManagerApp(QMainWindow):
         #     show_message(self, "Error", f"Failed to cancel job {job_id}:\n{str(e)}", QMessageBox.Icon.Warning)
 
         # Demo
-        show_message(self, "Cancel Job (Demo)", f"Would attempt to cancel job {job_id}.")
+        show_message(self, "Cancel Job (Demo)",
+                     f"Would attempt to cancel job {job_id}.")
         # Simulate removal or status change
         self.refresh_job_status()
 
@@ -858,9 +897,11 @@ class SlurmJobManagerApp(QMainWindow):
     def save_appearence_settings(self):
         print("--- Saving Appearence Settings ---")
         self.settings.beginGroup("AppearenceSettings")
-        self.settings.setValue("theme", self.settings_panel.theme_combo.currentText())
+        self.settings.setValue(
+            "theme", self.settings_panel.theme_combo.currentText())
         for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-            self.settings.setValue(obj.objectName(), bool(obj.checkState().value))
+            self.settings.setValue(
+                obj.objectName(), bool(obj.checkState().value))
         self.settings.endGroup()
 
         self.settings.sync()
@@ -872,7 +913,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Use beginGroup to group related settings
         self.settings.beginGroup("GeneralSettings")
-        self.settings.setValue("clusterAddress", self.settings_panel.cluster_address.text())
+        self.settings.setValue(
+            "clusterAddress", self.settings_panel.cluster_address.text())
         self.settings.setValue("username", self.settings_panel.username.text())
         self.settings.setValue("psw", self.settings_panel.password.text())
         self.settings.endGroup()  # End the group
@@ -907,7 +949,8 @@ class SlurmJobManagerApp(QMainWindow):
         theme = self.settings.value("theme", "Dark")  # Provide a default value
         # Check if settings_panel is initialized before accessing its widgets
         if hasattr(self, 'settings_panel') and self.settings_panel.theme_combo:
-            self.settings_panel.theme_combo.setCurrentText(theme)  # Make sure the theme exists in the combo box
+            # Make sure the theme exists in the combo box
+            self.settings_panel.theme_combo.setCurrentText(theme)
 
         cluster_address = self.settings.value("clusterAddress", "")
         if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
@@ -925,8 +968,10 @@ class SlurmJobManagerApp(QMainWindow):
         self.settings.beginGroup("AppearenceSettings")
         if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
             for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-                value = self.settings.value(obj.objectName(), 'false', type=bool)
-                obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+                value = self.settings.value(
+                    obj.objectName(), 'false', type=bool)
+                obj.setCheckState(
+                    Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
 
         self.settings.endGroup()
         # # Load Notification Settings
@@ -953,7 +998,6 @@ class SlurmJobManagerApp(QMainWindow):
 # --- Main Execution ---
 if __name__ == "__main__":
 
-
     # Check if the settings file exists
     if not os.path.isfile(settings_path):
         print(f"Settings file not found at: {settings_path}")
@@ -968,7 +1012,8 @@ if __name__ == "__main__":
         print(f"Created settings file at: {settings_path} using defaults")
 
         # Show the connection setup dialog
-        app = QApplication(sys.argv)  # Create QApplication instance early for the dialog
+        # Create QApplication instance early for the dialog
+        app = QApplication(sys.argv)
         dialog = ConnectionSetupDialog()
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # User clicked OK, save the settings
@@ -977,7 +1022,8 @@ if __name__ == "__main__":
             # Save details to settings.ini (this will modify the newly copied settings.ini)
             settings = QSettings(settings_path, QSettings.Format.IniFormat)
             settings.beginGroup("GeneralSettings")
-            settings.setValue("clusterAddress", connection_details["clusterAddress"])
+            settings.setValue("clusterAddress",
+                              connection_details["clusterAddress"])
             settings.setValue("username", connection_details["username"])
             settings.setValue("psw", connection_details["psw"])
             settings.endGroup()
@@ -989,7 +1035,8 @@ if __name__ == "__main__":
             font = QFont("Inter", 10)
             app.setFont(font)
             # Use relative path for the window icon during initial setup as well
-            window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
+            window_icon_path = os.path.join(
+                script_dir, "src_static", "icon3.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
             window.show()
@@ -1005,7 +1052,8 @@ if __name__ == "__main__":
         print(f"Settings file found at: {settings_path}")
         app = QApplication(sys.argv)
         # Apply a base font
-        font = QFont("Inter", 10)  # Use Inter font if available, adjust size as needed
+        # Use Inter font if available, adjust size as needed
+        font = QFont("Inter", 10)
         app.setFont(font)
         # Use relative path for the window icon
         window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")

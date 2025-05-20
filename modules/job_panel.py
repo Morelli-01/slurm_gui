@@ -1,13 +1,22 @@
 import os
+import random
 import sys
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-                             QGroupBox, QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit, QDialog)
+from unittest import result
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox,
+    QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit,
+    QDialog
+)
 from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
+
+# Assuming these modules/files exist in your project structure
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
 from modules.defaults import *
-
-# Placeholder for JobsGroup - replace with your actual JobsGroup class
+from modules.project_store import ProjectStore
+from modules.jobs_group import JobsGroup
+from modules.new_job_dp import NewJobDialog
+# Add a new dialog for creating a new job
 
 
 class CustomInputDialog(QDialog):
@@ -153,20 +162,14 @@ class CustomConfirmDialog(QDialog):
         layout.addLayout(button_layout)
 
 
-class JobsGroup(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Job List Placeholder"))
-        # self.setStyleSheet("border: 1px dashed red;") # Visual placeholder
-
-
 class ProjectWidget(QGroupBox):
-    def __init__(self, project_name="", parent=None):
-        super().__init__("", parent)
-        # self.setTitle(project_name)  # Set the GroupBox title
-        self.parent_group = parent  # Store parent reference for deletion
+    selected = pyqtSignal(str)
 
+    def __init__(self, project_name="", parent=None, storer=None):
+        super().__init__("", parent)
+        self.parent_group = parent  # Store parent reference for deletion
+        self.project_storer = storer
+        self._is_selected = False  # Add selection state
         # Main layout
         self.layout = QVBoxLayout(self)
         self.layout.setSpacing(8)
@@ -174,7 +177,7 @@ class ProjectWidget(QGroupBox):
         # Project title label inside the box
         self.title_label = QLabel(project_name)
         self.title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        self.title_label.setContentsMargins(0, 0, 0, 10)
+        self.title_label.setContentsMargins(15, 0, 0, 10)
         self.title_label.setStyleSheet(
             "color: #f8f8f2;")  # Match dark theme color
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -184,7 +187,7 @@ class ProjectWidget(QGroupBox):
 
         # Status bar and delete button on the same row
         status_layout = QHBoxLayout()
-
+        status_layout.setContentsMargins(15, 0, 15, 0)
         # Status bar (smaller version of the main status bar)
         self.status_bar = self.create_project_status_bar()
         status_layout.addWidget(self.status_bar)
@@ -195,15 +198,66 @@ class ProjectWidget(QGroupBox):
         # Delete button
         self.delete_button = QPushButton()
         self.delete_button.setObjectName(BTN_RED)
+
         self.delete_button.setIcon(
             QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
-        self.delete_button.setFixedSize(24, 24)
+        self.delete_button.setFixedSize(26, 26)
         self.delete_button.setToolTip("Delete Project")
         self.delete_button.clicked.connect(self.delete_project)
         status_layout.addWidget(self.delete_button)
 
         # Add the status bar layout to main layout
         self.layout.addLayout(status_layout)
+
+        # Apply initial style
+        self.update_style()
+
+    def update_style(self):
+        """Updates the stylesheet based on the selection state."""
+        base_style = """
+            QGroupBox {{
+                border: {border_thickness}px solid {border_color};
+                border-radius: 8px;
+                margin-top: 10px;
+                font-size: 16px;
+                font-weight: bold;
+                color: {text_color};
+                background-color: {bg_color};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                background-color: {bg_color};
+                color: {text_color};
+                margin-left: 5px;
+            }}
+        """
+        if self._is_selected:
+            # Highlighted style with a more distinct border color and thickness
+            border_color = "#8be9fd"  # A lighter blue/cyan from a similar palette
+            border_thickness = 3  # Thicker border
+            bg_color = COLOR_DARK_BG  # Keep the slightly darker background
+            text_color = "#f8f8f2"
+        else:
+            # Default style
+            border_color = COLOR_DARK_BORDER
+            border_thickness = 2  # Default border thickness
+            bg_color = COLOR_DARK_BG
+            text_color = COLOR_DARK_FG
+
+        self.setStyleSheet(base_style.format(
+            border_thickness=border_thickness,
+            border_color=border_color,
+            bg_color=bg_color,
+            text_color=text_color
+        ))
+
+    def set_selected(self, selected):
+        """Sets the selection state and updates the style."""
+        if self._is_selected != selected:
+            self._is_selected = selected
+            self.update_style()
 
     def create_project_status_bar(self):
         """Creates a smaller version of the status bar for individual projects"""
@@ -273,7 +327,7 @@ class ProjectWidget(QGroupBox):
         mini_icon_section.setFixedSize(24, 26)  # Smaller size
         mini_icon_section.setStyleSheet(f"""
             background-color: {icon_color};
-            border-top-left-radius: 6px; 
+            border-top-left-radius: 6px;
             border-bottom-left-radius: 6px;
         """)
         icon_layout = QVBoxLayout(mini_icon_section)
@@ -288,7 +342,7 @@ class ProjectWidget(QGroupBox):
         mini_count_section.setFixedSize(24, 26)  # Smaller size
         mini_count_section.setStyleSheet(f"""
             background-color: {count_color};
-            border-top-right-radius: 6px; 
+            border-top-right-radius: 6px;
             border-bottom-right-radius: 6px;
         """)
         count_layout = QVBoxLayout(mini_count_section)
@@ -327,6 +381,7 @@ class ProjectWidget(QGroupBox):
                 parent_layout.removeWidget(self)
                 self.hide()  # Hide the widget immediately
                 self.deleteLater()  # Schedule this widget for deletion
+                self.project_storer.remove_project(project_name)
                 print(f"Project '{project_name}' deleted")
 
     def setTitle(self, title):
@@ -336,11 +391,21 @@ class ProjectWidget(QGroupBox):
             # Update the internal label if it exists
             self.title_label.setText(title)
 
+    def mousePressEvent(self, event):
+        # Emit the selected signal
+        self.selected.emit(self.title_label.text())
+        # Call the parent's mousePressEvent
+        super().mousePressEvent(event)
+
 
 class ProjectGroup(QGroupBox):
+    # New signal to emit selected project name
+    project_selected = pyqtSignal(str)
+
     def __init__(self, parent=None):
         super().__init__("Project", parent)
         self.setFixedWidth(350)
+        self.parent = parent
         self.project_counter = 0
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -375,6 +440,14 @@ class ProjectGroup(QGroupBox):
         self.layout = QVBoxLayout(self)
         self.layout.addWidget(self.scroll_area)
         self.layout.addWidget(self.add_button)
+        self.projects_children = {}
+        # Keep track of the currently selected widget
+        self._selected_project_widget = None
+
+        self.projects_keys = self.parent.project_storer.all_projects()
+        for proj in self.projects_keys:
+            self.add_new_project(proj)
+            # self.projects_children[proj].status_bar.children()[1].children()[2].children()[1].setText("10")
 
     def prompt_new_project(self):
         """Open a custom dialog to ask for project name"""
@@ -388,14 +461,27 @@ class ProjectGroup(QGroupBox):
     def add_new_project(self, project_name):
         """Add a new ProjectWidget with the given name"""
         self.project_counter += 1
-        new_project = ProjectWidget(project_name, self)
-        new_project.setMaximumHeight(150)
+        new_project = ProjectWidget(
+            project_name, self, storer=self.parent.project_storer)
+        self.parent.jobs_group.add_project(project_name)
+        rows = [
+            (123, "preprocess-data", "RUNNING",  "00:04:12"),
+            (random.randint(0, 100), "train-model",     "PENDING",  "—"),
+        ]
+        self.parent.jobs_group.update_jobs(project_name, rows)
 
+        # Connect the selected signal to the handler
+        new_project.selected.connect(self.handle_project_selection)
+        new_project.selected.connect(self.parent.jobs_group.show_project)
+
+        new_project.setMaximumHeight(150)
+        self.parent.project_storer.add_project(project_name)
         # Add the new project widget to the TOP of the scroll area content
         self.scroll_content_layout.insertWidget(0, new_project)
 
         # Scroll to the top to show the newly added widget
         self.scroll_area.verticalScrollBar().setValue(0)
+        self.projects_children[project_name] = new_project
 
     def add_project_widget(self, project_widget):
         """Method to programmatically add project widgets"""
@@ -406,6 +492,19 @@ class ProjectGroup(QGroupBox):
         self.scroll_content_layout.addWidget(project_widget)
         self.scroll_content_layout.insertWidget(0, project_widget)
         self.scroll_area.verticalScrollBar().setValue(0)
+
+    def handle_project_selection(self, project_name):
+        """Handles the selection of a project widget."""
+        # Deselect the previously selected widget
+        if self._selected_project_widget:
+            self._selected_project_widget.set_selected(False)
+
+        # Select the new widget
+        selected_widget = self.projects_children.get(project_name)
+        if selected_widget:
+            selected_widget.set_selected(True)
+            self._selected_project_widget = selected_widget
+            self.project_selected.emit(project_name)  # Emit the new signal
 
 
 class BlockSection(QFrame):
@@ -521,15 +620,28 @@ class StatusBar(QWidget):
 
         self.setLayout(layout)
 
-# --- End of the new Status Bar Widget Code ---
-
 
 class JobsPanel(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(10, 0, 10, 10)
-        self.layout.setSpacing(10)
+        self.slurm_connection = slurm_connection
+        self.project_storer = ProjectStore(self.slurm_connection)
+        self.current_project = None  # Add attribute to store selected project
+
+        # Use a base layout for the main content (ProjectGroup and JobsGroup)
+        self.base_layout = QHBoxLayout()
+        self.base_layout.setContentsMargins(10, 0, 10, 10)
+        self.base_layout.setSpacing(10)
+
+        self.jobs_group = JobsGroup()
+        self.project_group = ProjectGroup(parent=self)
+
+        self.base_layout.addWidget(self.project_group)
+        self.base_layout.addWidget(self.jobs_group)
+
+        # Set the base layout as the main layout for the JobsPanel
+        self.setLayout(self.base_layout)
+
         self.current_theme = THEME_DARK  # Using dark theme for initial styling
 
         # Apply base stylesheet for the panel and GroupBox
@@ -552,42 +664,53 @@ class JobsPanel(QWidget):
             }}
         """)
 
-        # --- Header Section ---
-        # header_widget = QWidget()
-        # header_layout = QHBoxLayout(header_widget)
-        # header_layout.setContentsMargins(0, 0, 0, 0)
-        # header_layout.setSpacing(10)
+        # Connect the project_selected signal from ProjectGroup to a slot in JobsPanel
+        self.project_group.project_selected.connect(self.on_project_selected)
 
-        # # Projects Label
-        # self.projects_label = QLabel("Jobs")
-        # self.projects_label.setStyleSheet("margin-right:50px;")
-        # # Match style of QGroupBox title
-        # self.projects_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        # header_layout.addWidget(self.projects_label)
+        # Add the "New Jobs" floating button
+        self.new_jobs_button = QPushButton(
+            "New Job", self)  # Set self as parent
+        # Using a placeholder object name, replace with appropriate style
+        self.new_jobs_button.setObjectName(BTN_GREEN)
+        self.new_jobs_button.clicked.connect(self.open_new_job_dialog)
+        self.new_jobs_button.setFixedSize(100, 40)  # Set a fixed size
 
-        # # --- Add the new StatusBar widget ---
-        # self.status_bar = StatusBar()
-        # header_layout.addWidget(self.status_bar)
+        # Initially position the button (will be adjusted in resizeEvent)
+        self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
+                                  self.height() - self.new_jobs_button.height() - 20)
 
-        # # Add stretch to push everything to the left
-        # header_layout.addStretch(1)
+        # --- Initial Project Selection ---
+        # After loading projects, select the first one if available
+        if self.project_group.projects_keys:
+            first_project_name = self.project_group.projects_keys[-1]
+            # Programmatically trigger the selection
+            self.project_group.handle_project_selection(first_project_name)
+            # Manually call the slot in JobsPanel to set the current_project
+            self.on_project_selected(first_project_name)
 
-        # # Add the header widget to the main layout
-        # self.layout.addWidget(header_widget)
+    def on_project_selected(self, project_name):
+        """Slot to update the currently selected project."""
+        self.current_project = project_name
+        # For debugging
+        print(f"Selected Project in JobsPanel: {self.current_project}")
 
-        # --- Job Submission Section ---
-        # Add your job submission widgets here if any
-        # Example:
-        # self.layout.addWidget(QLabel("Job Submission Area Placeholder"))
+    def open_new_job_dialog(self):
+        """Opens the dialog to create a new job for the selected project."""
+        if self.current_project:
+            dialog = NewJobDialog(
+                selected_project=self.current_project, slurm_connection=self.slurm_connection)
 
-        # self.layout.addWidget(create_separator(shape=QFrame.Shape.HLine, color=COLOR_DARK_BORDER if self.current_theme ==
-                            #   THEME_DARK else COLOR_LIGHT_BORDER))
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                result = dialog.get_job_details()
+                print(result)
+                # Here you would add the logic to create the new job
+                # based on job_name and project_name
+        else:
+            print("No project selected.")  # Or show a message to the user
 
-        # --- Job List Section ---
-        # To make the JobsGroup fill the remaining space, add a stretch factor.
-        # A stretch of 1 allows it to expand proportionally.
-        lower_layout = QHBoxLayout()
-        lower_layout.addWidget(ProjectGroup())
-        lower_layout.addWidget(JobsGroup(), stretch=1)
-
-        self.layout.addLayout(lower_layout, stretch=1)
+    def resizeEvent(self, event):
+        """Adjust the position of the floating button when the widget is resized."""
+        # Position the button in the bottom right corner with some margin
+        self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
+                                  self.height() - self.new_jobs_button.height() - 20)
+        super().resizeEvent(event)
