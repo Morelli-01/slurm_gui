@@ -760,7 +760,9 @@ class JobsPanel(QWidget):
             self.project_group.handle_project_selection(first_project_name)
             # Manually call the slot in JobsPanel to set the current_project
             self.on_project_selected(first_project_name)
+        
         self.jobs_group.submitRequested.connect(self.submit_job)
+        self.jobs_group.cancelRequested.connect(self.delete_job)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -975,6 +977,51 @@ class JobsPanel(QWidget):
                 self,
                 "Submission Error",
                 f"An error occurred during job submission: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
+    def delete_job(self, project_name, job_id):
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+        # Check if job exists and has NOT_SUBMITTED status
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found in project '{project_name}'.")
+                return
+            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"] :
+                QMessageBox.warning(
+                    self, "Error",
+                    f"Job cant be deleted since it is {job.status} status\nJob '{job_id}' needs to be stopped befer deleting."
+                )
+                return
+            self.project_storer.remove_job(project=project_name, job_id=job_id)
+            updated_project = self.project_storer.get(project_name)
+            if updated_project:
+                job_rows = [job.to_table_row() for job in updated_project.jobs]
+                self.jobs_group.update_jobs(project_name, job_rows)
+            else:
+                # If the project itself was somehow deleted (unlikely with remove_job),
+                # or if it's empty after deletion, clear its display
+                self.jobs_group.update_jobs(project_name, [])
+        # QMessageBox.information(
+        #         self, "Success",
+        #         f"Job {job_id} correctly deleted",
+        # )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Deletion Error",
+                f"An error occurred during job delete: {str(e)}"
             )
             import traceback
             traceback.print_exc()

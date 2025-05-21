@@ -1,3 +1,4 @@
+import functools
 from typing import Iterable, Sequence, Any, List
 import os
 from PyQt6.QtWidgets import (
@@ -212,24 +213,23 @@ class JobsGroup(QWidget):
         submit_btn = self._create_action_button(
             submit_path, "Submit job", "submitBtn")
         submit_btn.clicked.connect(
-            lambda: self.submitRequested.emit(project, job_id))
+            functools.partial(self.submitRequested.emit, project, job_id)) # Using functools.partial
 
         stop_path = os.path.join(script_dir, "src_static", "stop.svg")
         stop_btn = self._create_action_button(stop_path, "Stop job", "stopBtn")
         stop_btn.clicked.connect(
-            lambda: self.stopRequested.emit(project, job_id))
+            functools.partial(self.stopRequested.emit, project, job_id)) # Using functools.partial
 
         cancel_path = os.path.join(script_dir, "src_static", "delete.svg")
         cancel_btn = self._create_action_button(
             cancel_path, "Cancel job", "cancelBtn")
-        cancel_btn.clicked.connect(
-            lambda: self.cancelRequested.emit(project, job_id))
+        cancel_btn.clicked.connect(functools.partial(self.cancelRequested.emit, project, job_id)) # Using functools.partial
 
         logs_path = os.path.join(script_dir, "src_static", "view_logs.svg")
         logs_btn = self._create_action_button(
             logs_path, "View logs", "logsBtn")
         logs_btn.clicked.connect(
-            lambda: self.logsRequested.emit(project, job_id))
+            functools.partial(self.logsRequested.emit, project, job_id)) # Using functools.partial
 
         # New action buttons
         duplicate_path = os.path.join(
@@ -237,13 +237,13 @@ class JobsGroup(QWidget):
         duplicate_btn = self._create_action_button(
             duplicate_path, "Duplicate job", "duplicateBtn")
         duplicate_btn.clicked.connect(
-            lambda: self.duplicateRequested.emit(project, job_id))
+            functools.partial(self.duplicateRequested.emit, project, job_id)) # Using functools.partial
 
         modify_path = os.path.join(script_dir, "src_static", "edit.svg")
         modify_btn = self._create_action_button(
             modify_path, "Modify job", "modifyBtn")
         modify_btn.clicked.connect(
-            lambda: self.modifyRequested.emit(project, job_id))
+            functools.partial(self.modifyRequested.emit, project, job_id)) # Using functools.partial
 
         # Enable/disable buttons based on job status
         if job_status:
@@ -402,8 +402,8 @@ class JobsGroup(QWidget):
             it.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
             # Apply specific formatting for different columns
-            # if c == 2:  # Status column
-            #     self._apply_state_color(it)
+            if c == 2:  # Status column
+                self._apply_state_color(it)
 
             # Resource columns styling - right-align
             if 4 <= c <= 6:  # CPU, GPU, RAM columns
@@ -424,9 +424,9 @@ class JobsGroup(QWidget):
         table.setCellWidget(row_position, actions_col, action_widget)
 
         # Auto-adjust row heights and column widths for better display
-        table.resizeRowsToContents()
-        for i in range(actions_col):
-            table.resizeColumnToContents(i)
+        # table.resizeRowsToContents()
+        # for i in range(actions_col):
+        #     table.resizeColumnToContents(i)
 
     def show_project(self, project_name: str) -> None:
         if project_name not in self._indices:

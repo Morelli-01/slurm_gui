@@ -562,6 +562,7 @@ class ProjectStore:
             
             # Save changes
             self._write_to_settings()
+    
     def add_new_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
         """Create a new job and add it to the project (without submitting to SLURM)"""
         if not self.slurm or not self.slurm.check_connection():
