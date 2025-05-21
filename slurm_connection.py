@@ -8,6 +8,7 @@ from modules.new_job_dp import NewJobDialog
 import paramiko
 from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QThread, pyqtSignal
 # Constants
 JOB_CODES = {
     "CD": "COMPLETED",
@@ -20,6 +21,28 @@ JOB_CODES = {
     "ST": "STOPPED",
 }
 
+# Use QThread for SLURM operations
+
+class SlurmWorker(QThread):
+    connected = pyqtSignal(bool)
+    data_ready = pyqtSignal(list, list)  # For nodes_data and queue_jobs
+    
+    def __init__(self, slurm_connection):
+        super().__init__()
+        self.slurm_connection = slurm_connection
+        
+    def run(self):
+        try:
+            if not self.slurm_connection.is_connected():
+                result = self.slurm_connection.connect()
+                self.connected.emit(result)
+                
+            nodes_data = self.slurm_connection._fetch_nodes_infos()
+            queue_jobs = self.slurm_connection._fetch_squeue()
+            self.data_ready.emit(nodes_data, queue_jobs)
+        except Exception as e:
+            print(f"Worker error: {e}")
+            self.connected.emit(False)
 
 def require_connection(func):
     """Decorator to ensure SSH connection is established before executing a method."""

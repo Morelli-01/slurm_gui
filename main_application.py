@@ -109,6 +109,9 @@ class SlurmJobManagerApp(QMainWindow):
         # The slurm_connection is initialized here, assuming settings.ini exists
         # or has been created by the setup dialog before this point.
         self.slurm_connection = slurm_connection.SlurmConnection(settings_path)
+        self.slurm_worker = slurm_connection.SlurmWorker(self.slurm_connection)
+        self.slurm_worker.connected.connect(self.set_connection_status)
+        self.slurm_worker.data_ready.connect(self.update_ui_with_data)
 
         # Attempt to connect immediately
         try:
@@ -235,23 +238,12 @@ class SlurmJobManagerApp(QMainWindow):
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
     def refresh_all(self):
-        """Refreshes data for all relevant panels."""
-        nodes_data = None
-        queue_jobs = None
-        try:
-            nodes_data = self.slurm_connection._fetch_nodes_infos()
-            queue_jobs = self.slurm_connection._fetch_squeue()
-            self.set_connection_status(True)
-            print("Refreshing all data...")
-            # self.refresh_job_status()
-            self.refresh_cluster_jobs_queue(queue_jobs)
-            self.cluster_status_overview_widget.update_status(
-                nodes_data, queue_jobs)
-        except ConnectionError as e:
-            print(e)
-            self.set_connection_status(False)
+        self.slurm_worker.start()
 
-        # self.set_connection_status(self.slurm_connection.is_connected())
+    def update_ui_with_data(self, nodes_data, queue_jobs):
+    # Update UI components with the received data
+        self.refresh_cluster_jobs_queue(queue_jobs)
+        self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
 
     # --- Theme Handling ---
 
