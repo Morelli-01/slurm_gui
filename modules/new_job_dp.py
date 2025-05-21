@@ -1,18 +1,8 @@
-import os
-import random
-import sys
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox,
-    QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit,
-    QDialog, QComboBox, QSpinBox, QCheckBox, QTimeEdit, QTextEdit,
-    QFormLayout, QFileDialog, QDoubleSpinBox, QTabWidget, QListView, QStyledItemDelegate
-)
-from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
 
+
+from modules.defaults import *
 # Assuming these modules/files exist in your project structure
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
-from modules.defaults import *
 
 
 COLOR_BLUE = "#06b0d6"

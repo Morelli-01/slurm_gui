@@ -1,3 +1,12 @@
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox,
+    QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit,
+    QDialog, QComboBox, QSpinBox, QCheckBox, QTimeEdit, QTextEdit,
+    QFormLayout, QFileDialog, QDoubleSpinBox, QTabWidget, QListView, QStyledItemDelegate, QMessageBox
+)
+from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
+import os, sys
 JOB_QUEUE_FIELDS = [
     "Job ID", "Job Name", "User",
     "Account", "Priority", "Status",

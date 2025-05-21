@@ -554,6 +554,50 @@ class SlurmConnection:
         return job_dict
 
     @require_connection
+    def list_remote_directories(self, path):
+        """
+        Lists directories in the given remote path.
+        Returns a list of directory names.
+        Handles SSH connection and command execution.
+        """
+        if not self.check_connection():
+            print("Not connected to SLURM.")
+            return []
+        try:
+            # Basic example: adjust command based on your server setup
+            # This lists directories only
+            stdin, stdout, stderr = self.ssh_client.exec_command(f"ls -d {path}/*/")
+            errors = stderr.read().decode().strip()
+            if errors:
+                print(f"Error listing remote directories: {errors}")
+                return []
+            dirs = []
+            for line in stdout.read().decode().strip().split('\n'):
+                if line:
+                    # Remove the trailing slash and extract just the directory name
+                    dir_name = os.path.basename(line.rstrip('/'))
+                    dirs.append(dir_name)
+            return dirs
+        except Exception as e:
+            print(f"Failed to list remote directories: {e}")
+            return []
+    @require_connection
+    def remote_path_exists(self, path):
+        """
+        Checks if a remote path exists and is a directory.
+        """
+        if not self.check_connection():
+            return False
+        try:
+            stdin, stdout, stderr = self.ssh_client.exec_command(f"test -d {path}")
+            # Command 'test -d path' returns 0 if path is a directory, 1 otherwise
+            exit_status = stdout.channel.recv_exit_status()
+            return exit_status == 0
+        except Exception as e:
+            print(f"Error checking remote path: {e}")
+            return False
+
+    @require_connection
     def close(self) -> None:
         """Close the SSH connection."""
         if self.client:
