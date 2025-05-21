@@ -1,74 +1,109 @@
 
 
 from modules.defaults import *
+from modules.remote_directory_panel import RemoteDirectoryDialog
 # Assuming these modules/files exist in your project structure
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
 
 
 COLOR_BLUE = "#06b0d6"
 
-# Custom Checkable ComboBox
-
-
 class CheckableComboBox(QComboBox):
+    # Define the signal at the class level
+    selection_changed = pyqtSignal()
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setEditable(True)
         self.lineEdit().setReadOnly(True)
         self.setPlaceholderText("Select constraints...")
-
-
+        
+        # Set minimum width to ensure text is visible
+        self.setMinimumWidth(250)
+        
+        # Create and set model
         self.model = QStandardItemModel()
         self.setModel(self.model)
-        self.view = QListView(self)
+        
+        # Create and set view with better spacing
+        self.view = QListView()
+        # self.view.setSpacing(4)  # Add spacing between items for better visibility
         self.setView(self.view)
-        self.setMinimumContentsLength(20)  # Adjust as needed for width
-
+        
+        # Make dropdown wider
+        self.view.setMinimumWidth(300)
+        
+        # Connect signals
         self.model.itemChanged.connect(self._update_selected_text)
-
-        # To prevent the dropdown from closing immediately on item click
-        self.view.clicked.connect(self.ignore_click)
-
-    def ignore_click(self, index):
-        # Prevent the QComboBox from closing its popup when an item is clicked
-        # This is a bit of a hack: we temporarily block signals, click the item, then restore signals.
-        # This ensures the checkbox state changes without closing the popup.
-        item = self.model.itemFromIndex(index)
-        item.setCheckState(Qt.CheckState.Checked if item.checkState(
-        ) == Qt.CheckState.Unchecked else Qt.CheckState.Unchecked)
-        return
-
+        
+        # Install event filter to handle mouse clicks
+        self.view.viewport().installEventFilter(self)
+    
+    def showPopup(self):
+        """Make sure popup is wide enough to show text"""
+        super().showPopup()
+        # Make popup at least as wide as combobox
+        popup_width = max(self.width(), 300)
+        self.view.setFixedWidth(popup_width)
+    
+    def eventFilter(self, watched, event):
+        """Handle checkbox click events"""
+        if watched == self.view.viewport() and event.type() == QEvent.Type.MouseButtonRelease:
+            index = self.view.indexAt(event.pos())
+            if index.isValid():
+                item = self.model.itemFromIndex(index)
+                
+                # Toggle checkbox state
+                if item.checkState() == Qt.CheckState.Checked:
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                else:
+                    item.setCheckState(Qt.CheckState.Checked)
+                
+                # Prevent popup from closing
+                return True
+        
+        return super().eventFilter(watched, event)
+    
+    def hidePopup(self):
+        """Keep popup open when clicking inside it"""
+        if self.view.underMouse():
+            return
+        super().hidePopup()
+    
     def add_item(self, text, user_data=None):
+        """Add a new checkable item"""
         item = QStandardItem(text)
-        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable |
-                      Qt.ItemFlag.ItemIsEnabled)
-        item.setData(Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+        # Make sure checkboxes are visible and enabled
+        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        item.setCheckState(Qt.CheckState.Unchecked)
         if user_data is not None:
             item.setData(user_data, Qt.ItemDataRole.UserRole)
         self.model.appendRow(item)
-
+    
     def get_checked_items(self):
+        """Return all checked item texts"""
         checked_items = []
         for i in range(self.model.rowCount()):
             item = self.model.item(i)
             if item.checkState() == Qt.CheckState.Checked:
                 checked_items.append(item.text())
         return checked_items
-
-    def _update_selected_text(self, item):
-        # This method updates the QComboBox's line edit display
-        # It's called whenever an item's check state changes
+    
+    def _update_selected_text(self, item=None):
+        """Update the displayed text in the combobox"""
         selected_texts = self.get_checked_items()
         if not selected_texts:
             self.lineEdit().setText("None selected")
         else:
-            self.lineEdit().setText(", ".join(selected_texts))
-
-        # Emit a custom signal to notify about changes, which can be connected to _update_preview
+            # Display up to 30 characters, then ellipsis
+            text = ", ".join(selected_texts)
+            if len(text) > 30:
+                self.lineEdit().setText(f"{len(selected_texts)} items selected")
+            else:
+                self.lineEdit().setText(text)
+        
+        # Emit signal about selection change
         self.selection_changed.emit()
-
-    # Define a custom signal for when selection changes
-    selection_changed = pyqtSignal()
 
 
 # Add a new dialog for creating a new job
@@ -1030,14 +1065,6 @@ class NewJobDialog(QDialog):
         self.gpu_type_combo.setEnabled(state)
         self.gpu_count_spin.setEnabled(state)
 
-    def _browse_working_dir(self):
-        """Open file dialog to select working directory"""
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select Working Directory")
-        if directory:
-            self.working_dir_edit.setText(directory)
-            self._update_preview()  # Update preview after changing working directory
-
     def _update_preview(self):
         """Update the preview of the SLURM submission script"""
         job_name = self.job_name_edit.text() or "job"
@@ -1263,3 +1290,25 @@ class NewJobDialog(QDialog):
             result["dependency"] = f"{dep_type}:{dep_ids_str}"
 
         return result
+
+    def _browse_working_dir(self):
+        """Open a dialog to select working directory from the SLURM cluster."""
+        if not self.slurm_connection or not self.slurm_connection.check_connection():
+            QMessageBox.warning(self, "SLURM Connection Error",
+                                "Not connected to SLURM. Cannot browse remote directories.")
+            return
+
+        initial_path = self.working_dir_edit.text()
+        # Fallback to user's home or root if current path is invalid/empty
+        if not initial_path or not self.slurm_connection.remote_path_exists(initial_path):
+            if self.slurm_connection.remote_home and self.slurm_connection.remote_path_exists(self.slurm_connection.remote_home):
+                initial_path = self.slurm_connection.remote_home
+            else:
+                initial_path = "/" # Fallback to root if home is not accessible
+
+        dialog = RemoteDirectoryDialog(self.slurm_connection, initial_path=initial_path, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_directory = dialog.get_selected_directory()
+            if selected_directory:
+                self.working_dir_edit.setText(selected_directory)
+                self._update_preview()  # Update preview after changing working directory

@@ -554,7 +554,7 @@ class SlurmConnection:
         return job_dict
 
     @require_connection
-    def list_remote_directories(self, path):
+    def list_remote_directories(self, path: str) -> List[str]:
         """
         Lists directories in the given remote path.
         Returns a list of directory names.
@@ -564,39 +564,47 @@ class SlurmConnection:
             print("Not connected to SLURM.")
             return []
         try:
-            # Basic example: adjust command based on your server setup
-            # This lists directories only
-            stdin, stdout, stderr = self.ssh_client.exec_command(f"ls -d {path}/*/")
-            errors = stderr.read().decode().strip()
-            if errors:
-                print(f"Error listing remote directories: {errors}")
-                return []
-            dirs = []
-            for line in stdout.read().decode().strip().split('\n'):
-                if line:
-                    # Remove the trailing slash and extract just the directory name
-                    dir_name = os.path.basename(line.rstrip('/'))
-                    dirs.append(dir_name)
-            return dirs
+            # Use 'ls -F' to list files and directories, then filter for directories only.
+            # -F appends / to directories, * to executables, etc.
+            # We then filter for lines ending with / and remove the slash.
+            command = f"ls -F '{path}'"
+            stdout, stderr = self.run_command(command)
+            
+            if stderr:
+                # Handle permission denied or non-existent path gracefully
+                if "Permission denied" in stderr or "No such file or directory" in stderr:
+                    print(f"Error accessing remote path {path}: {stderr}")
+                    return []
+                # For other errors, print them but try to proceed if some output exists
+                print(f"Warning listing remote directories in {path}: {stderr}")
+
+            directories = []
+            # Filter out hidden files and current/parent directory entries from ls output
+            # Also ensure we only add directories.
+            for line in stdout.split('\n'):
+                line = line.strip()
+                if line and line.endswith('/') and not line.startswith('.'):
+                    directories.append(line.rstrip('/'))
+            return sorted(directories, key=str.lower) # Sort alphabetically
         except Exception as e:
             print(f"Failed to list remote directories: {e}")
             return []
+
     @require_connection
-    def remote_path_exists(self, path):
+    def remote_path_exists(self, path: str) -> bool:
         """
         Checks if a remote path exists and is a directory.
         """
         if not self.check_connection():
             return False
         try:
-            stdin, stdout, stderr = self.ssh_client.exec_command(f"test -d {path}")
-            # Command 'test -d path' returns 0 if path is a directory, 1 otherwise
-            exit_status = stdout.channel.recv_exit_status()
-            return exit_status == 0
+            # Use 'test -d' to check if it's a directory
+            stdout, stderr = self.run_command(f"test -d '{path}' && echo 'exists' || echo 'not_exists'")
+            return stdout.strip() == 'exists'
         except Exception as e:
-            print(f"Error checking remote path: {e}")
+            print(f"Error checking remote path existence: {e}")
             return False
-
+        
     @require_connection
     def close(self) -> None:
         """Close the SSH connection."""
