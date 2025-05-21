@@ -58,11 +58,9 @@ class JobsGroup(QWidget):
     stopRequested = pyqtSignal(str, object)    # project, job_id (NEW)
     cancelRequested = pyqtSignal(str, object)  # project, job_id
     logsRequested = pyqtSignal(str, object)    # project, job_id
-    # project, job_id (NEW, if distinct from start)
     submitRequested = pyqtSignal(str, object)
     duplicateRequested = pyqtSignal(str, object)  # project, job_id (NEW)
     modifyRequested = pyqtSignal(str, object)  # project, job_id (NEW)
-
     _ROW_HEIGHT = 50  # px – comfy touch-friendly rows
 
     def __init__(self, parent: QWidget | None = None):
@@ -88,6 +86,7 @@ class JobsGroup(QWidget):
         self._hovered_row = -1  # Keep track of the currently hovered row
 
     # ------------------------------------------------------------------ styles
+
     def _apply_stylesheet(self):
         style = f"""
             /* ------------------------------------------------ base table */
@@ -213,23 +212,27 @@ class JobsGroup(QWidget):
         submit_btn = self._create_action_button(
             submit_path, "Submit job", "submitBtn")
         submit_btn.clicked.connect(
-            functools.partial(self.submitRequested.emit, project, job_id)) # Using functools.partial
+            # Using functools.partial
+            functools.partial(self.submitRequested.emit, project, job_id))
 
         stop_path = os.path.join(script_dir, "src_static", "stop.svg")
         stop_btn = self._create_action_button(stop_path, "Stop job", "stopBtn")
         stop_btn.clicked.connect(
-            functools.partial(self.stopRequested.emit, project, job_id)) # Using functools.partial
+            # Using functools.partial
+            functools.partial(self.stopRequested.emit, project, job_id))
 
         cancel_path = os.path.join(script_dir, "src_static", "delete.svg")
         cancel_btn = self._create_action_button(
             cancel_path, "Cancel job", "cancelBtn")
-        cancel_btn.clicked.connect(functools.partial(self.cancelRequested.emit, project, job_id)) # Using functools.partial
+        cancel_btn.clicked.connect(functools.partial(
+            self.cancelRequested.emit, project, job_id))  # Using functools.partial
 
         logs_path = os.path.join(script_dir, "src_static", "view_logs.svg")
         logs_btn = self._create_action_button(
             logs_path, "View logs", "logsBtn")
         logs_btn.clicked.connect(
-            functools.partial(self.logsRequested.emit, project, job_id)) # Using functools.partial
+            # Using functools.partial
+            functools.partial(self.logsRequested.emit, project, job_id))
 
         # New action buttons
         duplicate_path = os.path.join(
@@ -237,13 +240,15 @@ class JobsGroup(QWidget):
         duplicate_btn = self._create_action_button(
             duplicate_path, "Duplicate job", "duplicateBtn")
         duplicate_btn.clicked.connect(
-            functools.partial(self.duplicateRequested.emit, project, job_id)) # Using functools.partial
+            # Using functools.partial
+            functools.partial(self.duplicateRequested.emit, project, job_id))
 
         modify_path = os.path.join(script_dir, "src_static", "edit.svg")
         modify_btn = self._create_action_button(
             modify_path, "Modify job", "modifyBtn")
         modify_btn.clicked.connect(
-            functools.partial(self.modifyRequested.emit, project, job_id)) # Using functools.partial
+            # Using functools.partial
+            functools.partial(self.modifyRequested.emit, project, job_id))
 
         # Enable/disable buttons based on job status
         if job_status:
@@ -277,8 +282,8 @@ class JobsGroup(QWidget):
         layout.addWidget(modify_btn)
 
         return container
-    # ------------------------------------------------------------- public API
 
+    # ------------------------------------------------------------- public API
     def add_project(self, project_name: str, headers: List[str] | None = None) -> QTableWidget:
         if project_name in self._indices:
             # type: ignore[arg-type]
@@ -329,7 +334,7 @@ class JobsGroup(QWidget):
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             font = item.font()
             item.setFont(font)
-    
+
     def update_jobs(self, project_name: str, rows: Iterable[Sequence[Any]]) -> None:
         table = self.add_project(project_name)
         actions_col = table.columnCount() - 1
@@ -346,12 +351,13 @@ class JobsGroup(QWidget):
             for c in range(table.columnCount()):
                 item = table.item(r, c)
                 if item:
-                    item.setBackground(QtGui.QColor(BASE_BG if r % 2 == 0 else ALT_BG))
+                    item.setBackground(QtGui.QColor(
+                        BASE_BG if r % 2 == 0 else ALT_BG))
 
         for r, row in enumerate(rows_list):
             # Get job status for action buttons (index 2 is typically status)
             job_status = row[2] if len(row) > 2 else None
-            
+
             # Need to handle potentially shorter row data (if old data format)
             for c in range(actions_col):
                 # Fill in the value if available, else empty string
@@ -361,15 +367,17 @@ class JobsGroup(QWidget):
                 table.setItem(r, c, it)
                 if c == 2:  # Status column
                     self._apply_state_color(it)
-                    
+
                 # Resource columns styling - right-align and compact
                 if 4 <= c <= 6:  # CPU, GPU, RAM columns
-                    it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    it.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
             job_id = row[0] if row else None
-            action_widget = self._create_actions_widget(project_name, job_id, job_status)
+            action_widget = self._create_actions_widget(
+                project_name, job_id, job_status)
             table.setCellWidget(r, actions_col, action_widget)
-    
+
     def add_single_job(self, project_name: str, job_data: Sequence[Any]) -> None:
         """
         Adds a single new job to the specified project's table.

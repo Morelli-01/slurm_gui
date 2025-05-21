@@ -117,7 +117,7 @@ class JobQueueWidget(QGroupBox):
         header.setSectionsClickable(True)
         try:
             header.sortIndicatorChanged.disconnect(self._on_sort_indicator_changed)
-        except TypeError:
+        except TypeError as e:
             pass
         header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
 

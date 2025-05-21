@@ -1006,13 +1006,19 @@ class JobsPanel(QWidget):
                 return
             self.project_storer.remove_job(project=project_name, job_id=job_id)
             updated_project = self.project_storer.get(project_name)
-            if updated_project:
-                job_rows = [job.to_table_row() for job in updated_project.jobs]
-                self.jobs_group.update_jobs(project_name, job_rows)
-            else:
-                # If the project itself was somehow deleted (unlikely with remove_job),
-                # or if it's empty after deletion, clear its display
-                self.jobs_group.update_jobs(project_name, [])
+            prj_table = self.jobs_group._stack.widget(self.jobs_group._indices[project_name])
+            for i in range(prj_table.rowCount()):
+                item = prj_table.item(i, 0).text()
+                if item == job_id:
+                    prj_table.removeRow(i)
+                    break
+            # if updated_project:
+            #     job_rows = [job.to_table_row() for job in updated_project.jobs]
+            #     self.jobs_group.update_jobs(project_name, job_rows)
+            # else:
+            #     # If the project itself was somehow deleted (unlikely with remove_job),
+            #     # or if it's empty after deletion, clear its display
+            #     self.jobs_group.update_jobs(project_name, [])
         # QMessageBox.information(
         #         self, "Success",
         #         f"Job {job_id} correctly deleted",
