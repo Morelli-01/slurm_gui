@@ -2,9 +2,10 @@ import functools
 import json
 import tempfile
 from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from PyQt6.QtCore import QSettings
 
@@ -29,25 +30,164 @@ def _clean_dict(d: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class Job:
-    id: int | str
-    name: str
-    status: str = "pending"  # arbitrary free‑form string, e.g. "queued", "running"
+    id: Union[int, str]  # SLURM job ID
+    name: str  # Job name
+    status: str = "PENDING"  # SLURM job status: PENDING, RUNNING, COMPLETED, FAILED, etc.
+    
+    # Core job attributes
+    command: str = ""  # The job command/script
+    partition: str = ""  # SLURM partition
+    account: str = ""  # SLURM account
+    time_limit: str = ""  # Time limit in HH:MM:SS format
+    time_used: Optional[timedelta] = None  # Time used so far
+    
+    # Resource requirements
+    nodes: int = 1  # Number of nodes
+    cpus: int = 1  # Number of CPUs
+    gpus: int = 0  # Number of GPUs
+    memory: str = ""  # Memory requirement (e.g., "8G")
+    
+    # Additional configuration
+    constraints: Optional[str] = None  # Node constraints
+    qos: Optional[str] = None  # Quality of Service
+    gres: Optional[str] = None  # Generic Resources string (e.g., "gpu:rtx5000:1")
+    
+    # Output paths
+    output_file: str = ""  # Path for job output
+    error_file: str = ""  # Path for job errors
+    working_dir: str = ""  # Working directory
+    
+    # Job array settings
+    array_spec: Optional[str] = None  # Job array specification (e.g., "1-10:2")
+    array_max_jobs: Optional[int] = None  # Maximum concurrent array jobs
+    
+    # Job dependencies
+    dependency: Optional[str] = None  # Job dependency specification
+    
+    # Additional information
+    submission_time: Optional[datetime] = None  # When the job was submitted
+    start_time: Optional[datetime] = None  # When the job started running
+    end_time: Optional[datetime] = None  # When the job completed/failed
+    priority: int = 0  # Job priority
+    nodelist: str = ""  # List of nodes job is running on
+    reason: str = ""  # Status reason (useful for pending jobs)
+    
+    # Extensible information dictionary for anything else
     info: Dict[str, Any] = field(default_factory=dict)
 
     # .................................................................
     def to_json(self) -> Dict[str, Any]:
         d = asdict(self)
+        # Handle special types
+        if self.time_used:
+            d["time_used"] = str(self.time_used)
+        if self.submission_time:
+            d["submission_time"] = self.submission_time.isoformat()
+        if self.start_time:
+            d["start_time"] = self.start_time.isoformat()
+        if self.end_time:
+            d["end_time"] = self.end_time.isoformat()
+        
         d["info"] = self.info or None  # empty dict → null
         return _clean_dict(d)
 
     @classmethod
     def from_json(cls, data: Dict[str, Any]) -> "Job":
-        return cls(
-            id=data["id"],
-            name=data.get("name", ""),
-            status=data.get("status", "pending"),
-            info=data.get("info", {}) or {},
+        # Make a copy to avoid modifying the input
+        data_copy = data.copy()
+        
+        # Handle special types
+        if "time_used" in data_copy and data_copy["time_used"]:
+            try:
+                parts = data_copy["time_used"].split(":")
+                if len(parts) == 3:
+                    hours, minutes, seconds = map(int, parts)
+                    data_copy["time_used"] = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                else:
+                    data_copy["time_used"] = None
+            except (ValueError, TypeError):
+                data_copy["time_used"] = None
+        
+        # Handle date fields
+        for date_field in ["submission_time", "start_time", "end_time"]:
+            if date_field in data_copy and data_copy[date_field]:
+                try:
+                    data_copy[date_field] = datetime.fromisoformat(data_copy[date_field])
+                except (ValueError, TypeError):
+                    data_copy[date_field] = None
+        
+        # Handle info dictionary
+        info = data_copy.pop("info", {}) or {}
+        
+        # Create job with known fields
+        known_fields = {k: v for k, v in data_copy.items() if k in cls.__annotations__}
+        job = cls(**known_fields)
+        
+        # Set info separately
+        job.info = info
+        
+        return job
+    
+    @classmethod
+    def from_slurm_dict(cls, slurm_dict: Dict[str, Any]) -> "Job":
+        """Create a Job instance from a dictionary returned by SlurmConnection._fetch_squeue()"""
+        job = cls(
+            id=slurm_dict.get("Job ID", ""),
+            name=slurm_dict.get("Job Name", ""),
+            status=slurm_dict.get("Status", "PENDING"),
+            partition=slurm_dict.get("Partition", ""),
+            account=slurm_dict.get("Account", ""),
+            priority=slurm_dict.get("Priority", 0),
+            nodelist=slurm_dict.get("Nodelist", ""),
+            reason=slurm_dict.get("Reason", ""),
         )
+        
+        # Handle time fields
+        if "Time Limit" in slurm_dict:
+            job.time_limit = slurm_dict["Time Limit"]
+        
+        if "Time Used" in slurm_dict and isinstance(slurm_dict["Time Used"], list) and len(slurm_dict["Time Used"]) > 1:
+            job.time_used = slurm_dict["Time Used"][1]  # Use the timedelta value
+        
+        # Handle resource fields
+        if "CPUs" in slurm_dict:
+            job.cpus = slurm_dict["CPUs"]
+        
+        if "GPUs" in slurm_dict:
+            job.gpus = slurm_dict["GPUs"]
+        
+        if "RAM" in slurm_dict:
+            job.memory = slurm_dict["RAM"]
+        
+        # Store the rest in info dictionary
+        for k, v in slurm_dict.items():
+            if k not in asdict(job):
+                job.info[k] = v
+        
+        return job
+    
+    def get_runtime_str(self) -> str:
+        """Return a formatted string of the job's runtime"""
+        if not self.time_used:
+            return "—"
+        
+        total_seconds = int(self.time_used.total_seconds())
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+    
+    def to_table_row(self) -> List[Any]:
+        """Return a list of values for display in a table row"""
+        return [
+            self.id,
+            self.name,
+            self.status,
+            self.get_runtime_str(),
+            self.cpus,
+            self.gpus,
+            self.memory,
+        ]
 
 
 @dataclass
@@ -57,19 +197,62 @@ class Project:
 
     # .................................................................
     def add_job(self, job: Job) -> None:
+        """Add a job to the project"""
+        # Check if job already exists (by ID)
+        for i, existing_job in enumerate(self.jobs):
+            if existing_job.id == job.id:
+                # Update existing job
+                self.jobs[i] = job
+                return
+        
+        # Add new job
         self.jobs.append(job)
+    
+    def get_job(self, job_id: Union[int, str]) -> Optional[Job]:
+        """Get a job by ID"""
+        for job in self.jobs:
+            if job.id == job_id:
+                return job
+        return None
 
-    def remove_job(self, job_id: int | str) -> None:
+    def remove_job(self, job_id: Union[int, str]) -> None:
+        """Remove a job by ID"""
         self.jobs = [j for j in self.jobs if j.id != job_id]
+    
+    def get_job_stats(self) -> Dict[str, int]:
+        """Get counts of jobs by status"""
+        stats = {
+            "RUNNING": 0,
+            "PENDING": 0, 
+            "COMPLETED": 0,
+            "FAILED": 0,
+            "TOTAL": len(self.jobs)
+        }
+        
+        for job in self.jobs:
+            status = job.status.upper()
+            if status in stats:
+                stats[status] += 1
+            else:
+                # Handle other statuses
+                if status in ["COMPLETING", "SUSPENDED", "PREEMPTED"]:
+                    stats["RUNNING"] += 1
+                elif status in ["STOPPED", "CANCELLED"]:
+                    stats["FAILED"] += 1
+        
+        return stats
 
     # .................................................................
     def to_json(self) -> Dict[str, Any]:
+        """Serialize project to JSON-compatible dictionary"""
         return {
+            "name": self.name,
             "jobs": [j.to_json() for j in self.jobs],
         }
 
     @classmethod
     def from_json(cls, name: str, data: Dict[str, Any]) -> "Project":
+        """Create Project from JSON data"""
         jobs = [Job.from_json(j) for j in data.get("jobs", [])]
         return cls(name=name, jobs=jobs)
 
@@ -157,7 +340,8 @@ class ProjectStore:
             return {
                 name: Project.from_json(name, pj_data) for name, pj_data in data.items()
             }
-        except Exception:
+        except Exception as e:
+            print(f"Error reading project data: {e}")
             # corrupted → reset
             return {}
 
@@ -170,21 +354,31 @@ class ProjectStore:
     # Public API (project level)
     # ------------------------------------------------------------------
     def all_projects(self) -> List[str]:
+        """Get names of all projects"""
         return list(self._projects.keys())
 
-    def add_project(self, name: str, *, jobs: List[Job] | None = None) -> None:
+    def add_project(self, name: str, *, jobs: Optional[List[Job]] = None) -> None:
+        """Add a new project or update an existing one with jobs"""
         if name in self._projects:
-            return
-        self._projects[name] = Project(name, jobs or [])
+            # Project exists, update jobs if provided
+            if jobs:
+                for job in jobs:
+                    self._projects[name].add_job(job)
+        else:
+            # Create new project
+            self._projects[name] = Project(name, jobs or [])
+        
         self._write_to_settings()
 
     def remove_project(self, name: str) -> None:
+        """Remove a project by name"""
         if name not in self._projects:
             return
         self._projects.pop(name)
         self._write_to_settings()
 
     def rename_project(self, old: str, new: str) -> None:
+        """Rename a project"""
         if old not in self._projects or new in self._projects:
             return
         self._projects[new] = self._projects.pop(old)
@@ -192,21 +386,170 @@ class ProjectStore:
         self._write_to_settings()
 
     def get(self, name: str) -> Optional[Project]:
+        """Get a project by name"""
         return self._projects.get(name)
 
     # ------------------------------------------------------------------
     # Public API (job level)
     # ------------------------------------------------------------------
     def add_job(self, project: str, job: Job) -> None:
+        """Add a job to a project (creates project if it doesn't exist)"""
         self._projects.setdefault(project, Project(project)).add_job(job)
         self._write_to_settings()
 
-    def remove_job(self, project: str, job_id: int | str) -> None:
+    def get_job(self, project: str, job_id: Union[int, str]) -> Optional[Job]:
+        """Get a job by project name and job ID"""
+        pj = self._projects.get(project)
+        if not pj:
+            return None
+        return pj.get_job(job_id)
+
+    def remove_job(self, project: str, job_id: Union[int, str]) -> None:
+        """Remove a job from a project"""
         pj = self._projects.get(project)
         if not pj:
             return
         pj.remove_job(job_id)
         self._write_to_settings()
+    
+    def update_job_status(self, project: str, job_id: Union[int, str], status: str) -> None:
+        """Update the status of a job"""
+        pj = self._projects.get(project)
+        if not pj:
+            return
+        
+        job = pj.get_job(job_id)
+        if job:
+            job.status = status
+            self._write_to_settings()
+    
+    def submit_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
+        """Submit a new job to SLURM and add it to the project"""
+        if not self.slurm or not self.slurm.check_connection():
+            raise ConnectionError("Not connected to SLURM")
+        
+        try:
+            # Extract required fields
+            job_name = job_details.get("job_name", "")
+            partition = job_details.get("partition", "")
+            time_limit = job_details.get("time_limit", "01:00:00")
+            command = job_details.get("command", "")
+            account = job_details.get("account", "")
+            
+            # Optional fields
+            constraint = job_details.get("constraint")
+            qos = job_details.get("qos")
+            gres = job_details.get("gres")
+            nodes = job_details.get("nodes", 1)
+            cpus_per_task = job_details.get("cpus_per_task", 1)
+            output_file = job_details.get("output_file", ".logs/out_%A.log")
+            error_file = job_details.get("error_file", ".logs/err_%A.log")
+            working_dir = job_details.get("working_dir", "")
+            
+            # Submit job using SlurmConnection
+            job_id = self.slurm.submit_job(
+                job_name=job_name,
+                partition=partition,
+                time_limit=time_limit,
+                command=command,
+                account=account,
+                constraint=constraint,
+                qos=qos,
+                gres=gres,
+                nodes=nodes,
+                ntasks=cpus_per_task,
+                output_file=output_file,
+                error_file=error_file
+            )
+            
+            if job_id:
+                # Create job object and add to project
+                job = Job(
+                    id=job_id,
+                    name=job_name,
+                    status="PENDING",
+                    command=command,
+                    partition=partition,
+                    account=account,
+                    time_limit=time_limit,
+                    nodes=nodes,
+                    cpus=cpus_per_task,
+                    constraints=constraint,
+                    qos=qos,
+                    gres=gres,
+                    output_file=output_file,
+                    error_file=error_file,
+                    working_dir=working_dir,
+                    submission_time=datetime.now(),
+                )
+                
+                # Add array information if present
+                if "array" in job_details:
+                    job.array_spec = job_details["array"]
+                    if "array_max_jobs" in job_details:
+                        job.array_max_jobs = job_details["array_max_jobs"]
+                
+                # Add dependency information if present
+                if "dependency" in job_details:
+                    job.dependency = job_details["dependency"]
+                
+                self.add_job(project, job)
+                return job_id
+            
+            return None
+        
+        except Exception as e:
+            raise RuntimeError(f"Job submission failed: {e}")
+    
+    def update_jobs_from_squeue(self, squeue_data: List[Dict[str, Any]]) -> None:
+        """Update job information from squeue data"""
+        # Group jobs by user
+        user_jobs = {}
+        for job_dict in squeue_data:
+            user = job_dict.get("User", "")
+            if user:
+                user_jobs.setdefault(user, []).append(job_dict)
+        
+        # Only process jobs for the current user
+        if self.slurm and self.slurm.remote_user:
+            user_jobs_data = user_jobs.get(self.slurm.remote_user, [])
+            
+            # Track which jobs were updated
+            updated_job_ids = set()
+            
+            # Update existing jobs
+            for project_name, project in self._projects.items():
+                for job in project.jobs:
+                    for squeue_job in user_jobs_data:
+                        if str(job.id) == str(squeue_job.get("Job ID", "")):
+                            # Update job status
+                            job.status = squeue_job.get("Status", job.status)
+                            
+                            # Update time used if available
+                            if "Time Used" in squeue_job and isinstance(squeue_job["Time Used"], list) and len(squeue_job["Time Used"]) > 1:
+                                job.time_used = squeue_job["Time Used"][1]
+                            
+                            # Update nodelist
+                            job.nodelist = squeue_job.get("Nodelist", job.nodelist)
+                            
+                            # Update reason (useful for pending jobs)
+                            job.reason = squeue_job.get("Reason", job.reason)
+                            
+                            # Mark as updated
+                            updated_job_ids.add(str(job.id))
+                            break
+            
+            # Add any new jobs that aren't assigned to a project yet
+            for squeue_job in user_jobs_data:
+                job_id = str(squeue_job.get("Job ID", ""))
+                if job_id and job_id not in updated_job_ids:
+                    # Try to determine the project based on job name or other attributes
+                    # For now, assign to "Unassigned" project
+                    job = Job.from_slurm_dict(squeue_job)
+                    self.add_job("Unassigned", job)
+            
+            # Save changes
+            self._write_to_settings()
 
     # ------------------------------------------------------------------
     # Convenience / debugging helpers
