@@ -76,6 +76,7 @@ COLOR_RED = "#f13232"
 COLOR_ORANGE = "#ffb86c"
 COLOR_BLUE = "#8be9fd"
 COLOR_GRAY = "#6272a4"
+COLOR_PURPLE = "#8403fc"
 
 # color for thw cluster status widget
 COLOR_AVAILABLE = "#4CAF50"     # Green for Available
