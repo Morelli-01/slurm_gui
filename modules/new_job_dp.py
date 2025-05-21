@@ -1247,6 +1247,7 @@ class NewJobDialog(QDialog):
             "qos": qos,
             "gres": gres,
             "nodes": nodes,
+            "memory": str(self.memory_spin.value()) + self.memory_unit_combo.currentText().replace("B", ""),
             "cpus_per_task": cpus_per_task,
             "output_file": output_file,
             "error_file": error_file,

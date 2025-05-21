@@ -206,8 +206,6 @@ class SlurmConnection:
         Returns:
             Tuple[str, str]: (stdout, stderr) output of the command
         """
-        if not self.is_connected():
-            raise ConnectionError("SSH connection not established.")
             
         stdin, stdout, stderr = self.client.exec_command(command)
         return stdout.read().decode().strip(), stderr.read().decode().strip()
@@ -265,7 +263,7 @@ class SlurmConnection:
     def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                    constraint: Optional[str] = None, qos: Optional[str] = None,
                    gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
-                   output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log") -> Optional[str]:
+                   output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", memory: str="1G", cpus:int = 1) -> Optional[str]:
         """
         Submit a job to the SLURM scheduler.
         
@@ -286,13 +284,11 @@ class SlurmConnection:
         Returns:
             str: Job ID if submission was successful, None otherwise
         """
-        if not self.is_connected():
-            raise ConnectionError("SSH connection not established.")
 
         # Create SLURM script content
         script_content = self._create_job_script(
             job_name, partition, time_limit, command, account,
-            constraint, qos, gres, nodes, ntasks, output_file, error_file
+            constraint, qos, gres, nodes, ntasks, output_file, error_file, memory, cpus
         )
 
         # Save script locally
@@ -330,7 +326,7 @@ class SlurmConnection:
 
     def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                           constraint: Optional[str], qos: Optional[str], gres: Optional[str], 
-                          nodes: int, ntasks: int, output_file: str, error_file: str) -> str:
+                          nodes: int, ntasks: int, output_file: str, error_file: str, memory:str, cpus:int) -> str:
         """
         Create the content of a SLURM job script.
         
@@ -343,16 +339,19 @@ class SlurmConnection:
         script_lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name={job_name}",
-            f"#SBATCH --partition={partition}",
+            f"#SBATCH --partition={partition.replace("*", "")}",
             f"#SBATCH --time={time_limit}",
             f"#SBATCH --nodes={nodes}",
             f"#SBATCH --ntasks={ntasks}",
             f"#SBATCH --output={self.remote_home}/{output_file}",
             f"#SBATCH --error={self.remote_home}/{error_file}",
+            f"#SBATCH --mem={memory}",
+            f"#SBATCH --cpus-per-task={cpus}",
+
         ]
         
         # Add optional parameters
-        if constraint:
+        if "None" not in constraint:
             script_lines.append(f"#SBATCH --constraint={constraint}")
         if qos:
             script_lines.append(f"#SBATCH --qos={qos}")

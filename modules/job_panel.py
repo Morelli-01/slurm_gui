@@ -445,13 +445,81 @@ class ProjectGroup(QGroupBox):
         # Keep track of the currently selected widget
         self._selected_project_widget = None
 
-
-
     def start(self):
-        self.projects_keys = self.parent.project_storer.all_projects()
-        for proj in self.projects_keys:
-            self.add_new_project(proj)
-            # self.projects_children[proj].status_bar.children()[1].children()[2].children()[1].setText("10")
+        """
+        Load and display all projects from the project storer.
+        For each project, populate the UI with project widgets.
+        """
+        if not hasattr(self.parent, 'project_storer') or self.parent.project_storer is None:
+            print("Project storer not initialized")
+            return
+
+        try:
+            # Get all projects from the store
+            self.projects_keys = self.parent.project_storer.all_projects()
+
+            # Add project widgets to UI
+            for proj_name in self.projects_keys:
+                self.add_new_project(proj_name)
+
+                # Get the project from the store
+                project = self.parent.project_storer.get(proj_name)
+
+                if project and project.jobs:
+                    # Convert jobs to rows for display
+                    job_rows = [job.to_table_row() for job in project.jobs]
+
+                    # Update jobs UI
+                    self.parent.jobs_group.update_jobs(proj_name, job_rows)
+
+                    # Update project status visualization (using job counts)
+                    if hasattr(self.projects_children.get(proj_name, None), 'status_bar'):
+                        job_stats = project.get_job_stats()
+
+                        # Find status bar widgets and update counts
+                        status_bar = self.projects_children[proj_name].status_bar
+                        if hasattr(status_bar, 'children'):
+                            widgets = status_bar.children()
+
+                            # This is a simplistic approach - in a real implementation,
+                            # you would have a more reliable way to map widgets to statuses
+                            if len(widgets) >= 5:  # Assuming the 4 status blocks + layout
+                                # Set counts if widgets are found (simplistic mapping)
+                                # widgets[1] is likely completed jobs block
+                                self._update_widget_count(
+                                    widgets[1], job_stats.get("COMPLETED", 0))
+
+                                # widgets[2] is likely failed jobs block
+                                self._update_widget_count(
+                                    widgets[2], job_stats.get("FAILED", 0))
+
+                                # widgets[3] is likely pending jobs block (includes NOT_SUBMITTED)
+                                pending_count = job_stats.get("PENDING", 0)
+                                not_submitted = sum(
+                                    1 for job in project.jobs if job.status == "NOT_SUBMITTED")
+                                self._update_widget_count(
+                                    widgets[3], pending_count + not_submitted)
+
+                                # widgets[4] is likely running jobs block
+                                self._update_widget_count(
+                                    widgets[4], job_stats.get("RUNNING", 0))
+        except Exception as e:
+            print(f"Error loading projects: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _update_widget_count(self, widget, count):
+        """Helper method to update the count displayed in a status block widget"""
+        try:
+            # Navigate through widget hierarchy to find the count label
+            # This is a simplified approach and might need adjustment based on actual widget structure
+            for child in widget.findChildren(QLabel):
+                # Try to update text directly (with string conversion for safety)
+                child.setText(str(count))
+                return True
+        except Exception as e:
+            print(f"Error updating widget count: {e}")
+        return False
 
     def prompt_new_project(self):
         """Open a custom dialog to ask for project name"""
@@ -468,11 +536,6 @@ class ProjectGroup(QGroupBox):
         new_project = ProjectWidget(
             project_name, self, storer=self.parent.project_storer)
         self.parent.jobs_group.add_project(project_name)
-        rows = [
-            (123, "preprocess-data", "RUNNING",  "00:04:12"),
-            (random.randint(0, 100), "train-model",     "PENDING",  "—"),
-        ]
-        self.parent.jobs_group.update_jobs(project_name, rows)
 
         # Connect the selected signal to the handler
         new_project.selected.connect(self.handle_project_selection)
@@ -697,6 +760,7 @@ class JobsPanel(QWidget):
             self.project_group.handle_project_selection(first_project_name)
             # Manually call the slot in JobsPanel to set the current_project
             self.on_project_selected(first_project_name)
+        self.jobs_group.submitRequested.connect(self.submit_job)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -711,12 +775,74 @@ class JobsPanel(QWidget):
                 selected_project=self.current_project, slurm_connection=self.slurm_connection)
 
             if dialog.exec() == QDialog.DialogCode.Accepted:
-                result = dialog.get_job_details()
-                print(result)
-                # Here you would add the logic to create the new job
-                # based on job_name and project_name
+                job_details = dialog.get_job_details()
+
+                try:
+                    # Create the job via the project storer WITHOUT submitting to SLURM
+                    job_id = self.project_storer.add_new_job(
+                        self.current_project, job_details)
+
+                    if job_id:
+                        # Parse GPU count from gres if available
+                        gpu_count = 0
+                        gres = job_details.get("gres")
+                        if gres and "gpu:" in gres:
+                            try:
+                                gpu_parts = gres.split(":")
+                                if len(gpu_parts) == 2:  # Format: gpu:N
+                                    gpu_count = int(gpu_parts[1])
+                                elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                                    gpu_count = int(gpu_parts[2])
+                            except (ValueError, IndexError):
+                                pass
+
+                        # Get memory setting
+                        memory = job_details.get("memory", "1G")
+                        if not memory:
+                            memory_value = job_details.get("memory_spin", 1)
+                            memory_unit = job_details.get("memory_unit", "GB")
+                            memory = f"{memory_value}{memory_unit}"
+
+                        # Create a job row for the UI display
+                        job_row = [
+                            job_id,
+                            job_details.get("job_name", "Unnamed Job"),
+                            "NOT_SUBMITTED",  # Special status to indicate job needs to be submitted
+                            "00:00:00",  # Initial runtime is zero
+                            job_details.get("cpus_per_task", 1),  # CPU count
+                            gpu_count,  # GPU count parsed from gres
+                            memory,  # Memory
+                        ]
+
+                        # Add the job to the jobs group UI
+                        self.jobs_group.add_single_job(
+                            self.current_project, job_row)
+
+                        # Show success message
+                        QMessageBox.information(
+                            self,
+                            "Job Created",
+                            f"Job '{job_details.get('job_name')}' has been created and saved to the project. Click 'Submit' in the Actions column to submit it to SLURM."
+                        )
+                    else:
+                        QMessageBox.warning(
+                            self,
+                            "Creation Failed",
+                            "Failed to create job. Please check logs for more information."
+                        )
+                except Exception as e:
+                    QMessageBox.critical(
+                        self,
+                        "Job Creation Error",
+                        f"An error occurred while creating the job: {str(e)}"
+                    )
+
         else:
-            print("No project selected.")  # Or show a message to the user
+            QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project first before creating a new job."
+            )
 
     def resizeEvent(self, event):
         """Adjust the position of the floating button when the widget is resized."""
@@ -726,11 +852,129 @@ class JobsPanel(QWidget):
         super().resizeEvent(event)
 
     def setup_project_storer(self):
+        """
+        Initialize the project store when a connection becomes available.
+        This is called when the SSH connection to the SLURM cluster is established.
+        """
         try:
+            # Create the ProjectStore instance with the current connection
             self.project_storer = ProjectStore(self.slurm_connection)
-            self.project_storer._init(self.slurm_connection, remote_path=None)
-            # while not hasattr(self.project_storer, "_projects"): continue
+
+            # Ensure remote directory structure exists
+            if self.slurm_connection.remote_home:
+                slurm_gui_dir = f"{self.slurm_connection.remote_home}/.slurm_gui"
+                logs_dir = f"{self.slurm_connection.remote_home}/.logs"
+
+                # Create necessary directories if they don't exist
+                self.slurm_connection.run_command(f"mkdir -p {slurm_gui_dir}")
+                self.slurm_connection.run_command(f"mkdir -p {logs_dir}")
+
+            # Clear existing project widgets before reloading
+            if hasattr(self.project_group, 'scroll_content_layout'):
+                for i in reversed(range(self.project_group.scroll_content_layout.count())):
+                    widget = self.project_group.scroll_content_layout.itemAt(
+                        i).widget()
+                    if widget and widget not in (None, self.project_group.add_button):
+                        widget.setParent(None)
+
+                # Clear tracking dictionaries
+                self.project_group.projects_children.clear()
+                if hasattr(self.project_group, 'projects_keys'):
+                    self.project_group.projects_keys = []
+
+            # Start loading projects - this will create project widgets and load jobs
             self.project_group.start()
-        except ConnectionError as e:
-            print(e)
+
+            # Refresh job data from SLURM queue to update statuses
+            if hasattr(self.slurm_connection, '_fetch_squeue'):
+                try:
+                    # Get current jobs from SLURM queue
+                    queue_jobs = self.slurm_connection._fetch_squeue()
+
+                    # Update job information in the store
+                    if queue_jobs:
+                        self.project_storer.update_jobs_from_squeue(queue_jobs)
+
+                        # Refresh all project displays to reflect updated job statuses
+                        for project_name in self.project_storer.all_projects():
+                            project = self.project_storer.get(project_name)
+                            if project:
+                                job_rows = [job.to_table_row()
+                                            for job in project.jobs]
+                                self.jobs_group.update_jobs(
+                                    project_name, job_rows)
+                except Exception as e:
+                    print(f"Error fetching job queue: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            print(f"Failed to initialize project store: {e}")
+            import traceback
+            traceback.print_exc()
             self.project_storer = None
+
+    def submit_job(self, project_name, job_id):
+        """
+        Handle request to submit a job to SLURM.
+        This method is connected to the submitRequested signal from JobsGroup.
+
+        Args:
+            project_name: Name of the project containing the job
+            job_id: ID of the job to submit
+        """
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+            # Check if job exists and has NOT_SUBMITTED status
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found in project '{project_name}'.")
+                return
+
+            if job.status != "NOT_SUBMITTED":
+                QMessageBox.information(
+                    self,
+                    "Already Submitted",
+                    f"Job '{job_id}' has already been submitted with status: {job.status}."
+                )
+                return
+
+            # Submit the job
+            new_job_id = self.project_storer.submit_job(project_name, job_id)
+
+            if new_job_id:
+                # Get the project and update jobs display
+                project = self.project_storer.get(project_name)
+                if project:
+                    job_rows = [job.to_table_row() for job in project.jobs]
+                    self.jobs_group.update_jobs(project_name, job_rows)
+
+                QMessageBox.information(
+                    self,
+                    "Job Submitted",
+                    f"Job has been submitted with ID {new_job_id}"
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Submission Failed",
+                    "Failed to submit job. Please check logs for more information."
+                )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Submission Error",
+                f"An error occurred during job submission: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()

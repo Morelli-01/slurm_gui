@@ -178,17 +178,23 @@ class Job:
         return f"{hours:02}:{minutes:02}:{seconds:02}"
     
     def to_table_row(self) -> List[Any]:
-        """Return a list of values for display in a table row"""
+        """
+        Return a list of values for display in a table row.
+        Format: [id, name, status, runtime, cpus, gpus, memory]
+        """
+        # Format runtime string (or use placeholder for NOT_SUBMITTED jobs)
+        runtime_str = "—" if self.status == "NOT_SUBMITTED" else self.get_runtime_str()
+        
+        # Return formatted row data
         return [
             self.id,
             self.name,
             self.status,
-            self.get_runtime_str(),
+            runtime_str,
             self.cpus,
             self.gpus,
             self.memory,
         ]
-
 
 @dataclass
 class Project:
@@ -226,6 +232,7 @@ class Project:
             "PENDING": 0, 
             "COMPLETED": 0,
             "FAILED": 0,
+            "NOT_SUBMITTED": 0,  # Add counter for NOT_SUBMITTED jobs
             "TOTAL": len(self.jobs)
         }
         
@@ -241,7 +248,6 @@ class Project:
                     stats["FAILED"] += 1
         
         return stats
-
     # .................................................................
     def to_json(self) -> Dict[str, Any]:
         """Serialize project to JSON-compatible dictionary"""
@@ -423,86 +429,88 @@ class ProjectStore:
             job.status = status
             self._write_to_settings()
     
-    def submit_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
-        """Submit a new job to SLURM and add it to the project"""
-        if not self.slurm or not self.slurm.check_connection():
-            raise ConnectionError("Not connected to SLURM")
+    # def submit_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
+    #     """Submit a new job to SLURM and add it to the project"""
+    #     if not self.slurm or not self.slurm.check_connection():
+    #         raise ConnectionError("Not connected to SLURM")
         
-        try:
-            # Extract required fields
-            job_name = job_details.get("job_name", "")
-            partition = job_details.get("partition", "")
-            time_limit = job_details.get("time_limit", "01:00:00")
-            command = job_details.get("command", "")
-            account = job_details.get("account", "")
+    #     try:
+    #         # Extract required fields
+    #         job_name = job_details.get("job_name", "")
+    #         partition = job_details.get("partition", "")
+    #         time_limit = job_details.get("time_limit", "01:00:00")
+    #         command = job_details.get("command", "")
+    #         account = job_details.get("account", "")
             
-            # Optional fields
-            constraint = job_details.get("constraint")
-            qos = job_details.get("qos")
-            gres = job_details.get("gres")
-            nodes = job_details.get("nodes", 1)
-            cpus_per_task = job_details.get("cpus_per_task", 1)
-            output_file = job_details.get("output_file", ".logs/out_%A.log")
-            error_file = job_details.get("error_file", ".logs/err_%A.log")
-            working_dir = job_details.get("working_dir", "")
+    #         # Optional fields
+    #         constraint = job_details.get("constraint")
+    #         qos = job_details.get("qos")
+    #         gres = job_details.get("gres")
+    #         nodes = job_details.get("nodes", 1)
+    #         cpus_per_task = job_details.get("cpus_per_task", 1)
+    #         output_file = job_details.get("output_file", ".logs/out_%A.log")
+    #         error_file = job_details.get("error_file", ".logs/err_%A.log")
+    #         working_dir = job_details.get("working_dir", "")
             
-            # Submit job using SlurmConnection
-            job_id = self.slurm.submit_job(
-                job_name=job_name,
-                partition=partition,
-                time_limit=time_limit,
-                command=command,
-                account=account,
-                constraint=constraint,
-                qos=qos,
-                gres=gres,
-                nodes=nodes,
-                ntasks=cpus_per_task,
-                output_file=output_file,
-                error_file=error_file
-            )
+    #         # Submit job using SlurmConnection
+    #         job_id = self.slurm.submit_job(
+    #             job_name=job_name,
+    #             partition=partition,
+    #             time_limit=time_limit,
+    #             command=command,
+    #             account=account,
+    #             constraint=constraint,
+    #             qos=qos,
+    #             gres=gres,
+    #             nodes=nodes,
+    #             ntasks=cpus_per_task,
+    #             output_file=output_file,
+    #             error_file=error_file
+    #         )
             
-            if job_id:
-                # Create job object and add to project
-                job = Job(
-                    id=job_id,
-                    name=job_name,
-                    status="PENDING",
-                    command=command,
-                    partition=partition,
-                    account=account,
-                    time_limit=time_limit,
-                    nodes=nodes,
-                    cpus=cpus_per_task,
-                    constraints=constraint,
-                    qos=qos,
-                    gres=gres,
-                    output_file=output_file,
-                    error_file=error_file,
-                    working_dir=working_dir,
-                    submission_time=datetime.now(),
-                )
+    #         if job_id:
+    #             # Create job object and add to project
+    #             job = Job(
+    #                 id=job_id,
+    #                 name=job_name,
+    #                 status="PENDING",
+    #                 command=command,
+    #                 partition=partition,
+    #                 account=account,
+    #                 time_limit=time_limit,
+    #                 nodes=nodes,
+    #                 cpus=cpus_per_task,
+    #                 constraints=constraint,
+    #                 qos=qos,
+    #                 gres=gres,
+    #                 output_file=output_file,
+    #                 error_file=error_file,
+    #                 working_dir=working_dir,
+    #                 submission_time=datetime.now(),
+    #             )
                 
-                # Add array information if present
-                if "array" in job_details:
-                    job.array_spec = job_details["array"]
-                    if "array_max_jobs" in job_details:
-                        job.array_max_jobs = job_details["array_max_jobs"]
+    #             # Add array information if present
+    #             if "array" in job_details:
+    #                 job.array_spec = job_details["array"]
+    #                 if "array_max_jobs" in job_details:
+    #                     job.array_max_jobs = job_details["array_max_jobs"]
                 
-                # Add dependency information if present
-                if "dependency" in job_details:
-                    job.dependency = job_details["dependency"]
+    #             # Add dependency information if present
+    #             if "dependency" in job_details:
+    #                 job.dependency = job_details["dependency"]
                 
-                self.add_job(project, job)
-                return job_id
+    #             self.add_job(project, job)
+    #             return job_id
             
-            return None
+    #         return None
         
-        except Exception as e:
-            raise RuntimeError(f"Job submission failed: {e}")
-    
+    #     except Exception as e:
+    #         raise RuntimeError(f"Job submission failed: {e}")
     def update_jobs_from_squeue(self, squeue_data: List[Dict[str, Any]]) -> None:
-        """Update job information from squeue data"""
+        """
+        Update job information from squeue data.
+        Preserves NOT_SUBMITTED jobs - their status should not change when refreshing from SLURM.
+        """
         # Group jobs by user
         user_jobs = {}
         for job_dict in squeue_data:
@@ -520,6 +528,10 @@ class ProjectStore:
             # Update existing jobs
             for project_name, project in self._projects.items():
                 for job in project.jobs:
+                    # Skip NOT_SUBMITTED jobs - we don't want to update their status from SLURM
+                    if job.status == "NOT_SUBMITTED":
+                        continue
+                        
                     for squeue_job in user_jobs_data:
                         if str(job.id) == str(squeue_job.get("Job ID", "")):
                             # Update job status
@@ -550,7 +562,181 @@ class ProjectStore:
             
             # Save changes
             self._write_to_settings()
-
+    def add_new_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
+        """Create a new job and add it to the project (without submitting to SLURM)"""
+        if not self.slurm or not self.slurm.check_connection():
+            raise ConnectionError("Not connected to SLURM")
+        
+        try:
+            # Extract required fields
+            job_name = job_details.get("job_name", "")
+            partition = job_details.get("partition", "")
+            time_limit = job_details.get("time_limit", "01:00:00")
+            command = job_details.get("command", "")
+            account = job_details.get("account", "")
+            
+            # Optional fields
+            constraint = job_details.get("constraint")
+            qos = job_details.get("qos")
+            gres = job_details.get("gres")
+            nodes = job_details.get("nodes", 1)
+            cpus_per_task = job_details.get("cpus_per_task", 1)
+            output_file = job_details.get("output_file", ".logs/out_%A.log")
+            error_file = job_details.get("error_file", ".logs/err_%A.log")
+            working_dir = job_details.get("working_dir", "")
+            
+            # Job array parameters
+            array_spec = job_details.get("array")
+            array_max_jobs = job_details.get("array_max_jobs")
+            
+            # Dependency parameters
+            dependency = job_details.get("dependency")
+            
+            # Memory calculation - convert to proper format if needed
+            memory = None
+            if "memory" in job_details:
+                memory = job_details["memory"]
+            elif "memory_spin" in job_details and "memory_unit" in job_details:
+                memory_value = job_details.get("memory_spin", 1)
+                memory_unit = job_details.get("memory_unit", "GB")
+                memory = f"{memory_value}{memory_unit.lower()}"
+            
+            # Generate a temporary ID (negative number to indicate not submitted yet)
+            import random
+            temp_id = f"NEW-{random.randint(1000, 9999)}"
+            
+            # Create job object without submitting to SLURM
+            job = Job(
+                id=temp_id,
+                name=job_name,
+                status="NOT_SUBMITTED",  # Special status to indicate job is not submitted yet
+                command=command,
+                partition=partition,
+                account=account,
+                time_limit=time_limit,
+                nodes=nodes,
+                cpus=cpus_per_task,
+                constraints=constraint,
+                qos=qos,
+                gres=gres,
+                output_file=output_file,
+                error_file=error_file,
+                working_dir=working_dir,
+                submission_time=None,  # No submission time yet
+                memory=memory or "",
+            )
+            
+            # Parse GPU count from gres if available
+            if gres and "gpu:" in gres:
+                try:
+                    gpu_parts = gres.split(":")
+                    if len(gpu_parts) == 2:  # Format: gpu:N
+                        job.gpus = int(gpu_parts[1])
+                    elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                        job.gpus = int(gpu_parts[2])
+                except (ValueError, IndexError):
+                    pass  # Keep default value if parsing fails
+            
+            # Add array information if present
+            if array_spec:
+                job.array_spec = array_spec
+                if array_max_jobs:
+                    job.array_max_jobs = array_max_jobs
+            
+            # Add dependency information if present
+            if dependency:
+                job.dependency = dependency
+            
+            # Store job details in info for later submission
+            job.info["submission_details"] = job_details
+            
+            # Add the job to the project in the store
+            self.add_job(project, job)
+            return temp_id
+        
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"Job creation failed: {e}")
+        
+    def submit_job(self, project: str, job_id: str) -> Optional[str]:
+        """Submit an existing job to SLURM"""
+        if not self.slurm or not self.slurm.check_connection():
+            raise ConnectionError("Not connected to SLURM")
+        
+        # Get the job from the project
+        project_obj = self.get(project)
+        if not project_obj:
+            raise ValueError(f"Project {project} not found")
+        
+        job = project_obj.get_job(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found in project {project}")
+        
+        # Skip if job is already submitted
+        if not job.status == "NOT_SUBMITTED":
+            return job.id
+        
+        try:
+            # Get submission details from job info
+            submission_details = job.info.get("submission_details", {})
+            if not submission_details:
+                raise ValueError(f"Job {job_id} has no submission details")
+            
+            # Get job parameters
+            job_name = job.name
+            partition = job.partition
+            time_limit = job.time_limit
+            command = job.command
+            account = job.account
+            constraint = job.constraints
+            qos = job.qos
+            gres = job.gres
+            nodes = job.nodes
+            cpus_per_task = job.cpus
+            output_file = job.output_file
+            error_file = job.error_file
+            memory = job.memory
+            cpus = job.cpus
+            # Submit job using SlurmConnection
+            new_job_id = self.slurm.submit_job(
+                job_name=job_name,
+                partition=partition,
+                time_limit=time_limit,
+                command=command,
+                account=account,
+                constraint=constraint,
+                qos=qos,
+                gres=gres,
+                nodes=nodes,
+                output_file=output_file,
+                error_file=error_file,
+                memory=memory,
+                cpus=cpus
+            )
+            
+            if new_job_id:
+                # Update the job with the new ID and status
+                old_id = job.id
+                job.id = new_job_id
+                job.status = "PENDING"
+                job.submission_time = datetime.now()
+                
+                # Remove temporary submission details to save space
+                if "submission_details" in job.info:
+                    del job.info["submission_details"]
+                
+                # Save changes
+                self._write_to_settings()
+                
+                return new_job_id
+            
+            return None
+        
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise RuntimeError(f"Job submission failed: {e}")
     # ------------------------------------------------------------------
     # Convenience / debugging helpers
     # ------------------------------------------------------------------
