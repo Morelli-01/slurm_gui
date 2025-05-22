@@ -132,11 +132,23 @@ class Job:
     
     @classmethod
     def from_slurm_dict(cls, slurm_dict: Dict[str, Any]) -> "Job":
-        """Create a Job instance from a dictionary returned by SlurmConnection._fetch_squeue()"""
+        """Create a Job instance from a dictionary returned by SlurmConnection with proper status handling"""
+        
+        # Get the raw status and any exit code information
+        raw_status = slurm_dict.get("Status", "PENDING")
+        exit_code = slurm_dict.get("ExitCode")
+        raw_state = slurm_dict.get("RawState", raw_status)
+        
+        # Determine refined status if we have exit code information
+        if exit_code and raw_status == "COMPLETED":
+            refined_status = determine_job_status(raw_state, exit_code)
+        else:
+            refined_status = raw_status
+        
         job = cls(
             id=slurm_dict.get("Job ID", ""),
             name=slurm_dict.get("Job Name", ""),
-            status=slurm_dict.get("Status", "PENDING"),
+            status=refined_status,  # Use refined status
             partition=slurm_dict.get("Partition", ""),
             account=slurm_dict.get("Account", ""),
             priority=slurm_dict.get("Priority", 0),
@@ -161,13 +173,18 @@ class Job:
         if "RAM" in slurm_dict:
             job.memory = slurm_dict["RAM"]
         
+        # Store exit code and raw state for debugging
+        job.info["exit_code"] = exit_code
+        job.info["raw_state"] = raw_state
+        job.info["raw_status"] = raw_status
+        
         # Store the rest in info dictionary
         for k, v in slurm_dict.items():
             if k not in asdict(job):
                 job.info[k] = v
         
         return job
-    
+
     def get_runtime_str(self) -> str:
         """Return a formatted string of the job's runtime"""
         if not self.time_used:
@@ -228,13 +245,15 @@ class Project:
         self.jobs = [j for j in self.jobs if j.id != job_id]
     
     def get_job_stats(self) -> Dict[str, int]:
-        """Get counts of jobs by status"""
+        """Get counts of jobs by status with proper failed job detection"""
         stats = {
             "RUNNING": 0,
             "PENDING": 0, 
             "COMPLETED": 0,
             "FAILED": 0,
-            "NOT_SUBMITTED": 0,  # Add counter for NOT_SUBMITTED jobs
+            "CANCELLED": 0,
+            "SUSPENDED": 0,
+            "NOT_SUBMITTED": 0,
             "TOTAL": len(self.jobs)
         }
         
@@ -243,11 +262,18 @@ class Project:
             if status in stats:
                 stats[status] += 1
             else:
-                # Handle other statuses
-                if status in ["COMPLETING", "SUSPENDED", "PREEMPTED"]:
+                # Handle other statuses by categorizing them
+                if status in ["COMPLETING"]:
                     stats["RUNNING"] += 1
-                elif status in ["STOPPED", "CANCELLED"]:
+                elif status in ["PREEMPTED", "STOPPED"]:
+                    stats["SUSPENDED"] += 1
+                elif status in ["TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "BOOT_FAIL"]:
                     stats["FAILED"] += 1
+                elif status in ["REVOKED", "DEADLINE"]:
+                    stats["CANCELLED"] += 1
+                else:
+                    # Unknown status, log it for debugging
+                    print(f"Unknown job status encountered: {status}")
         
         return stats
     # .................................................................

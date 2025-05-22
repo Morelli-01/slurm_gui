@@ -39,6 +39,9 @@ STATE_COLORS = {
     STATUS_PENDING.lower(): COLOR_ORANGE,
     STATUS_COMPLETED.lower(): COLOR_BLUE,
     STATUS_FAILED.lower(): COLOR_RED,
+    "cancelled": COLOR_PURPLE,  # Add cancelled status
+    "suspended": COLOR_GRAY,    # Add suspended status
+    "stopped": COLOR_GRAY,      # Add stopped status
     NOT_SUBMITTED.lower(): COLOR_GRAY,
 }
 
@@ -191,7 +194,7 @@ class JobsGroup(QWidget):
             job_status = job_status.upper()
             submit_btn.setEnabled(job_status == "NOT_SUBMITTED")
             stop_btn.setEnabled(job_status in ["RUNNING", "PENDING"])
-            cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED"])
+            # cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
             logs_btn.setEnabled(job_status != "NOT_SUBMITTED")
             modify_btn.setEnabled(job_status == "NOT_SUBMITTED")
             duplicate_btn.setEnabled(True)

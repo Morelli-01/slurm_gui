@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
 
 # Assuming these modules/files exist in your project structure
 from modules import project_store
+from slurm_connection import SlurmConnection
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
 from modules.defaults import *
 from modules.project_store import ProjectStore
@@ -378,11 +379,12 @@ class ProjectWidget(QGroupBox):
 
             if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
                 # previously change selected project or else everything will crash
-                new_selected_project = list(self.parent_group.projects_children.keys())[-1] if list(
-                    self.parent_group.projects_children.keys())[-1] != project_name else list(self.parent_group.projects_children.keys())[-2]
-                self.parent_group.handle_project_selection(
-                    new_selected_project)
-                # Remove from layout and delete
+                if len(self.parent_group.projects_children.keys()) >1:
+                    new_selected_project = list(self.parent_group.projects_children.keys())[-1] if list(
+                        self.parent_group.projects_children.keys())[-1] != project_name else list(self.parent_group.projects_children.keys())[-2]
+                    self.parent_group.handle_project_selection(
+                        new_selected_project)
+                    # Remove from layout and delete
                 parent_layout = self.parent_group.scroll_content_layout
                 parent_layout.removeWidget(self)
                 self.hide()  # Hide the widget immediately
@@ -703,7 +705,7 @@ class StatusBar(QWidget):
 
 
 class JobsPanel(QWidget):
-    def __init__(self, parent=None, slurm_connection=None):
+    def __init__(self, parent=None, slurm_connection: SlurmConnection=None):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
         try:
@@ -780,6 +782,7 @@ class JobsPanel(QWidget):
 
         self.jobs_group.submitRequested.connect(self.submit_job)
         self.jobs_group.cancelRequested.connect(self.delete_job)
+        self.jobs_group.stopRequested.connect(self.stop_job)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1197,7 +1200,7 @@ class JobsPanel(QWidget):
                 QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
                 return
                 
-            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
+            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED", "CANCELLED"]:
                 QMessageBox.warning(self, "Error", 
                                 f"Job can't be deleted since it is {job.status} status\n"
                                 f"Job '{job_id}' needs to be stopped before deleting.")
@@ -1216,6 +1219,39 @@ class JobsPanel(QWidget):
                                 f"An error occurred during job deletion: {str(e)}")
             import traceback
             traceback.print_exc()
+
+    def stop_job(self, project_name, job_id):
+            if not self.project_storer:
+                        QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+                        return
+
+            try:
+                # Get job and validate
+                project = self.project_storer.get(project_name)
+                if not project:
+                    QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                    return
+                    
+                job = project.get_job(job_id)
+                if not job:
+                    QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                    return
+                    
+                if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
+                    QMessageBox.warning(self, "Error", 
+                                    f"Job can't be deleted since it is {job.status} status\n")
+                    return
+
+                stdout, stderr = self.slurm_connection.run_command(f"scancel {job_id}")
+                if stderr:
+                        QMessageBox.warning(self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
+                        return
+
+            except Exception as e:
+                QMessageBox.critical(self, "Deletion Error", 
+                                    f"An error occurred during job deletion: {str(e)}")
+                import traceback
+                traceback.print_exc()
 
     # SIMPLIFIED PROJECT LOADING
     def start_project_loading(self):
