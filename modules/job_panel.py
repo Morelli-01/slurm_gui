@@ -270,13 +270,13 @@ class ProjectWidget(QGroupBox):
         # Define blocks with smaller size: (icon_color, count_color, icon_path, count)
         blocks = [
             ("#2DCB89", "#1F8A5D", os.path.join(script_dir, "src_static",
-             "ok.svg"), 1, "Completed"),  # Green - Placeholder path
+             "ok.svg"), 0, "Completed"),  # Green - Placeholder path
             ("#DA5B5B", "#992F2F", os.path.join(script_dir, "src_static",
-             "err.svg"), 3, "Crashed"),    # Red - Placeholder path
+             "err.svg"), 0, "Crashed"),    # Red - Placeholder path
             ("#8570DB", "#5C4C9D", os.path.join(script_dir, "src_static",
-             "pending.svg"), 7, "Pending"),   # Purple - Placeholder path
+             "pending.svg"), 0, "Pending"),   # Purple - Placeholder path
             ("#6DB8E8", "#345D7E", os.path.join(script_dir, "src_static",
-             "loading_2.gif"), 7, "Running jobs"),  # Blue - Placeholder path
+             "loading_2.gif"), 0, "Running jobs"),  # Blue - Placeholder path
         ]
 
         for icon_color, count_color, icon_path, count, tooltip in blocks:
@@ -520,7 +520,7 @@ class ProjectGroup(QGroupBox):
         try:
             # Navigate through widget hierarchy to find the count label
             # This is a simplified approach and might need adjustment based on actual widget structure
-            for child in widget.findChildren(QLabel):
+            for child in widget.findChildren(QLabel)[::-1]:
                 # Try to update text directly (with string conversion for safety)
                 child.setText(str(count))
                 return True
@@ -556,6 +556,9 @@ class ProjectGroup(QGroupBox):
         # Scroll to the top to show the newly added widget
         self.scroll_area.verticalScrollBar().setValue(0)
         self.projects_children[project_name] = new_project
+
+        if self.project_counter == 1:
+            self.handle_project_selection(project_name)
 
     def add_project_widget(self, project_widget):
         """Method to programmatically add project widgets"""
@@ -680,13 +683,13 @@ class StatusBar(QWidget):
         # Using placeholder paths for icons as they are local to your system
         blocks = [
             ("#2DCB89", "#1F8A5D", os.path.join(script_dir, "src_static",
-             "ok.svg"), 1, "Completed"),  # Green - Placeholder path
+             "ok.svg"), 0, "Completed"),  # Green - Placeholder path
             ("#DA5B5B", "#992F2F", os.path.join(script_dir, "src_static",
-             "err.svg"), 3, "Crashed"),    # Red - Placeholder path
+             "err.svg"), 0, "Crashed"),    # Red - Placeholder path
             ("#8570DB", "#5C4C9D", os.path.join(script_dir, "src_static",
-             "pending.svg"), 7, "Pending"),   # Purple - Placeholder path
+             "pending.svg"), 0, "Pending"),   # Purple - Placeholder path
             ("#6DB8E8", "#345D7E", os.path.join(script_dir, "src_static",
-             "loading_2.gif"), 7, "Running jobs"),  # Blue - Placeholder path
+             "loading_2.gif"), 0, "Running jobs"),  # Blue - Placeholder path
         ]
 
         for icon_color, count_color, icon_path, count, tooltip in blocks:
@@ -696,7 +699,6 @@ class StatusBar(QWidget):
         # layout.addStretch(1) # Add stretch if you want the blocks to stay on the left
 
         self.setLayout(layout)
-
 
 class JobsPanel(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
