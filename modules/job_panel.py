@@ -377,10 +377,11 @@ class ProjectWidget(QGroupBox):
             )
 
             if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
-                #previously change selected project or else everything will crash
+                # previously change selected project or else everything will crash
                 new_selected_project = list(self.parent_group.projects_children.keys())[-1] if list(
                     self.parent_group.projects_children.keys())[-1] != project_name else list(self.parent_group.projects_children.keys())[-2]
-                self.parent_group.handle_project_selection(new_selected_project)
+                self.parent_group.handle_project_selection(
+                    new_selected_project)
                 # Remove from layout and delete
                 parent_layout = self.parent_group.scroll_content_layout
                 parent_layout.removeWidget(self)
@@ -700,12 +701,14 @@ class StatusBar(QWidget):
 
         self.setLayout(layout)
 
+
 class JobsPanel(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
         try:
             self.project_storer = ProjectStore(self.slurm_connection)
+            self._connect_project_store_signals()
         except ConnectionError as e:
             print(e)
             self.project_storer = None
@@ -1044,3 +1047,161 @@ class JobsPanel(QWidget):
             )
             import traceback
             traceback.print_exc()
+
+    def _connect_project_store_signals(self):
+        """Connect to project store signals for real-time updates"""
+        if not self.project_storer:
+            return
+
+        # Connect to job status changes using the signals object
+        self.project_storer.signals.job_status_changed.connect(
+            self._on_job_status_changed)
+        self.project_storer.signals.job_updated.connect(self._on_job_updated)
+        self.project_storer.signals.project_stats_changed.connect(
+            self._on_project_stats_changed)
+
+    def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Handle job status changes from project store"""
+        # print(f"Job {job_id} in project {project_name}: {old_status} -> {new_status}")
+
+        # Update the jobs table for the affected project
+        self._update_job_in_table(project_name, job_id)
+
+        # Show notification for important status changes
+        self._show_job_status_notification(
+            project_name, job_id, old_status, new_status)
+
+    def _on_job_updated(self, project_name: str, job_id: str):
+        """Handle general job updates (timing, resources, etc.)"""
+        self._update_job_in_table(project_name, job_id)
+
+    def _on_project_stats_changed(self, project_name: str, stats: dict):
+        """Handle project statistics changes"""
+        self._update_project_status_display(project_name, stats)
+
+    def _update_job_in_table(self, project_name: str, job_id: str):
+        """Update a specific job row in the jobs table"""
+        if not self.project_storer:
+            return
+
+        project = self.project_storer.get(project_name)
+        if not project:
+            return
+
+        job = project.get_job(job_id)
+        if not job:
+            return
+
+        # Check if this project's table exists
+        if project_name not in self.jobs_group._indices:
+            return
+
+        # Get the table widget for this project
+        table = self.jobs_group._stack.widget(
+            self.jobs_group._indices[project_name])
+        if not table:
+            return
+
+        # Find the row with this job ID
+        for row in range(table.rowCount()):
+            item = table.item(row, 0)  # Job ID column
+            if item and item.text() == str(job_id):
+                # Update the job row
+                job_row = job.to_table_row()
+                self._update_table_row(
+                    table, row, job_row, project_name, job_id)
+                break
+
+    def _update_table_row(self, table, row, job_data, project_name, job_id):
+        """Update a specific table row with new job data"""
+        actions_col = table.columnCount() - 1
+
+        # Update data columns (exclude actions column)
+        for col in range(actions_col):
+            if col < len(job_data):
+                item = table.item(row, col)
+                if item:
+                    item.setText(str(job_data[col]))
+
+                    # Apply status color if this is the status column (index 2)
+                    if col == 2:
+                        self.jobs_group._apply_state_color(item)
+
+        # Update action buttons based on new status
+        job_status = job_data[2] if len(job_data) > 2 else None
+        action_widget = self.jobs_group._create_actions_widget(
+            project_name, job_id, job_status)
+        table.setCellWidget(row, actions_col, action_widget)
+
+    def _update_project_status_display(self, project_name: str, stats: dict):
+        """Update project status display (status bars in project widgets)"""
+        if project_name not in self.project_group.projects_children:
+            return
+
+        project_widget = self.project_group.projects_children[project_name]
+
+        # Update status bar counts (this is a simplified version)
+        # You might need to implement more detailed status bar update logic
+        # based on your project widget structure
+
+        if hasattr(project_widget, 'update_status_counts'):
+            project_widget.update_status_counts(stats)
+
+    def _show_job_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Show notifications for important status changes"""
+        important_changes = {
+            'COMPLETED': ('Job Completed', f'Job {job_id} in {project_name} has completed successfully!'),
+            'FAILED': ('Job Failed', f'Job {job_id} in {project_name} has failed.'),
+            'RUNNING': ('Job Started', f'Job {job_id} in {project_name} is now running.'),
+            'CANCELLED': ('Job Cancelled', f'Job {job_id} in {project_name} was cancelled.'),
+            'TIMEOUT': ('Job Timeout', f'Job {job_id} in {project_name} has timed out.')
+        }
+
+        if new_status in important_changes:
+            title, message = important_changes[new_status]
+
+            # Show system notification (optional)
+            self._show_system_notification(title, message)
+
+            # Show status bar message (brief)
+            if hasattr(self.parent(), 'statusBar'):
+                self.parent().statusBar().showMessage(message, 5000)  # 5 seconds
+
+    def _show_system_notification(self, title: str, message: str):
+        """Show system desktop notification"""
+        try:
+            # Try to use system notifications
+            from PyQt6.QtWidgets import QSystemTrayIcon
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                # This is a basic implementation
+                # You might want to create a proper system tray icon
+                pass
+        except ImportError:
+            pass
+
+    def setup_project_storer(self):
+        """
+        Initialize the project store when a connection becomes available.
+        Enhanced version with signal connections.
+        """
+        try:
+            # Create the ProjectStore instance with the current connection
+            self.project_storer = ProjectStore(self.slurm_connection)
+
+            # Connect signals for real-time updates
+            self._connect_project_store_signals()
+
+            # ... existing setup code ...
+
+        except Exception as e:
+            print(f"Failed to initialize project store: {e}")
+            import traceback
+            traceback.print_exc()
+            self.project_storer = None
+
+    def closeEvent(self, event):
+        """Handle widget close event"""
+        # Stop job monitoring when panel is closed
+        if self.project_storer:
+            self.project_storer.stop_job_monitoring()
+        super().closeEvent(event)

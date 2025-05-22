@@ -5,12 +5,14 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PyQt6.QtCore import QSettings
 
 # Forward import for type checking – real instance is passed at runtime
-from slurm_connection import SlurmConnection
+from slurm_connection import SlurmConnection, parse_duration
+from datetime import datetime
+from PyQt6.QtCore import QObject, pyqtSignal
 
 __all__ = [
     "Job",
@@ -263,17 +265,23 @@ class Project:
         return cls(name=name, jobs=jobs)
 
 
+class ProjectStoreSignals(QObject):
+    """Separate QObject to handle signals for ProjectStore"""
+    job_status_changed = pyqtSignal(str, str, str, str)  # project, job_id, old_status, new_status
+    job_updated = pyqtSignal(str, str)  # project, job_id
+    project_stats_changed = pyqtSignal(str, dict)  # project, stats_dict
+
 # ---------------------------------------------------------------------------
-# Persistence façade (singleton)
+# Persistence facade (singleton)
 # ---------------------------------------------------------------------------
 
 class ProjectStore:
     """Thread‑safe singleton that mirrors a remote *settings.ini* file."""
-
     _instance: "ProjectStore | None" = None
     _lock = RLock()
 
     def __new__(cls, slurm: SlurmConnection, remote_path: Optional[str] = None):
+
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -286,7 +294,7 @@ class ProjectStore:
     def _init(self, slurm: SlurmConnection, remote_path: Optional[str]):
         # if not slurm.check_connection():
         #     raise RuntimeError("SlurmConnection must be *connected* before using ProjectStore")
-
+        self.signals = ProjectStoreSignals()
         self.slurm = slurm
 
         # Where to put the INI on the cluster
@@ -307,7 +315,9 @@ class ProjectStore:
         self.settings.setFallbacksEnabled(False)
 
         self._projects: Dict[str, Project] = self._read_from_settings()
-
+        self.job_monitor = None
+        self._start_job_monitoring()
+        
     # .................................................................
     def _download_remote(self) -> None:
         """Fetch the INI from the cluster (create it if missing)."""
@@ -666,3 +676,220 @@ class ProjectStore:
     # ------------------------------------------------------------------
     def __repr__(self) -> str:  # pragma: no cover – convenience only
         return f"<ProjectStore {self._projects}>"
+    # ------------------------------------------------------------------
+    # Job Monitoring
+    # ------------------------------------------------------------------
+
+    def _start_job_monitoring(self):
+        """Start the background job status monitoring"""
+        from slurm_connection import JobStatusMonitor
+        
+        if self.job_monitor is not None:
+            self.job_monitor.stop()
+            self.job_monitor.wait()
+            
+        self.job_monitor = JobStatusMonitor(self.slurm, self, update_interval=5)
+        
+        # Connect signals
+        self.job_monitor.job_status_updated.connect(self._on_job_status_updated)
+        self.job_monitor.job_details_updated.connect(self._on_job_details_updated)
+        self.job_monitor.jobs_batch_updated.connect(self._on_jobs_batch_updated)
+        
+        self.job_monitor.start()
+        print("Started job status monitoring")
+
+    def stop_job_monitoring(self):
+        """Stop the background job status monitoring"""
+        if self.job_monitor is not None:
+            self.job_monitor.stop()
+            self.job_monitor.wait()
+            self.job_monitor = None
+            print("Stopped job status monitoring")
+
+    def _on_job_status_updated(self, project_name: str, job_id: str, new_status: str):
+        """Handle individual job status updates from monitor"""
+        project = self.get(project_name)
+        if not project:
+            return
+            
+        job = project.get_job(job_id)
+        if not job:
+            return
+            
+        old_status = job.status
+        
+        # Update the job status
+        job.status = new_status
+        
+        # Update timing based on new status
+        if new_status == "RUNNING" and not job.start_time:
+            job.start_time = datetime.now()
+        elif new_status in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"] and not job.end_time:
+            job.end_time = datetime.now()
+            
+        # Save changes
+        self._write_to_settings()
+        
+        # Emit signals for UI updates using the signals object
+        self.signals.job_status_changed.emit(project_name, job_id, old_status, new_status)
+        self.signals.job_updated.emit(project_name, job_id)
+        
+        # Update project statistics
+        stats = project.get_job_stats()
+        self.signals.project_stats_changed.emit(project_name, stats)
+
+    def _on_job_details_updated(self, project_name: str, job_id: str, job_details: dict):
+        """Handle detailed job updates from monitor"""
+        self.signals.job_updated.emit(project_name, job_id)
+
+    def _on_jobs_batch_updated(self, updated_projects: dict):
+        """Handle batch job updates from monitor"""
+        for project_name, job_updates in updated_projects.items():
+            project = self.get(project_name)
+            if not project:
+                continue
+                
+            # Update project statistics after batch changes
+            stats = project.get_job_stats()
+            self.signals.project_stats_changed.emit(project_name, stats)
+
+    def update_job_status(self, project: str, job_id: Union[int, str], status: str) -> None:
+        """Update the status of a job (enhanced version)"""
+        pj = self._projects.get(project)
+        if not pj:
+            return
+        
+        job = pj.get_job(job_id)
+        if job:
+            old_status = job.status
+            job.status = status
+            
+            # Update timing information based on status changes
+            now = datetime.now()
+            if status == "RUNNING" and old_status in ["PENDING", "NOT_SUBMITTED"] and not job.start_time:
+                job.start_time = now
+            elif status in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"] and not job.end_time:
+                job.end_time = now
+                
+            self._write_to_settings()
+            
+            # Emit signal for UI updates using signals object
+            self.signals.job_status_changed.emit(project, str(job_id), old_status, status)
+
+    def get_active_jobs(self) -> List[Tuple[str, Job]]:
+        """Get all jobs that are currently active (need monitoring)"""
+        active_jobs = []
+        active_statuses = {'PENDING', 'RUNNING', 'COMPLETING', 'SUSPENDED', 'PREEMPTED'}
+        
+        for project_name, project in self._projects.items():
+            for job in project.jobs:
+                if job.status in active_statuses and job.status != 'NOT_SUBMITTED':
+                    active_jobs.append((project_name, job))
+                    
+        return active_jobs
+
+    def get_jobs_needing_update(self) -> Dict[str, List[str]]:
+        """Get jobs grouped by project that need status updates"""
+        jobs_by_project = {}
+        active_statuses = {'PENDING', 'RUNNING', 'COMPLETING', 'SUSPENDED', 'PREEMPTED'}
+        
+        for project_name, project in self._projects.items():
+            project_jobs = []
+            for job in project.jobs:
+                if job.status in active_statuses and job.status != 'NOT_SUBMITTED':
+                    project_jobs.append(str(job.id))
+            
+            if project_jobs:
+                jobs_by_project[project_name] = project_jobs
+                
+        return jobs_by_project
+
+    def bulk_update_jobs_from_sacct(self, job_details: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+        """
+        Bulk update jobs from sacct command results
+        
+        Returns:
+            Dict mapping project names to lists of updated job IDs
+        """
+        updated_projects = {}
+        
+        for project_name, project in self._projects.items():
+            updated_jobs = []
+            
+            for job in project.jobs:
+                job_id = str(job.id)
+                
+                if job_id in job_details:
+                    slurm_job = job_details[job_id]
+                    old_status = job.status
+                    new_status = slurm_job.get('State', old_status)
+                    
+                    # Update job if status changed
+                    if old_status != new_status:
+                        job.status = new_status
+                        updated_jobs.append(job_id)
+                        
+                        # Update additional details
+                        self._update_job_from_sacct(job, slurm_job)
+                        
+                        # Emit individual update signal using signals object
+                        self.signals.job_status_changed.emit(project_name, job_id, old_status, new_status)
+            
+            if updated_jobs:
+                updated_projects[project_name] = updated_jobs
+                
+                # Update project statistics
+                stats = project.get_job_stats()
+                self.signals.project_stats_changed.emit(project_name, stats)
+        
+        if updated_projects:
+            self._write_to_settings()
+            
+        return updated_projects
+
+    def _update_job_from_sacct(self, job: Job, slurm_data: Dict[str, Any]):
+        """Update job object with data from sacct"""
+        # Update timing information
+        if slurm_data.get('Start') and slurm_data['Start'] not in ['Unknown', 'None']:
+            try:
+                job.start_time = datetime.strptime(slurm_data['Start'], '%Y-%m-%dT%H:%M:%S')
+            except (ValueError, TypeError):
+                pass
+                
+        if slurm_data.get('End') and slurm_data['End'] not in ['Unknown', 'None']:
+            try:
+                job.end_time = datetime.strptime(slurm_data['End'], '%Y-%m-%dT%H:%M:%S')
+            except (ValueError, TypeError):
+                pass
+                
+        # Update elapsed time
+        if slurm_data.get('Elapsed'):
+            try:
+                job.time_used = parse_duration(slurm_data['Elapsed'])
+            except (ValueError, TypeError):
+                pass
+                
+        # Update resource information
+        if slurm_data.get('AllocCPUS'):
+            try:
+                job.cpus = int(slurm_data['AllocCPUS'])
+            except (ValueError, TypeError):
+                pass
+                
+        # Update node and reason information
+        if slurm_data.get('NodeList'):
+            job.nodelist = slurm_data['NodeList']
+            
+        if slurm_data.get('Reason'):
+            job.reason = slurm_data['Reason']
+            
+        # Store additional information
+        job.info.update({
+            'exit_code': slurm_data.get('ExitCode'),
+            'max_rss': slurm_data.get('MaxRSS'),
+            'last_sacct_update': datetime.now().isoformat()
+        })
+
+    def __del__(self):
+        """Cleanup when store is destroyed"""
+        self.stop_job_monitoring()

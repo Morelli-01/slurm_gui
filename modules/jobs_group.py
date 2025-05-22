@@ -258,11 +258,11 @@ class JobsGroup(QWidget):
             submit_btn.setEnabled(job_status == "NOT_SUBMITTED")
 
             # Stop button is only enabled for RUNNING jobs
-            stop_btn.setEnabled(job_status == "RUNNING")
+            stop_btn.setEnabled(job_status == "RUNNING" or job_status=="PENDING")
 
             # Cancel button is enabled for PENDING, RUNNING, and NOT_SUBMITTED jobs
             cancel_btn.setEnabled(
-                job_status in ["PENDING", "RUNNING", "NOT_SUBMITTED"])
+                job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED"])
 
             # Logs button is enabled for all statuses except NOT_SUBMITTED
             logs_btn.setEnabled(job_status != "NOT_SUBMITTED")
@@ -449,3 +449,106 @@ class JobsGroup(QWidget):
         item = self._stack.widget(index)
         self._stack.removeWidget(item)
         self.show_project(list(self._indices.keys())[0])
+    
+    def update_single_job_row(self, project_name: str, job_id: str, job_data: List[Any]) -> None:
+        """
+        Update a single job row in the specified project's table.
+        
+        Args:
+            project_name: Name of the project
+            job_id: ID of the job to update
+            job_data: New job data for the row
+        """
+        if project_name not in self._indices:
+            return
+            
+        table = self._stack.widget(self._indices[project_name])
+        if not table:
+            return
+            
+        actions_col = table.columnCount() - 1
+        
+        # Find the row with the matching job ID
+        for row in range(table.rowCount()):
+            item = table.item(row, 0)  # Job ID is in first column
+            if item and item.text() == str(job_id):
+                # Update the row data
+                for col in range(actions_col):
+                    if col < len(job_data):
+                        table_item = table.item(row, col)
+                        if table_item:
+                            table_item.setText(str(job_data[col]))
+                            
+                            # Apply status coloring for status column
+                            if col == 2:  # Status column
+                                self._apply_state_color(table_item)
+                
+                # Update action buttons with new job status
+                job_status = job_data[2] if len(job_data) > 2 else None
+                action_widget = self._create_actions_widget(project_name, job_id, job_status)
+                table.setCellWidget(row, actions_col, action_widget)
+                break
+
+    def get_job_row_index(self, project_name: str, job_id: str) -> int:
+        """
+        Get the row index of a job in the project table.
+        
+        Args:
+            project_name: Name of the project
+            job_id: ID of the job to find
+            
+        Returns:
+            Row index if found, -1 if not found
+        """
+        if project_name not in self._indices:
+            return -1
+            
+        table = self._stack.widget(self._indices[project_name])
+        if not table:
+            return -1
+            
+        for row in range(table.rowCount()):
+            item = table.item(row, 0)  # Job ID is in first column
+            if item and item.text() == str(job_id):
+                return row
+                
+        return -1
+
+    def highlight_job_row(self, project_name: str, job_id: str, duration: int = 3000):
+        """
+        Briefly highlight a job row to draw attention to status changes.
+        
+        Args:
+            project_name: Name of the project
+            job_id: ID of the job to highlight
+            duration: Duration in milliseconds to show highlight
+        """
+        if project_name not in self._indices:
+            return
+            
+        table = self._stack.widget(self._indices[project_name])
+        if not table:
+            return
+            
+        row = self.get_job_row_index(project_name, job_id)
+        if row == -1:
+            return
+            
+        # Temporarily change row background color
+        original_colors = []
+        highlight_color = QtGui.QColor("#4CAF50")  # Green highlight
+        
+        for col in range(table.columnCount() - 1):  # Exclude actions column
+            item = table.item(row, col)
+            if item:
+                original_colors.append(item.background())
+                item.setBackground(highlight_color)
+        
+        # Use QTimer to restore original colors after duration
+        def restore_colors():
+            for col, original_color in enumerate(original_colors):
+                item = table.item(row, col)
+                if item:
+                    item.setBackground(original_color)
+        
+        QTimer.singleShot(duration, restore_colors)

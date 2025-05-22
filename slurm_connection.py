@@ -612,6 +612,308 @@ class SlurmConnection:
             self.connected_status = False
             print("SSH connection closed.")
 
+
+    @require_connection  
+    def get_job_details_sacct(self, job_ids: List[Union[str, int]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Get detailed job information using sacct command
+        
+        Args:
+            job_ids: List of job IDs to query
+            
+        Returns:
+            Dict mapping job_id to job details dictionary
+        """
+        if not job_ids:
+            return {}
+            
+        job_ids_str = ','.join(str(jid) for jid in job_ids)
+        
+        cmd = f"sacct -j {job_ids_str} --format=JobID,JobName,State,ExitCode,Start,End,Elapsed,AllocCPUS,ReqMem,MaxRSS,NodeList,Reason --parsable2 --noheader"
+        
+        try:
+            stdout, stderr = self.run_command(cmd)
+            
+            if stderr:
+                print(f"Warning in sacct command: {stderr}")
+                
+            return self._parse_sacct_output(stdout)
+            
+        except Exception as e:
+            print(f"Error fetching job details with sacct: {e}")
+            return {}
+
+    def _parse_sacct_output(self, output: str) -> Dict[str, Dict[str, Any]]:
+        """Parse sacct command output into job details dictionary"""
+        job_details = {}
+        
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+                
+            fields = line.split('|')
+            if len(fields) < 12:
+                continue
+                
+            job_id = fields[0].split('.')[0]  # Remove array/step suffixes
+            
+            job_info = {
+                'JobID': job_id,
+                'JobName': fields[1],
+                'State': fields[2],
+                'ExitCode': fields[3],
+                'Start': fields[4],
+                'End': fields[5], 
+                'Elapsed': fields[6],
+                'AllocCPUS': fields[7],
+                'ReqMem': fields[8],
+                'MaxRSS': fields[9],
+                'NodeList': fields[10],
+                'Reason': fields[11]
+            }
+            
+            job_details[job_id] = job_info
+            
+        return job_details
+
+# Add this to slurm_connection.py
+
+class JobStatusMonitor(QThread):
+    """Background thread to monitor job status updates"""
+    
+    # Signals for different types of updates
+    job_status_updated = pyqtSignal(str, str, str)  # project_name, job_id, new_status
+    job_details_updated = pyqtSignal(str, str, dict)  # project_name, job_id, job_details
+    jobs_batch_updated = pyqtSignal(dict)  # {project_name: [updated_jobs]}
+    
+    def __init__(self, slurm_connection, project_store, update_interval=30):
+        """
+        Initialize the job status monitor
+        
+        Args:
+            slurm_connection: SlurmConnection instance
+            project_store: ProjectStore instance  
+            update_interval: Update interval in seconds (default: 30)
+        """
+        super().__init__()
+        self.slurm_connection = slurm_connection
+        self.project_store = project_store
+        self.update_interval = update_interval
+        self.running = False
+        self._stop_requested = False
+        
+    def run(self):
+        """Main thread loop"""
+        self.running = True
+        self._stop_requested = False
+        
+        while not self._stop_requested:
+            try:
+                if self.slurm_connection.check_connection():
+                    print("updating jobs status...")
+                    self._check_and_update_jobs()
+                else:
+                    print("SLURM connection lost, attempting to reconnect...")
+                    if not self.slurm_connection.connect():
+                        print("Failed to reconnect to SLURM")
+                        
+            except Exception as e:
+                print(f"Error in job status monitor: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Wait for the specified interval, but check for stop request frequently
+            for _ in range(self.update_interval * 10):  # Check every 0.1 seconds
+                if self._stop_requested:
+                    break
+                self.msleep(100)  # Sleep for 100ms
+                
+        self.running = False
+        
+    def stop(self):
+        """Stop the monitoring thread"""
+        self._stop_requested = True
+        
+    def _check_and_update_jobs(self):
+        """Check job statuses and update as needed"""
+        if not self.project_store:
+            return
+            
+        # Get all active jobs that need monitoring
+        active_jobs = self._get_active_jobs()
+        
+        if not active_jobs:
+            return
+            
+        # Get job details from SLURM using sacct
+        job_details = self._fetch_job_details([job['id'] for job in active_jobs])
+        
+        # Process updates
+        updated_projects = {}
+        
+        for job in active_jobs:
+            job_id = str(job['id'])
+            project_name = job['project']
+            
+            if job_id in job_details:
+                slurm_job = job_details[job_id]
+                old_status = job['status']
+                new_status = slurm_job.get('State', old_status)
+                
+                # Check if status changed
+                # if old_status != new_status:
+                    # Update in project store
+                self.project_store.update_job_status(project_name, job_id, new_status)
+                
+                # Update other job details
+                self._update_job_details(project_name, job_id, slurm_job)
+                
+                # Track for batch UI update
+                if project_name not in updated_projects:
+                    updated_projects[project_name] = []
+                updated_projects[project_name].append({
+                    'job_id': job_id,
+                    'old_status': old_status,
+                    'new_status': new_status,
+                    'details': slurm_job
+                })
+                
+                # Emit individual status update signal
+                self.job_status_updated.emit(project_name, job_id, new_status)
+                
+                # print(f"Job {job_id} status updated: {old_status} -> {new_status}")
+        
+        # Emit batch update signal if there were changes
+        if updated_projects:
+            self.jobs_batch_updated.emit(updated_projects)
+            
+    def _get_active_jobs(self):
+        """Get all jobs that need status monitoring"""
+        active_jobs = []
+        active_statuses = {'PENDING', 'RUNNING', 'COMPLETING', 'SUSPENDED', 'PREEMPTED'}
+        
+        for project_name in self.project_store.all_projects():
+            project = self.project_store.get(project_name)
+            if not project:
+                continue
+                
+            for job in project.jobs:
+                if job.status in active_statuses and job.status != 'NOT_SUBMITTED':
+                    active_jobs.append({
+                        'id': job.id,
+                        'project': project_name,
+                        'status': job.status
+                    })
+                    
+        return active_jobs
+        
+    def _fetch_job_details(self, job_ids):
+        """Fetch job details using sacct command"""
+        if not job_ids:
+            return {}
+            
+        # Create comma-separated list of job IDs
+        job_ids_str = ','.join(str(jid) for jid in job_ids)
+        
+        # Use sacct to get detailed job information
+        cmd = f"sacct -j {job_ids_str} --format=JobID,JobName,State,ExitCode,Start,End,Elapsed,AllocCPUS,ReqMem,MaxRSS,NodeList,Reason --parsable2 --noheader"
+        
+        try:
+            stdout, stderr = self.slurm_connection.run_command(cmd)
+            
+            if stderr:
+                print(f"Warning in sacct command: {stderr}")
+                
+            return self._parse_sacct_output(stdout)
+            
+        except Exception as e:
+            print(f"Error fetching job details with sacct: {e}")
+            return {}
+            
+    def _parse_sacct_output(self, output):
+        """Parse sacct command output"""
+        job_details = {}
+        
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+                
+            fields = line.split('|')
+            if len(fields) < 12:
+                continue
+                
+            job_id = fields[0].split('.')[0]  # Remove array/step suffixes
+            
+            job_info = {
+                'JobID': job_id,
+                'JobName': fields[1],
+                'State': fields[2],
+                'ExitCode': fields[3],
+                'Start': fields[4],
+                'End': fields[5], 
+                'Elapsed': fields[6],
+                'AllocCPUS': fields[7],
+                'ReqMem': fields[8],
+                'MaxRSS': fields[9],
+                'NodeList': fields[10],
+                'Reason': fields[11]
+            }
+            
+            job_details[job_id] = job_info
+            
+        return job_details
+        
+    def _update_job_details(self, project_name, job_id, slurm_job):
+        """Update additional job details from SLURM data"""
+        job = self.project_store.get_job(project_name, job_id)
+        if not job:
+            return
+            
+        # Update timing information
+        if slurm_job.get('Start') and slurm_job['Start'] != 'Unknown':
+            try:
+                job.start_time = datetime.strptime(slurm_job['Start'], '%Y-%m-%dT%H:%M:%S')
+            except ValueError:
+                pass
+                
+        if slurm_job.get('End') and slurm_job['End'] != 'Unknown':
+            try:
+                job.end_time = datetime.strptime(slurm_job['End'], '%Y-%m-%dT%H:%M:%S')
+            except ValueError:
+                pass
+                
+        # Update elapsed time
+        if slurm_job.get('Elapsed'):
+            try:
+                job.time_used = parse_duration(slurm_job['Elapsed'])
+            except ValueError:
+                pass
+                
+        # Update node information
+        if slurm_job.get('NodeList'):
+            job.nodelist = slurm_job['NodeList']
+            
+        # Update reason
+        if slurm_job.get('Reason'):
+            job.reason = slurm_job['Reason']
+            
+        # Update resource usage
+        if slurm_job.get('AllocCPUS'):
+            try:
+                job.cpus = int(slurm_job['AllocCPUS'])
+            except ValueError:
+                pass
+                
+        # Store additional info
+        job.info.update({
+            'exit_code': slurm_job.get('ExitCode'),
+            'max_rss': slurm_job.get('MaxRSS'),
+            'last_updated': datetime.now().isoformat()
+        })
+
+
+# Add these methods to the SlurmConnection class
+
 if __name__ == "__main__":
     sc = SlurmConnection("/home/nicola/Desktop/slurm_gui/configs/settings.ini")
     sc.connect()

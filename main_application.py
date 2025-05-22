@@ -172,8 +172,15 @@ class SlurmJobManagerApp(QMainWindow):
         self.set_connection_status(self.slurm_connection.is_connected())
         self.refresh_all()  # Initial data load
         self.load_settings()  # Load settings again after potential initial save
-
+        # self._setup_job_monitoring()
+    
     def set_connection_status(self, connected: bool, connecting=False):
+        """Enhanced connection status handling"""
+        if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
+            self.jobs_panel.setup_project_storer()
+            # Set up job monitoring after connection is established
+            self._setup_job_monitoring()
+
         if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
             self.jobs_panel.setup_project_storer()
         self.connection_status_ = True if connected else False
@@ -579,12 +586,74 @@ class SlurmJobManagerApp(QMainWindow):
 
         print("--- Settings Loaded ---")
 
+
+    def _setup_job_monitoring(self):
+        """Set up job status monitoring after UI initialization"""
+        # This will be called after the JobsPanel is created and project store is initialized
+        if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
+            # Connect to global job status updates for status bar notifications using signals object
+            self.jobs_panel.project_storer.signals.job_status_changed.connect(self._on_global_job_status_change)
+            
+            # Connect to batch updates for efficiency using signals object
+            self.jobs_panel.project_storer.signals.project_stats_changed.connect(self._on_project_stats_updated)
+
+    def _on_global_job_status_change(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Handle global job status changes for main window notifications"""
+        # Update main window status bar
+        message = f"Job {job_id} in {project_name}: {old_status} → {new_status}"
+        if hasattr(self, 'statusBar'):
+            self.statusBar().showMessage(message, 5000)  # Show for 5 seconds
+        
+        # Update window title to show active jobs count if desired
+        self._update_window_title()
+
+    def _on_jobs_batch_updated(self, updated_projects: dict):
+        """Handle batch job updates"""
+        total_updates = sum(len(jobs) for jobs in updated_projects.values())
+        if total_updates > 0:
+            message = f"Updated {total_updates} jobs across {len(updated_projects)} projects"
+            if hasattr(self, 'statusBar'):
+                self.statusBar().showMessage(message, 3000)
+
+    def _on_project_stats_updated(self, project_name: str, stats: dict):
+        """Handle project statistics updates"""
+        # Update window title or other global indicators
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """Update window title to show active jobs count"""
+        if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
+            return
+            
+        try:
+            active_jobs = self.jobs_panel.project_storer.get_active_jobs()
+            active_count = len(active_jobs)
+            
+            base_title = APP_TITLE
+            if active_count > 0:
+                self.setWindowTitle(f"{base_title} - {active_count} active jobs")
+            else:
+                self.setWindowTitle(base_title)
+        except Exception as e:
+            print(f"Error updating window title: {e}")
+
     def closeEvent(self, event):
         """Handles the window close event."""
+        # Stop job monitoring before closing
+        if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
+            self.jobs_panel.project_storer.stop_job_monitoring()
+            
         self.slurm_connection.close()
         print("Closing application.")
         event.accept()
 
+    # def set_connection_status(self, connected: bool, connecting=False):
+    #     """Enhanced connection status handling"""
+    #     if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
+    #         self.jobs_panel.setup_project_storer()
+    #         # Set up job monitoring after connection is established
+    #         self._setup_job_monitoring()
+      
 
 # --- Main Execution ---
 if __name__ == "__main__":
