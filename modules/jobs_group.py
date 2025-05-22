@@ -443,3 +443,9 @@ class JobsGroup(QWidget):
         if self._stack.currentIndex() != idx:
             self._stack.setCurrentIndex(idx)
             self.current_projectChanged.emit(project_name)
+
+    def remove_project(self, project_name: str):
+        index = self._indices[project_name]
+        item = self._stack.widget(index)
+        self._stack.removeWidget(item)
+        self.show_project(list(self._indices.keys())[0])

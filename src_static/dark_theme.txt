@@ -172,3 +172,4 @@ QLabel#nodeLabel[nodeState="alloc"] {{ background-color: #8be9fd; border: 1px so
 QLabel#nodeLabel[nodeState="down"] {{ background-color: #ff5555; border: 1px solid #f8f8f2; }}
 QLabel#nodeLabel[nodeState="drain"] {{ background-color: #ffb86c; border: 1px solid #f8f8f2; }}
 QLabel#nodeLabel[nodeState="unknown"] {{ background-color: #6272a4; border: 1px solid #f8f8f2; }}
+

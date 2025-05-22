@@ -377,12 +377,19 @@ class ProjectWidget(QGroupBox):
             )
 
             if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
+                #previously change selected project or else everything will crash
+                new_selected_project = list(self.parent_group.projects_children.keys())[-1] if list(
+                    self.parent_group.projects_children.keys())[-1] != project_name else list(self.parent_group.projects_children.keys())[-2]
+                self.parent_group.handle_project_selection(new_selected_project)
                 # Remove from layout and delete
                 parent_layout = self.parent_group.scroll_content_layout
                 parent_layout.removeWidget(self)
                 self.hide()  # Hide the widget immediately
                 self.deleteLater()  # Schedule this widget for deletion
                 self.project_storer.remove_project(project_name)
+                self.parent_group.parent.jobs_group.remove_project(
+                    project_name)
+
                 print(f"Project '{project_name}' deleted")
 
     def setTitle(self, title):
@@ -563,15 +570,18 @@ class ProjectGroup(QGroupBox):
     def handle_project_selection(self, project_name):
         """Handles the selection of a project widget."""
         # Deselect the previously selected widget
-        if self._selected_project_widget:
-            self._selected_project_widget.set_selected(False)
+        try:
+            if self._selected_project_widget:
+                self._selected_project_widget.set_selected(False)
 
-        # Select the new widget
-        selected_widget = self.projects_children.get(project_name)
-        if selected_widget:
-            selected_widget.set_selected(True)
-            self._selected_project_widget = selected_widget
-            self.project_selected.emit(project_name)  # Emit the new signal
+            # Select the new widget
+            selected_widget = self.projects_children.get(project_name)
+            if selected_widget:
+                selected_widget.set_selected(True)
+                self._selected_project_widget = selected_widget
+                self.project_selected.emit(project_name)  # Emit the new signal
+        except Exception as e:
+            print(e)
 
 
 class BlockSection(QFrame):
@@ -760,7 +770,7 @@ class JobsPanel(QWidget):
             self.project_group.handle_project_selection(first_project_name)
             # Manually call the slot in JobsPanel to set the current_project
             self.on_project_selected(first_project_name)
-        
+
         self.jobs_group.submitRequested.connect(self.submit_job)
         self.jobs_group.cancelRequested.connect(self.delete_job)
 
@@ -987,7 +997,7 @@ class JobsPanel(QWidget):
             return
 
         try:
-        # Check if job exists and has NOT_SUBMITTED status
+            # Check if job exists and has NOT_SUBMITTED status
             project = self.project_storer.get(project_name)
             if not project:
                 QMessageBox.warning(
@@ -998,7 +1008,7 @@ class JobsPanel(QWidget):
                 QMessageBox.warning(
                     self, "Error", f"Job '{job_id}' not found in project '{project_name}'.")
                 return
-            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"] :
+            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
                 QMessageBox.warning(
                     self, "Error",
                     f"Job cant be deleted since it is {job.status} status\nJob '{job_id}' needs to be stopped befer deleting."
@@ -1006,7 +1016,8 @@ class JobsPanel(QWidget):
                 return
             self.project_storer.remove_job(project=project_name, job_id=job_id)
             updated_project = self.project_storer.get(project_name)
-            prj_table = self.jobs_group._stack.widget(self.jobs_group._indices[project_name])
+            prj_table = self.jobs_group._stack.widget(
+                self.jobs_group._indices[project_name])
             for i in range(prj_table.rowCount()):
                 item = prj_table.item(i, 0).text()
                 if item == job_id:
