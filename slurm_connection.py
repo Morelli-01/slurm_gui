@@ -307,12 +307,15 @@ class SlurmConnection:
 
             # Submit via sbatch
             stdout, stderr = self.run_command(f"sbatch {remote_script_path}")
+            if stderr:
+                os.remove(local_script_path)
+                raise RuntimeError(f"SLURM error: {stderr}")
+            else:
+                os.remove(local_script_path)
 
             # Cleanup local file
-            os.remove(local_script_path)
 
-            if stderr:
-                raise RuntimeError(f"SLURM error: {stderr}")
+            
 
             # Parse job ID
             job_id = None
@@ -338,7 +341,7 @@ class SlurmConnection:
         """
         script_lines = [
             "#!/bin/bash",
-            f"#SBATCH --job-name={job_name}",
+            f"#SBATCH --job-name=\"{job_name}\"",
             f"#SBATCH --partition={partition.replace("*", "")}",
             f"#SBATCH --time={time_limit}",
             f"#SBATCH --nodes={nodes}",

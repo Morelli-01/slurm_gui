@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QSize
+from PyQt6.QtCore import pyqtSignal, Qt, QSize, QTimer
 from PyQt6 import QtGui
 from utils import script_dir
 # ---------------------------------------------------------------------------

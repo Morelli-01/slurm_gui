@@ -775,6 +775,8 @@ class JobsPanel(QWidget):
             self.project_group.handle_project_selection(first_project_name)
             # Manually call the slot in JobsPanel to set the current_project
             self.on_project_selected(first_project_name)
+            # FIXED: Explicitly show the project in JobsGroup to sync the stacked view
+            self.jobs_group.show_project(first_project_name)
 
         self.jobs_group.submitRequested.connect(self.submit_job)
         self.jobs_group.cancelRequested.connect(self.delete_job)
@@ -971,10 +973,15 @@ class JobsPanel(QWidget):
 
             if new_job_id:
                 # Get the project and update jobs display
-                project = self.project_storer.get(project_name)
-                if project:
-                    job_rows = [job.to_table_row() for job in project.jobs]
-                    self.jobs_group.update_jobs(project_name, job_rows)
+                updated_job = project.get_job(new_job_id)
+            
+                if updated_job:
+                    # FIXED: Update only the specific job row instead of redrawing all jobs
+                    updated_job_row = updated_job.to_table_row()
+                    self.jobs_group.update_single_job_row(project_name, str(job_id), updated_job_row)
+                    
+                    # Highlight the updated job briefly to show it was submitted
+                    self.jobs_group.highlight_job_row(project_name, str(new_job_id), 2000)
 
                 QMessageBox.information(
                     self,

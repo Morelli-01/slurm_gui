@@ -408,7 +408,7 @@ class NewJobDialog(QDialog):
             QIcon(os.path.join(script_dir, "src_static", "cancel.svg")))
         self.cancel_button.clicked.connect(self.reject)
 
-        self.create_button = QPushButton("Create and Submit Job")
+        self.create_button = QPushButton("Create Job")
         self.create_button.setObjectName(BTN_GREEN)
         self.create_button.setIcon(
             QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
