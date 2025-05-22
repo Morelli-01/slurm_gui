@@ -933,159 +933,6 @@ class JobsPanel(QWidget):
             traceback.print_exc()
             self.project_storer = None
 
-    def submit_job(self, project_name, job_id):
-        """
-        Handle request to submit a job to SLURM.
-        This method is connected to the submitRequested signal from JobsGroup.
-
-        Args:
-            project_name: Name of the project containing the job
-            job_id: ID of the job to submit
-        """
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
-        try:
-            # Check if job exists and has NOT_SUBMITTED status
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found in project '{project_name}'.")
-                return
-
-            if job.status != "NOT_SUBMITTED":
-                QMessageBox.information(
-                    self,
-                    "Already Submitted",
-                    f"Job '{job_id}' has already been submitted with status: {job.status}."
-                )
-                return
-
-            # Submit the job
-            new_job_id = self.project_storer.submit_job(project_name, job_id)
-
-            if new_job_id:
-                # Get the project and update jobs display
-                updated_job = project.get_job(new_job_id)
-            
-                if updated_job:
-                    # FIXED: Update only the specific job row instead of redrawing all jobs
-                    updated_job_row = updated_job.to_table_row()
-                    self.jobs_group.update_single_job_row(project_name, str(job_id), updated_job_row)
-                    
-                    # Highlight the updated job briefly to show it was submitted
-                    self.jobs_group.highlight_job_row(project_name, str(new_job_id), 2000)
-
-                QMessageBox.information(
-                    self,
-                    "Job Submitted",
-                    f"Job has been submitted with ID {new_job_id}"
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Submission Failed",
-                    "Failed to submit job. Please check logs for more information."
-                )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Submission Error",
-                f"An error occurred during job submission: {str(e)}"
-            )
-            import traceback
-            traceback.print_exc()
-
-    def delete_job(self, project_name, job_id):
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
-        try:
-            # Check if job exists and has NOT_SUBMITTED status
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found in project '{project_name}'.")
-                return
-            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
-                QMessageBox.warning(
-                    self, "Error",
-                    f"Job cant be deleted since it is {job.status} status\nJob '{job_id}' needs to be stopped befer deleting."
-                )
-                return
-            self.project_storer.remove_job(project=project_name, job_id=job_id)
-            updated_project = self.project_storer.get(project_name)
-            prj_table = self.jobs_group._stack.widget(
-                self.jobs_group._indices[project_name])
-            for i in range(prj_table.rowCount()):
-                item = prj_table.item(i, 0).text()
-                if item == job_id:
-                    prj_table.removeRow(i)
-                    break
-            # if updated_project:
-            #     job_rows = [job.to_table_row() for job in updated_project.jobs]
-            #     self.jobs_group.update_jobs(project_name, job_rows)
-            # else:
-            #     # If the project itself was somehow deleted (unlikely with remove_job),
-            #     # or if it's empty after deletion, clear its display
-            #     self.jobs_group.update_jobs(project_name, [])
-        # QMessageBox.information(
-        #         self, "Success",
-        #         f"Job {job_id} correctly deleted",
-        # )
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Deletion Error",
-                f"An error occurred during job delete: {str(e)}"
-            )
-            import traceback
-            traceback.print_exc()
-
-    def _connect_project_store_signals(self):
-        """Connect to project store signals for real-time updates"""
-        if not self.project_storer:
-            return
-
-        # Connect to job status changes using the signals object
-        self.project_storer.signals.job_status_changed.connect(
-            self._on_job_status_changed)
-        self.project_storer.signals.job_updated.connect(self._on_job_updated)
-        self.project_storer.signals.project_stats_changed.connect(
-            self._on_project_stats_changed)
-
-    def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
-        """Handle job status changes from project store"""
-        # print(f"Job {job_id} in project {project_name}: {old_status} -> {new_status}")
-
-        # Update the jobs table for the affected project
-        self._update_job_in_table(project_name, job_id)
-
-        # Show notification for important status changes
-        self._show_job_status_notification(
-            project_name, job_id, old_status, new_status)
-
-    def _on_job_updated(self, project_name: str, job_id: str):
-        """Handle general job updates (timing, resources, etc.)"""
-        self._update_job_in_table(project_name, job_id)
-
-    def _on_project_stats_changed(self, project_name: str, stats: dict):
-        """Handle project statistics changes"""
-        self._update_project_status_display(project_name, stats)
-
     def _update_job_in_table(self, project_name: str, job_id: str):
         """Update a specific job row in the jobs table"""
         if not self.project_storer:
@@ -1139,20 +986,6 @@ class JobsPanel(QWidget):
         action_widget = self.jobs_group._create_actions_widget(
             project_name, job_id, job_status)
         table.setCellWidget(row, actions_col, action_widget)
-
-    def _update_project_status_display(self, project_name: str, stats: dict):
-        """Update project status display (status bars in project widgets)"""
-        if project_name not in self.project_group.projects_children:
-            return
-
-        project_widget = self.project_group.projects_children[project_name]
-
-        # Update status bar counts (this is a simplified version)
-        # You might need to implement more detailed status bar update logic
-        # based on your project widget structure
-
-        if hasattr(project_widget, 'update_status_counts'):
-            project_widget.update_status_counts(stats)
 
     def _show_job_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Show notifications for important status changes"""
@@ -1212,3 +1045,206 @@ class JobsPanel(QWidget):
         if self.project_storer:
             self.project_storer.stop_job_monitoring()
         super().closeEvent(event)
+
+
+    def _connect_project_store_signals(self):
+        """Connect to project store signals for real-time updates"""
+        if not self.project_storer:
+            return
+
+        # Connect to job status changes using the signals object
+        self.project_storer.signals.job_status_changed.connect(self._on_job_status_changed)
+        self.project_storer.signals.job_updated.connect(self._on_job_updated)
+        self.project_storer.signals.project_stats_changed.connect(self._on_project_stats_changed)
+
+    def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Handle job status changes from project store - SIMPLIFIED VERSION"""
+        print(f"Job {job_id} in {project_name}: {old_status} -> {new_status}")
+        
+        # Update the specific job row efficiently
+        self._update_single_job_from_store(project_name, job_id)
+        
+        # Show brief notification for important status changes
+        self._show_status_notification(project_name, job_id, old_status, new_status)
+
+    def _on_job_updated(self, project_name: str, job_id: str):
+        """Handle general job updates (timing, resources, etc.) - SIMPLIFIED VERSION"""
+        self._update_single_job_from_store(project_name, job_id)
+
+    def _on_project_stats_changed(self, project_name: str, stats: dict):
+        """Handle project statistics changes - SIMPLIFIED VERSION"""
+        self._update_project_status_display(project_name, stats)
+
+    def _update_single_job_from_store(self, project_name: str, job_id: str):
+        """Update a single job row from the project store - CORE EFFICIENT METHOD"""
+        if not self.project_storer:
+            return
+
+        # Get the updated job from store
+        project = self.project_storer.get(project_name)
+        if not project:
+            return
+
+        job = project.get_job(job_id)
+        if not job:
+            return
+
+        # Convert job to table row format
+        job_row = job.to_table_row()
+        
+        # Update the specific row in the jobs table
+        self.jobs_group.update_single_job_row(project_name, str(job_id), job_row)
+
+    def _show_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Show brief notifications for important status changes"""
+        # Only show notifications for significant status changes
+        important_changes = {
+            'COMPLETED': f'✅ Job {job_id} completed successfully!',
+            'FAILED': f'❌ Job {job_id} failed.',
+            'RUNNING': f'🏃 Job {job_id} started running.',
+            'CANCELLED': f'🛑 Job {job_id} was cancelled.'
+        }
+        
+        if new_status in important_changes:
+            message = important_changes[new_status]
+            
+            # Show in status bar if parent has one
+            if hasattr(self.parent(), 'statusBar'):
+                self.parent().statusBar().showMessage(message, 3000)  # 3 seconds
+            
+            # print(f"📢 {message}")
+
+    def _update_project_status_display(self, project_name: str, stats: dict):
+        """Update project status display (status bars in project widgets) - SIMPLIFIED VERSION"""
+        if project_name not in self.project_group.projects_children:
+            return
+
+        project_widget = self.project_group.projects_children[project_name]
+        
+        # Update status counts in project widget if it has the method
+        if hasattr(project_widget, 'update_status_counts'):
+            project_widget.update_status_counts(stats)
+
+    def submit_job(self, project_name, job_id):
+        """Submit job - SIMPLIFIED VERSION with efficient UI update"""
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status != "NOT_SUBMITTED":
+                QMessageBox.information(self, "Already Submitted", 
+                                    f"Job '{job_id}' has already been submitted with status: {job.status}.")
+                return
+
+            # Store the old job ID for UI updates
+            old_job_id = str(job_id)
+
+            # Submit the job
+            new_job_id = self.project_storer.submit_job(project_name, job_id)
+
+            if new_job_id:
+                # Get the updated job with the new ID
+                updated_job = project.get_job(new_job_id)
+                if updated_job:
+                    job_row = updated_job.to_table_row()
+                    
+                    # Update the UI to reflect the ID change efficiently
+                    self.jobs_group.update_job_id(project_name, old_job_id, str(new_job_id), job_row)
+                    
+                    # Highlight the submitted job briefly
+                    self.jobs_group.highlight_job_row(project_name, str(new_job_id), 2000)
+                
+                # Show success message
+                QMessageBox.information(self, "Job Submitted", 
+                                    f"Job has been submitted with ID {new_job_id}")
+            else:
+                QMessageBox.warning(self, "Submission Failed", 
+                                "Failed to submit job. Please check logs for more information.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Submission Error", 
+                                f"An error occurred during job submission: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def delete_job(self, project_name, job_id):
+        """Delete job - SIMPLIFIED VERSION with efficient UI update"""
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                return
+                
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                return
+                
+            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
+                QMessageBox.warning(self, "Error", 
+                                f"Job can't be deleted since it is {job.status} status\n"
+                                f"Job '{job_id}' needs to be stopped before deleting.")
+                return
+
+            # Remove the job from store
+            self.project_storer.remove_job(project_name, job_id)
+            
+            # Remove from UI efficiently
+            self.jobs_group.remove_job(project_name, job_id)
+            
+            print(f"Job {job_id} deleted successfully")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Deletion Error", 
+                                f"An error occurred during job deletion: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    # SIMPLIFIED PROJECT LOADING
+    def start_project_loading(self):
+        """
+        Load and display all projects from the project storer - SIMPLIFIED VERSION.
+        """
+        if not hasattr(self.parent, 'project_storer') or self.parent.project_storer is None:
+            print("Project storer not initialized")
+            return
+
+        try:
+            # Get all projects from the store
+            projects_keys = self.parent.project_storer.all_projects()
+
+            # Add project widgets to UI and load their jobs
+            for proj_name in projects_keys:
+                # Add project widget
+                self.add_new_project(proj_name)
+
+                # Get the project from the store
+                project = self.parent.project_storer.get(proj_name)
+                if project and project.jobs:
+                    # Convert jobs to rows for display
+                    job_rows = [job.to_table_row() for job in project.jobs]
+                    
+                    # Update jobs UI efficiently - this will use the new efficient update system
+                    self.parent.jobs_group.update_jobs(proj_name, job_rows)
+
+        except Exception as e:
+            print(f"Error loading projects: {e}")
+            import traceback
+            traceback.print_exc()
