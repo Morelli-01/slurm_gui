@@ -481,7 +481,7 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        self.settings_panel.theme_combo.currentTextChanged.connect(self.change_theme)
+        # self.settings_panel.theme_combo.currentTextChanged.connect(self.change_theme)
         self.settings_panel.save_appearance_btn.clicked.connect(self.save_appearence_settings)
         self.settings_panel.connection_settings_btn.clicked.connect(self.update_connection_setting)
         self.settings_panel.save_button.clicked.connect(self.save_settings)
@@ -551,8 +551,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.settings.beginGroup("GeneralSettings")
         theme = self.settings.value("theme", "Dark")
-        if hasattr(self, 'settings_panel') and self.settings_panel.theme_combo:
-            self.settings_panel.theme_combo.setCurrentText(theme)
+        # if hasattr(self, 'settings_panel') and self.settings_panel.theme_combo:
+        #     self.settings_panel.theme_combo.setCurrentText(theme)
 
         cluster_address = self.settings.value("clusterAddress", "")
         if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:

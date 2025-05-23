@@ -1,3 +1,4 @@
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
     QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
@@ -26,27 +27,13 @@ class SettingsWidget(QWidget):
         settings_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         settings_layout.addWidget(settings_label)
 
-        # Appearance section
-        appearance_group = QGroupBox("Appearance")
+        # Appearance section - only showing jobs queue options
+        appearance_group = QGroupBox("Display Options")
         appearance_layout = QFormLayout(appearance_group)
         appearance_layout.setSpacing(10)
         appearance_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        widgets_layout = QHBoxLayout()
-
-        # Theme combo
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(self.themes.keys())
-        self.theme_combo.setCurrentText(self.current_theme)
-
-        self.theme_combo.setMaximumWidth(150)
-        widgets_layout.addWidget(QLabel("UI Theme:"))
-        widgets_layout.addWidget(self.theme_combo)
-        widgets_layout.addStretch()  # Add stretch to push widgets to the left
-
-        # Add the horizontal layout to the appearance layout
-        appearance_layout.addRow("", widgets_layout)
-        self.jobs_queue_options_group = QGroupBox("Jobs Queue Format")
+        self.jobs_queue_options_group = QGroupBox("Jobs Queue Visible Columns")
         jobs_queue_layout = QGridLayout(self.jobs_queue_options_group)
 
         for i, label in enumerate(JOB_QUEUE_FIELDS):
@@ -57,8 +44,8 @@ class SettingsWidget(QWidget):
                 col = i % 3
                 jobs_queue_layout.addWidget(checkbox, row, col)
 
-        # Save Button
-        self.save_appearance_btn = QPushButton("Save Appearence Settings")
+        # Save Button for appearance
+        self.save_appearance_btn = QPushButton("Save Display Settings")
         self.save_appearance_btn.setObjectName(BTN_GREEN)
         self.save_appearance_btn.setMaximumWidth(250)
         save_layout = QHBoxLayout()
@@ -67,13 +54,16 @@ class SettingsWidget(QWidget):
         appearance_layout.addRow(self.jobs_queue_options_group)
 
         settings_layout.addWidget(appearance_group)
+
         # --- SLURM Connection Settings ---
-        connection_group = QGroupBox("SLURM Connection (Example)")
+        connection_group = QGroupBox("SLURM Connection")
         connection_group.setMinimumHeight(150)
         connection_layout = QFormLayout(connection_group)
+        
         self.cluster_address = QLineEdit()
         self.cluster_address.setClearButtonEnabled(True)
         connection_layout.addRow("Cluster Address:", self.cluster_address)
+        
         self.username = QLineEdit()
         self.username.setClearButtonEnabled(True)
         connection_layout.addRow("Username:", self.username)
@@ -81,10 +71,10 @@ class SettingsWidget(QWidget):
         # Replace SSH key with password field
         self.password = QLineEdit()
         self.password.setClearButtonEnabled(True)
-        self.password.setEchoMode(QLineEdit.EchoMode.Password)  # Correct way to set password mode
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
         connection_layout.addRow("Password:", self.password)
 
-        self.connection_settings_btn = QPushButton("Save connection settings")
+        self.connection_settings_btn = QPushButton("Save Connection Settings")
         self.connection_settings_btn.setObjectName(BTN_GREEN)
         button_layout = QHBoxLayout()
         button_layout.addStretch()
@@ -92,22 +82,46 @@ class SettingsWidget(QWidget):
         connection_layout.addRow(button_layout)
         settings_layout.addWidget(connection_group)
 
-        # --- Notifications Section ---
+        # --- Updated Notifications Section ---
         notifications_group = QGroupBox("Notifications")
-        notifications_layout = QVBoxLayout(notifications_group)
-        notifications_layout.setSpacing(10)
+        notifications_layout = QFormLayout(notifications_group)
+        notifications_layout.setSpacing(15)
+        
+        # Desktop notifications checkbox
         self.desktop_notify_check = QCheckBox("Enable Desktop Notifications")
         self.desktop_notify_check.setChecked(True)
-        self.email_notify_check = QCheckBox("Send Email Notifications (if email provided in job)")
-        self.email_notify_check.setChecked(True)
+        notifications_layout.addRow("", self.desktop_notify_check)
+        
+        # Sound notifications checkbox
         self.sound_notify_check = QCheckBox("Play Sound on Job Completion/Failure")
-        notifications_layout.addWidget(self.desktop_notify_check)
-        notifications_layout.addWidget(self.email_notify_check)
-        notifications_layout.addWidget(self.sound_notify_check)
+        self.sound_notify_check.setChecked(False)
+        notifications_layout.addRow("", self.sound_notify_check)
+        
+        # Discord webhook URL field
+        self.discord_webhook_check = QCheckBox("Enable Discord Notifications")
+        self.discord_webhook_check.setChecked(False)
+        self.discord_webhook_check.stateChanged.connect(self._toggle_discord_webhook)
+        notifications_layout.addRow("", self.discord_webhook_check)
+        
+        self.discord_webhook_url = QLineEdit()
+        self.discord_webhook_url.setPlaceholderText("https://discord.com/api/webhooks/...")
+        self.discord_webhook_url.setEnabled(False)
+        notifications_layout.addRow("Discord Webhook URL:", self.discord_webhook_url)
+        
+        # Test Discord webhook button
+        self.test_discord_btn = QPushButton("Test Discord Webhook")
+        self.test_discord_btn.setObjectName(BTN_BLUE)
+        self.test_discord_btn.setEnabled(False)
+        self.test_discord_btn.clicked.connect(self._test_discord_webhook)
+        test_layout = QHBoxLayout()
+        test_layout.addStretch()
+        test_layout.addWidget(self.test_discord_btn)
+        notifications_layout.addRow("", test_layout)
+        
         settings_layout.addWidget(notifications_group)
 
         # --- Save Button ---
-        self.save_button = QPushButton("Save Settings")
+        self.save_button = QPushButton("Save All Settings")
         self.save_button.setObjectName(BTN_GREEN)
         self.save_button.setIcon(QIcon())  # Placeholder icon
 
@@ -117,3 +131,70 @@ class SettingsWidget(QWidget):
         settings_layout.addLayout(button_layout)
 
         settings_layout.addStretch()  # Pushes settings to the top
+
+    def _toggle_discord_webhook(self, state):
+        """Enable/disable Discord webhook URL field based on checkbox state"""
+        enabled = state == Qt.CheckState.Checked.value
+        self.discord_webhook_url.setEnabled(enabled)
+        self.test_discord_btn.setEnabled(enabled)
+        
+    def _test_discord_webhook(self):
+        """Test the Discord webhook by sending a test message"""
+        webhook_url = self.discord_webhook_url.text().strip()
+        
+        if not webhook_url:
+            QMessageBox.warning(self, "Warning", "Please enter a Discord webhook URL first.")
+            return
+            
+        try:
+            import requests
+            import json
+            
+            # Test message payload
+            payload = {
+                "content": "🔔 **SlurmAIO Test Notification**",
+                "embeds": [{
+                    "title": "Test Notification",
+                    "description": "This is a test message from SlurmAIO to verify Discord webhook configuration.",
+                    "color": 0x00ff00,  # Green color
+                    "timestamp": datetime.now().isoformat(),
+                    "footer": {
+                        "text": "SlurmAIO"
+                    }
+                }]
+            }
+            
+            headers = {
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(webhook_url, data=json.dumps(payload), headers=headers, timeout=10)
+            
+            if response.status_code == 204:
+                QMessageBox.information(self, "Success", "Test message sent successfully to Discord!")
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to send test message. Status code: {response.status_code}")
+                
+        except ImportError:
+            QMessageBox.warning(self, "Error", "The 'requests' library is required for Discord notifications.\nPlease install it with: pip install requests")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to send test message:\n{str(e)}")
+
+    def get_notification_settings(self):
+        """Get current notification settings as a dictionary"""
+        return {
+            "desktop_notifications": self.desktop_notify_check.isChecked(),
+            "sound_notifications": self.sound_notify_check.isChecked(),
+            "discord_enabled": self.discord_webhook_check.isChecked(),
+            "discord_webhook_url": self.discord_webhook_url.text().strip()
+        }
+        
+    def set_notification_settings(self, settings):
+        """Set notification settings from a dictionary"""
+        self.desktop_notify_check.setChecked(settings.get("desktop_notifications", True))
+        self.sound_notify_check.setChecked(settings.get("sound_notifications", False))
+        self.discord_webhook_check.setChecked(settings.get("discord_enabled", False))
+        self.discord_webhook_url.setText(settings.get("discord_webhook_url", ""))
+        
+        # Update field states
+        self._toggle_discord_webhook(self.discord_webhook_check.checkState())
