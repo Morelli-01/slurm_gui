@@ -194,8 +194,8 @@ class JobsGroup(QWidget):
             job_status = job_status.upper()
             submit_btn.setEnabled(job_status == "NOT_SUBMITTED")
             stop_btn.setEnabled(job_status in ["RUNNING", "PENDING"])
-            # cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
-            logs_btn.setEnabled(job_status != "NOT_SUBMITTED")
+            cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
+            logs_btn.setEnabled(True)
             modify_btn.setEnabled(job_status == "NOT_SUBMITTED")
             duplicate_btn.setEnabled(True)
 

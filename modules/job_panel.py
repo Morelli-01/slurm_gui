@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
 
 # Assuming these modules/files exist in your project structure
 from modules import project_store
+from modules.job_logs import JobLogsDialog
 from slurm_connection import SlurmConnection
 from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
 from modules.defaults import *
@@ -783,6 +784,7 @@ class JobsPanel(QWidget):
         self.jobs_group.submitRequested.connect(self.submit_job)
         self.jobs_group.cancelRequested.connect(self.delete_job)
         self.jobs_group.stopRequested.connect(self.stop_job)
+        self.jobs_group.logsRequested.connect(self.show_job_logs)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1253,6 +1255,30 @@ class JobsPanel(QWidget):
                 import traceback
                 traceback.print_exc()
 
+    def show_job_logs(self, project_name, job_id):
+        """Show the job logs dialog"""
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to project store.")
+            return
+        
+        try:
+            # Create and show the logs dialog
+            dialog = JobLogsDialog(
+                project_name=project_name,
+                job_id=job_id,
+                project_store=self.project_storer,
+                parent=self
+            )
+            dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Error Opening Logs", 
+                f"Failed to open job logs:\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
     # SIMPLIFIED PROJECT LOADING
     def start_project_loading(self):
         """
