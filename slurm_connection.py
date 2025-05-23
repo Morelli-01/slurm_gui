@@ -1,4 +1,5 @@
 import configparser
+import re
 import sys
 import functools
 import os
@@ -438,40 +439,95 @@ class SlurmConnection:
         return "\n".join(script_lines)
 
     @require_connection
-    def get_job_logs(self, job_id: str) -> Tuple[str, str]:
+    def get_job_logs(self, job_id: str, preserve_progress_bars: bool = False) -> Tuple[str, str]:
         """
-        Get the output and error logs for a job.
-
+        Get the output and error logs for a job with proper handling of progress bars.
         Args:
             job_id: Job ID
-
+            preserve_progress_bars: If True, keeps final progress bar state; if False, removes all progress bar lines
         Returns:
-            Tuple[str, str]: (stdout, stderr) logs
+            Tuple[str, str]: (stdout, stderr) logs with proper formatting
         """
+        
+        def clean_progress_output(text: str, preserve_final_state: bool = False) -> str:
+            """
+            Clean text containing progress bars and ANSI sequences.
+            Handles tqdm output by extracting the final state of each progress bar.
+            """
+            import re
+            
+            # Remove ANSI escape sequences but preserve structure
+            ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+            clean_text = ansi_escape.sub('', text)
+            
+            if not preserve_final_state:
+                # Just remove ANSI and carriage returns, convert to newlines
+                return clean_text.replace('\r', '\n')
+            
+            # Split by newlines first to handle each logical line
+            lines = clean_text.split('\n')
+            cleaned_lines = []
+            
+            for line in lines:
+                if '\r' in line:
+                    # This line has carriage returns (likely progress bar updates)
+                    # Split by \r and take the last non-empty part
+                    parts = line.split('\r')
+                    final_part = ''
+                    
+                    # Find the last non-empty, meaningful part
+                    for part in reversed(parts):
+                        if part.strip():
+                            final_part = part.strip()
+                            break
+                    
+                    # Only add if we found something meaningful
+                    if final_part:
+                        cleaned_lines.append(final_part)
+                else:
+                    # Regular line without carriage returns
+                    if line.strip():  # Only add non-empty lines
+                        cleaned_lines.append(line)
+            
+            return '\n'.join(cleaned_lines)
+
         if not self.is_connected():
             raise ConnectionError("SSH connection not established.")
-
+        
         remote_log_dir = f"{self.remote_home}/.logs"
         stdout_file = f"{remote_log_dir}/out_{job_id}.log"
         stderr_file = f"{remote_log_dir}/err_{job_id}.log"
-
         stdout, stderr = "", ""
 
-        # Get stdout log
         try:
-            out, _ = self.run_command(f"cat {stdout_file}")
-            stdout = out.strip()
-        except Exception:
+            # Use SFTP to fetch the log files in binary mode to preserve all characters
+            sftp = self.client.open_sftp()
+            
+            # stdout
+            try:
+                with sftp.open(stdout_file, 'rb') as f:
+                    out_bytes = f.read()
+                out = out_bytes.decode(errors='replace')
+                stdout = clean_progress_output(out, preserve_progress_bars)
+            except Exception:
+                stdout = f"[!] Output log {stdout_file} not found or unreadable."
+            
+            # stderr
+            try:
+                with sftp.open(stderr_file, 'rb') as f:
+                    err_bytes = f.read()
+                err = err_bytes.decode(errors='replace')
+                stderr = clean_progress_output(err, preserve_progress_bars)
+            except Exception:
+                stderr = f"[!] Error log {stderr_file} not found or unreadable."
+            
+            sftp.close()
+        except Exception as e:
+            print(f"Error fetching logs for job {job_id}: {e}")
             stdout = f"[!] Output log {stdout_file} not found or unreadable."
-
-        # Get stderr log
-        try:
-            err, _ = self.run_command(f"cat {stderr_file}")
-            stderr = err.strip()
-        except Exception:
             stderr = f"[!] Error log {stderr_file} not found or unreadable."
-
-        return stdout, stderr
+        
+        return stdout, stderr    
 
     def update_credentials_and_reconnect(self) -> None:
         """Update credentials from config file and reconnect."""

@@ -4,39 +4,117 @@ from PyQt6.QtWidgets import (
     QTextEdit, QTabWidget, QWidget, QMessageBox
 )
 from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMutex, QWaitCondition
 from modules.defaults import *
+from slurm_connection import SlurmConnection
 from utils import script_dir
+import time
+import threading
 
 
-class LogFetcherThread(QThread):
-    """Thread to fetch log files from the remote server"""
+class ContinuousLogFetcherThread(QThread):
+    """Thread to continuously fetch log files from the remote server"""
     log_fetched = pyqtSignal(str, str)  # stdout, stderr
     error_occurred = pyqtSignal(str)
+    status_updated = pyqtSignal(str)  # job status updates
     
-    def __init__(self, slurm_connection, job_id):
+    def __init__(self, slurm_connection: SlurmConnection, job_id, project_store, project_name):
         super().__init__()
         self.slurm_connection = slurm_connection
         self.job_id = job_id
+        self.project_store = project_store
+        self.project_name = project_name
         self._stop_requested = False
-    
+        self._pause_requested = False
+        self._refresh_interval = 5  # seconds
+        self._mutex = QMutex()
+        self._condition = QWaitCondition()
+        
     def run(self):
-        """Fetch logs from the remote server"""
+        """Continuously fetch logs from the remote server"""
+        while not self._stop_requested:
+            try:
+                # Check if we should pause
+                self._mutex.lock()
+                if self._pause_requested:
+                    self._condition.wait(self._mutex)
+                self._mutex.unlock()
+                
+                if self._stop_requested:
+                    break
+                
+                # Check connection
+                if not self.slurm_connection or not self.slurm_connection.check_connection():
+                    self.error_occurred.emit("Not connected to SLURM")
+                    self._wait_with_interrupt(10)  # Wait longer on connection error
+                    continue
+                
+                # Get current job status
+                current_status = self._get_job_status()
+                if current_status:
+                    self.status_updated.emit(current_status)
+                
+                # Get the logs using the existing get_job_logs method
+                stdout, stderr = self.slurm_connection.get_job_logs(self.job_id, preserve_progress_bars=True)
+                self.log_fetched.emit(stdout, stderr)
+                
+                # Adjust refresh interval based on job status
+                if current_status in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"]:
+                    # Job finished, fetch once more and then stop
+                    break
+                elif current_status == "PENDING":
+                    # Job pending, check less frequently
+                    self._wait_with_interrupt(15)
+                else:
+                    # Job running, normal interval
+                    self._wait_with_interrupt(self._refresh_interval)
+                    
+            except Exception as e:
+                self.error_occurred.emit(f"Error fetching logs: {str(e)}")
+                self._wait_with_interrupt(10)  # Wait longer on error
+    
+    def _get_job_status(self):
+        """Get current job status from project store"""
         try:
-            if not self.slurm_connection or not self.slurm_connection.check_connection():
-                self.error_occurred.emit("Not connected to SLURM")
-                return
-            
-            # Get the logs using the existing get_job_logs method
-            stdout, stderr = self.slurm_connection.get_job_logs(self.job_id)
-            self.log_fetched.emit(stdout, stderr)
-            
-        except Exception as e:
-            self.error_occurred.emit(f"Error fetching logs: {str(e)}")
+            if self.project_store:
+                project = self.project_store.get(self.project_name)
+                if project:
+                    job = project.get_job(self.job_id)
+                    if job:
+                        return job.status
+        except Exception:
+            pass
+        return None
+    
+    def _wait_with_interrupt(self, seconds):
+        """Wait for specified seconds but allow interruption"""
+        end_time = time.time() + seconds
+        while time.time() < end_time and not self._stop_requested:
+            time.sleep(0.5)  # Check every 500ms
     
     def stop(self):
         """Stop the thread"""
         self._stop_requested = True
+        self._mutex.lock()
+        self._condition.wakeAll()
+        self._mutex.unlock()
+    
+    def pause(self):
+        """Pause the thread"""
+        self._mutex.lock()
+        self._pause_requested = True
+        self._mutex.unlock()
+    
+    def resume(self):
+        """Resume the thread"""
+        self._mutex.lock()
+        self._pause_requested = False
+        self._condition.wakeAll()
+        self._mutex.unlock()
+    
+    def set_refresh_interval(self, seconds):
+        """Set the refresh interval"""
+        self._refresh_interval = max(1, seconds)  # Minimum 1 second
 
 
 class JobLogsDialog(QDialog):
@@ -55,15 +133,15 @@ class JobLogsDialog(QDialog):
         self.setMinimumSize(800, 600)
         self.resize(1000, 700)
         
-        # Thread and timer for log updates
+        # Thread for continuous log updates
         self.log_fetcher_thread = None
-        self.refresh_timer = QTimer()
-        self.refresh_timer.timeout.connect(self._fetch_logs)
-        self.refresh_interval = 5000  # 5 seconds
+        self.auto_refresh_enabled = True
+        self.last_log_update = None
         
         self._setup_stylesheet()
         self._setup_ui()
         self._load_job_data()
+        self._start_continuous_fetching()
     
     def _setup_stylesheet(self):
         """Set up the dialog styling"""
@@ -106,6 +184,10 @@ class JobLogsDialog(QDialog):
             }}
             QPushButton[objectName="{BTN_BLUE}"]:hover {{
                 background-color: #c4f5ff;
+            }}
+            QPushButton:disabled {{
+                background-color: #2a2d3a;
+                color: #666666;
             }}
             QTabWidget::pane {{
                 border: 1px solid {COLOR_DARK_BORDER};
@@ -184,12 +266,18 @@ class JobLogsDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
+        
+        # Auto-refresh toggle
+        self.auto_refresh_button = QPushButton("Pause Auto-refresh")
+        self.auto_refresh_button.clicked.connect(self._toggle_auto_refresh)
+        
+        button_layout.addWidget(self.auto_refresh_button)
         button_layout.addStretch()
         
-        self.refresh_button = QPushButton("Refresh")
+        self.refresh_button = QPushButton("Refresh Now")
         self.refresh_button.setObjectName(BTN_BLUE)
         self.refresh_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "refresh.svg")))
-        self.refresh_button.clicked.connect(self._refresh_data)
+        self.refresh_button.clicked.connect(self._manual_refresh)
         
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.accept)
@@ -311,55 +399,90 @@ class JobLogsDialog(QDialog):
         
         # Display job information
         self._display_job_info(self.job)
-        
-        # Fetch logs for the first time
-        self._fetch_logs()
-        
-        # Start auto-refresh if job is running
-        if self.job.status == "RUNNING":
-            self._start_auto_refresh()
     
-    def _update_status_indicator(self):
-        """Update the status indicator label"""
-        if self.job:
-            status_color = STATE_COLORS.get(self.job.status.lower(), COLOR_GRAY)
-            self.status_indicator.setText(f"Status: {self.job.status}")
-            self.status_indicator.setStyleSheet(f"color: {status_color}; font-size: 12px; font-weight: bold;")
-    
-    def _fetch_logs(self):
-        """Fetch logs in a background thread"""
+    def _start_continuous_fetching(self):
+        """Start the continuous log fetching thread"""
         if not self.slurm_connection:
             self.output_text.setText("Error: SLURM connection not available")
             self.error_text.setText("Error: SLURM connection not available")
             return
         
-        # Create and start the thread
-        self.log_fetcher_thread = LogFetcherThread(self.slurm_connection, self.job_id)
+        # Create and start the continuous fetcher thread
+        self.log_fetcher_thread = ContinuousLogFetcherThread(
+            self.slurm_connection, self.job_id, self.project_store, self.project_name
+        )
         self.log_fetcher_thread.log_fetched.connect(self._update_logs)
         self.log_fetcher_thread.error_occurred.connect(self._handle_log_error)
+        self.log_fetcher_thread.status_updated.connect(self._update_job_status)
+        self.log_fetcher_thread.finished.connect(self._on_fetcher_finished)
         self.log_fetcher_thread.start()
     
     def _update_logs(self, stdout, stderr):
         """Update the log displays with fetched content"""
+        self.last_log_update = time.time()
+        
         # Update output log
         if stdout:
+            # Preserve scroll position if user hasn't scrolled to bottom
+            output_scrollbar = self.output_text.verticalScrollBar()
+            was_at_bottom = output_scrollbar.value() == output_scrollbar.maximum()
+            
             self.output_text.setText(stdout)
+            
+            # Auto-scroll to bottom if user was already at bottom
+            if was_at_bottom:
+                output_scrollbar.setValue(output_scrollbar.maximum())
         else:
             self.output_text.setText("No output log available yet.")
         
         # Update error log
         if stderr:
+            # Preserve scroll position if user hasn't scrolled to bottom
+            error_scrollbar = self.error_text.verticalScrollBar()
+            was_at_bottom = error_scrollbar.value() == error_scrollbar.maximum()
+            
             self.error_text.setText(stderr)
+            
+            # Auto-scroll to bottom if user was already at bottom
+            if was_at_bottom:
+                error_scrollbar.setValue(error_scrollbar.maximum())
         else:
             self.error_text.setText("No error log available yet.")
         
         # Update refresh labels
-        if self.job and self.job.status == "RUNNING":
-            self.output_refresh_label.setText("(Auto-refreshing every 5 seconds)")
-            self.error_refresh_label.setText("(Auto-refreshing every 5 seconds)")
+        self._update_refresh_labels()
+    
+    def _update_refresh_labels(self):
+        """Update the refresh status labels"""
+        if self.auto_refresh_enabled and self.job and self.job.status == "RUNNING":
+            refresh_text = "(Auto-refreshing every 5 seconds)"
+        elif not self.auto_refresh_enabled:
+            refresh_text = "(Auto-refresh paused)"
         else:
-            self.output_refresh_label.setText("")
-            self.error_refresh_label.setText("")
+            refresh_text = ""
+        
+        self.output_refresh_label.setText(refresh_text)
+        self.error_refresh_label.setText(refresh_text)
+        
+        # Show last update time
+        if self.last_log_update:
+            import datetime
+            update_time = datetime.datetime.fromtimestamp(self.last_log_update)
+            time_str = update_time.strftime("%H:%M:%S")
+            if refresh_text:
+                refresh_text += f" - Last update: {time_str}"
+            else:
+                refresh_text = f"Last update: {time_str}"
+            
+            self.output_refresh_label.setText(refresh_text)
+            self.error_refresh_label.setText(refresh_text)
+    
+    def _update_job_status(self, status):
+        """Update job status from the background thread"""
+        if self.job:
+            self.job.status = status
+            self._update_status_indicator()
+            self._update_refresh_labels()
     
     def _handle_log_error(self, error_message):
         """Handle errors when fetching logs"""
@@ -367,14 +490,57 @@ class JobLogsDialog(QDialog):
         self.output_text.setText(error_text)
         self.error_text.setText(error_text)
     
-    def _start_auto_refresh(self):
-        """Start the auto-refresh timer for running jobs"""
-        if self.job and self.job.status == "RUNNING":
-            self.refresh_timer.start(self.refresh_interval)
+    def _on_fetcher_finished(self):
+        """Handle when the fetcher thread finishes"""
+        self._update_refresh_labels()
+        
+        # If job finished, update the auto-refresh button
+        if self.job and self.job.status in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"]:
+            self.auto_refresh_button.setText("Job Finished")
+            self.auto_refresh_button.setEnabled(False)
     
-    def _stop_auto_refresh(self):
-        """Stop the auto-refresh timer"""
-        self.refresh_timer.stop()
+    def _toggle_auto_refresh(self):
+        """Toggle auto-refresh on/off"""
+        if not self.log_fetcher_thread or not self.log_fetcher_thread.isRunning():
+            return
+            
+        self.auto_refresh_enabled = not self.auto_refresh_enabled
+        
+        if self.auto_refresh_enabled:
+            self.log_fetcher_thread.resume()
+            self.auto_refresh_button.setText("Pause Auto-refresh")
+        else:
+            self.log_fetcher_thread.pause()
+            self.auto_refresh_button.setText("Resume Auto-refresh")
+        
+        self._update_refresh_labels()
+    
+    def _manual_refresh(self):
+        """Manually trigger a refresh"""
+        if self.log_fetcher_thread and self.log_fetcher_thread.isRunning():
+            # If thread is paused, resume temporarily for one refresh
+            if not self.auto_refresh_enabled:
+                self.log_fetcher_thread.resume()
+                # Use a timer to pause again after a short delay
+                def re_pause():
+                    if self.log_fetcher_thread and not self.auto_refresh_enabled:
+                        self.log_fetcher_thread.pause()
+                
+                # Schedule re-pause after 2 seconds
+                threading.Timer(2.0, re_pause).start()
+        else:
+            # If thread not running, start a new one
+            self._start_continuous_fetching()
+        
+        # Also refresh the job data
+        self._load_job_data()
+    
+    def _update_status_indicator(self):
+        """Update the status indicator label"""
+        if self.job:
+            status_color = STATE_COLORS.get(self.job.status.lower(), COLOR_GRAY)
+            self.status_indicator.setText(f"Status: {self.job.status}")
+            self.status_indicator.setStyleSheet(f"color: {status_color}; font-size: 12px; font-weight: bold;")
     
     def _display_job_script(self, job):
         """Generate and display the SLURM job script"""
@@ -513,18 +679,6 @@ class JobLogsDialog(QDialog):
         info_content = "\n".join(info_lines)
         self.info_text.setText(info_content)
     
-    def _refresh_data(self):
-        """Refresh the displayed job data"""
-        # Reload job data
-        self._load_job_data()
-        
-        # Update status indicator
-        self._update_status_indicator()
-        
-        # Check if we need to stop auto-refresh
-        if self.job and self.job.status != "RUNNING":
-            self._stop_auto_refresh()
-    
     def _show_error(self, message):
         """Show an error message"""
         self.script_text.setText(f"Error: {message}")
@@ -535,12 +689,11 @@ class JobLogsDialog(QDialog):
     
     def closeEvent(self, event):
         """Handle dialog close event"""
-        # Stop auto-refresh timer
-        self._stop_auto_refresh()
-        
-        # Stop any running threads
+        # Stop the continuous fetcher thread
         if self.log_fetcher_thread and self.log_fetcher_thread.isRunning():
             self.log_fetcher_thread.stop()
-            self.log_fetcher_thread.wait()
+            self.log_fetcher_thread.wait(3000)  # Wait up to 3 seconds
+            if self.log_fetcher_thread.isRunning():
+                self.log_fetcher_thread.terminate()
         
         event.accept()
