@@ -378,7 +378,7 @@ class SlurmConnection:
 
             # Submit via sbatch
             stdout, stderr = self.run_command(f"sbatch {remote_script_path}")
-            if stderr:
+            if stderr and "INFO" not in stderr:
                 os.remove(local_script_path)
                 raise RuntimeError(f"SLURM error: {stderr}")
             else:

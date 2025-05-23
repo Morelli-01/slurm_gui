@@ -32,18 +32,10 @@ from modules.defaults import (
     STATUS_FAILED,
     NOT_SUBMITTED,
     scroll_bar_stylesheet,
+    STATE_COLORS
 )
 
-STATE_COLORS = {
-    STATUS_RUNNING.lower(): COLOR_GREEN,
-    STATUS_PENDING.lower(): COLOR_ORANGE,
-    STATUS_COMPLETED.lower(): COLOR_BLUE,
-    STATUS_FAILED.lower(): COLOR_RED,
-    "cancelled": COLOR_PURPLE,  # Add cancelled status
-    "suspended": COLOR_GRAY,    # Add suspended status
-    "stopped": COLOR_GRAY,      # Add stopped status
-    NOT_SUBMITTED.lower(): COLOR_GRAY,
-}
+
 
 
 class JobsGroup(QWidget):

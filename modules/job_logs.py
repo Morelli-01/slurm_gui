@@ -4,9 +4,39 @@ from PyQt6.QtWidgets import (
     QTextEdit, QTabWidget, QWidget, QMessageBox
 )
 from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from modules.defaults import *
 from utils import script_dir
+
+
+class LogFetcherThread(QThread):
+    """Thread to fetch log files from the remote server"""
+    log_fetched = pyqtSignal(str, str)  # stdout, stderr
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, slurm_connection, job_id):
+        super().__init__()
+        self.slurm_connection = slurm_connection
+        self.job_id = job_id
+        self._stop_requested = False
+    
+    def run(self):
+        """Fetch logs from the remote server"""
+        try:
+            if not self.slurm_connection or not self.slurm_connection.check_connection():
+                self.error_occurred.emit("Not connected to SLURM")
+                return
+            
+            # Get the logs using the existing get_job_logs method
+            stdout, stderr = self.slurm_connection.get_job_logs(self.job_id)
+            self.log_fetched.emit(stdout, stderr)
+            
+        except Exception as e:
+            self.error_occurred.emit(f"Error fetching logs: {str(e)}")
+    
+    def stop(self):
+        """Stop the thread"""
+        self._stop_requested = True
 
 
 class JobLogsDialog(QDialog):
@@ -16,9 +46,20 @@ class JobLogsDialog(QDialog):
         self.job_id = job_id
         self.project_store = project_store
         
+        # Get SLURM connection from project store
+        self.slurm_connection = None
+        if self.project_store and hasattr(self.project_store, 'slurm'):
+            self.slurm_connection = self.project_store.slurm
+        
         self.setWindowTitle(f"Job Details - {job_id}")
         self.setMinimumSize(800, 600)
         self.resize(1000, 700)
+        
+        # Thread and timer for log updates
+        self.log_fetcher_thread = None
+        self.refresh_timer = QTimer()
+        self.refresh_timer.timeout.connect(self._fetch_logs)
+        self.refresh_interval = 5000  # 5 seconds
         
         self._setup_stylesheet()
         self._setup_ui()
@@ -105,7 +146,12 @@ class JobLogsDialog(QDialog):
         project_label = QLabel(f"Project: {self.project_name}")
         project_label.setStyleSheet("color: #aaaaaa; font-size: 12px;")
         
+        # Status indicator for auto-refresh
+        self.status_indicator = QLabel("Status: Unknown")
+        self.status_indicator.setStyleSheet("font-size: 12px;")
+        
         header_layout.addWidget(title_label)
+        header_layout.addWidget(self.status_indicator)
         header_layout.addStretch()
         header_layout.addWidget(project_label)
         
@@ -124,7 +170,15 @@ class JobLogsDialog(QDialog):
         self._setup_info_tab()
         self.tab_widget.addTab(self.info_tab, "Job Information")
         
-        # Future tabs can be added here (Stdout, Stderr, etc.)
+        # Output Log Tab
+        self.output_tab = QWidget()
+        self._setup_output_tab()
+        self.tab_widget.addTab(self.output_tab, "Output Log")
+        
+        # Error Log Tab
+        self.error_tab = QWidget()
+        self._setup_error_tab()
+        self.tab_widget.addTab(self.error_tab, "Error Log")
         
         layout.addWidget(self.tab_widget)
         
@@ -179,6 +233,58 @@ class JobLogsDialog(QDialog):
         self.info_text.setPlaceholderText("Job information will be displayed here...")
         layout.addWidget(self.info_text)
     
+    def _setup_output_tab(self):
+        """Set up the output log tab"""
+        layout = QVBoxLayout(self.output_tab)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Header with auto-refresh indicator
+        header_layout = QHBoxLayout()
+        
+        desc_label = QLabel("Job Output Log:")
+        desc_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        header_layout.addWidget(desc_label)
+        
+        self.output_refresh_label = QLabel("")
+        self.output_refresh_label.setStyleSheet("color: #aaaaaa; font-size: 10px;")
+        header_layout.addWidget(self.output_refresh_label)
+        
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Output content
+        self.output_text = QTextEdit()
+        self.output_text.setReadOnly(True)
+        self.output_text.setPlaceholderText("Output log will be displayed here...")
+        layout.addWidget(self.output_text)
+    
+    def _setup_error_tab(self):
+        """Set up the error log tab"""
+        layout = QVBoxLayout(self.error_tab)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        # Header with auto-refresh indicator
+        header_layout = QHBoxLayout()
+        
+        desc_label = QLabel("Job Error Log:")
+        desc_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        header_layout.addWidget(desc_label)
+        
+        self.error_refresh_label = QLabel("")
+        self.error_refresh_label.setStyleSheet("color: #aaaaaa; font-size: 10px;")
+        header_layout.addWidget(self.error_refresh_label)
+        
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Error content
+        self.error_text = QTextEdit()
+        self.error_text.setReadOnly(True)
+        self.error_text.setPlaceholderText("Error log will be displayed here...")
+        layout.addWidget(self.error_text)
+    
     def _load_job_data(self):
         """Load and display job data"""
         if not self.project_store:
@@ -192,16 +298,83 @@ class JobLogsDialog(QDialog):
             return
         
         # Get the job
-        job = project.get_job(self.job_id)
-        if not job:
+        self.job = project.get_job(self.job_id)
+        if not self.job:
             self._show_error(f"Job '{self.job_id}' not found in project '{self.project_name}'")
             return
         
+        # Update status indicator
+        self._update_status_indicator()
+        
         # Generate and display the job script
-        self._display_job_script(job)
+        self._display_job_script(self.job)
         
         # Display job information
-        self._display_job_info(job)
+        self._display_job_info(self.job)
+        
+        # Fetch logs for the first time
+        self._fetch_logs()
+        
+        # Start auto-refresh if job is running
+        if self.job.status == "RUNNING":
+            self._start_auto_refresh()
+    
+    def _update_status_indicator(self):
+        """Update the status indicator label"""
+        if self.job:
+            status_color = STATE_COLORS.get(self.job.status.lower(), COLOR_GRAY)
+            self.status_indicator.setText(f"Status: {self.job.status}")
+            self.status_indicator.setStyleSheet(f"color: {status_color}; font-size: 12px; font-weight: bold;")
+    
+    def _fetch_logs(self):
+        """Fetch logs in a background thread"""
+        if not self.slurm_connection:
+            self.output_text.setText("Error: SLURM connection not available")
+            self.error_text.setText("Error: SLURM connection not available")
+            return
+        
+        # Create and start the thread
+        self.log_fetcher_thread = LogFetcherThread(self.slurm_connection, self.job_id)
+        self.log_fetcher_thread.log_fetched.connect(self._update_logs)
+        self.log_fetcher_thread.error_occurred.connect(self._handle_log_error)
+        self.log_fetcher_thread.start()
+    
+    def _update_logs(self, stdout, stderr):
+        """Update the log displays with fetched content"""
+        # Update output log
+        if stdout:
+            self.output_text.setText(stdout)
+        else:
+            self.output_text.setText("No output log available yet.")
+        
+        # Update error log
+        if stderr:
+            self.error_text.setText(stderr)
+        else:
+            self.error_text.setText("No error log available yet.")
+        
+        # Update refresh labels
+        if self.job and self.job.status == "RUNNING":
+            self.output_refresh_label.setText("(Auto-refreshing every 5 seconds)")
+            self.error_refresh_label.setText("(Auto-refreshing every 5 seconds)")
+        else:
+            self.output_refresh_label.setText("")
+            self.error_refresh_label.setText("")
+    
+    def _handle_log_error(self, error_message):
+        """Handle errors when fetching logs"""
+        error_text = f"Error fetching logs: {error_message}"
+        self.output_text.setText(error_text)
+        self.error_text.setText(error_text)
+    
+    def _start_auto_refresh(self):
+        """Start the auto-refresh timer for running jobs"""
+        if self.job and self.job.status == "RUNNING":
+            self.refresh_timer.start(self.refresh_interval)
+    
+    def _stop_auto_refresh(self):
+        """Stop the auto-refresh timer"""
+        self.refresh_timer.stop()
     
     def _display_job_script(self, job):
         """Generate and display the SLURM job script"""
@@ -342,10 +515,32 @@ class JobLogsDialog(QDialog):
     
     def _refresh_data(self):
         """Refresh the displayed job data"""
+        # Reload job data
         self._load_job_data()
+        
+        # Update status indicator
+        self._update_status_indicator()
+        
+        # Check if we need to stop auto-refresh
+        if self.job and self.job.status != "RUNNING":
+            self._stop_auto_refresh()
     
     def _show_error(self, message):
         """Show an error message"""
         self.script_text.setText(f"Error: {message}")
         self.info_text.setText(f"Error: {message}")
+        self.output_text.setText(f"Error: {message}")
+        self.error_text.setText(f"Error: {message}")
         QMessageBox.warning(self, "Error", message)
+    
+    def closeEvent(self, event):
+        """Handle dialog close event"""
+        # Stop auto-refresh timer
+        self._stop_auto_refresh()
+        
+        # Stop any running threads
+        if self.log_fetcher_thread and self.log_fetcher_thread.isRunning():
+            self.log_fetcher_thread.stop()
+            self.log_fetcher_thread.wait()
+        
+        event.accept()
