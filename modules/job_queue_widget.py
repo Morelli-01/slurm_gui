@@ -37,7 +37,7 @@ class JobQueueWidget(QGroupBox):
                 border: 2px solid {COLOR_DARK_BORDER};
                 border-radius: 8px;
                 margin-top: 10px;
-                font-size: 16px;
+                font-size: 20px;
                 font-weight: bold;
                 color: {COLOR_DARK_FG};
             }}
@@ -82,7 +82,7 @@ class JobQueueWidget(QGroupBox):
                 border: 1px solid {COLOR_DARK_BORDER};
                 border-radius: 5px;
                 gridline-color: {COLOR_DARK_BORDER};
-                font-size: 14px;
+                font-size: 16px;
             }}
             QHeaderView::section {{
                 background-color: {COLOR_DARK_BG_ALT};

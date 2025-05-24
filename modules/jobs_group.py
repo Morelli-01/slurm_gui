@@ -82,72 +82,60 @@ class JobsGroup(QWidget):
         style = AppStyles.get_table_styles()
         style += AppStyles.get_button_styles()
         style += AppStyles.get_scrollbar_styles()
-        style += AppStyles.get_job_action_container_styles()
+        style += AppStyles.get_job_action_styles()  # New method for action button styles
 
         self.setStyleSheet(style)
     
-    def _create_action_button(self, icon_path, tooltip, button_id):
-        """Create an action button with consistent sizing"""
-        button = QPushButton()
-        button.setObjectName(button_id)
-        button.setToolTip(tooltip)
-        button.setFixedSize(30, 30)  # Consistent size
-        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-
-        icon = QtGui.QIcon(icon_path)
-        if icon.isNull():
-            print(f"Warning: Could not load icon from {icon_path}")
-        button.setIcon(icon)
-        button.setIconSize(QSize(16, 16))  # Appropriate icon size
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        return button
-    
     def _create_actions_widget(self, project: str, job_id: Any, job_status: str = None) -> QWidget:
-        """Creates a widget containing action buttons for a job row."""
+        """Creates a widget containing action buttons for a job row using CSS-styled buttons with icons."""
         container = QWidget()
         container.setObjectName("actionContainer")
 
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(5, 5, 5, 5)  # Add some padding
-        layout.setSpacing(6)  # Increase spacing between buttons
-        # Center align buttons
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)  # Consistent spacing between buttons
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Create buttons with consistent sizing
-        submit_path = os.path.join(script_dir, "src_static", "submit.svg")
-        submit_btn = self._create_action_button(
-            submit_path, "Submit job", "submitBtn")
+        # Create buttons using CSS classes for icons and styling
+        submit_btn = QPushButton()
+        submit_btn.setObjectName("actionSubmitBtn")
+        submit_btn.setToolTip("Submit job")
+        # submit_btn.setFixedSize(24, 24)
         submit_btn.clicked.connect(functools.partial(
             self.submitRequested.emit, project, job_id))
 
-        stop_path = os.path.join(script_dir, "src_static", "stop.svg")
-        stop_btn = self._create_action_button(stop_path, "Stop job", "stopBtn")
+        stop_btn = QPushButton()
+        stop_btn.setObjectName("actionStopBtn")
+        stop_btn.setToolTip("Stop job")
+        # stop_btn.setFixedSize(24, 24)
         stop_btn.clicked.connect(functools.partial(
             self.stopRequested.emit, project, job_id))
 
-        cancel_path = os.path.join(script_dir, "src_static", "delete.svg")
-        cancel_btn = self._create_action_button(
-            cancel_path, "Cancel job", "cancelBtn")
+        cancel_btn = QPushButton()
+        cancel_btn.setObjectName("actionCancelBtn")
+        cancel_btn.setToolTip("Delete job")
+        # cancel_btn.setFixedSize(24, 24)
         cancel_btn.clicked.connect(functools.partial(
             self.cancelRequested.emit, project, job_id))
 
-        logs_path = os.path.join(script_dir, "src_static", "view_logs.svg")
-        logs_btn = self._create_action_button(
-            logs_path, "View logs", "logsBtn")
+        logs_btn = QPushButton()
+        logs_btn.setObjectName("actionLogsBtn")
+        logs_btn.setToolTip("View logs")
+        # logs_btn.setFixedSize(24, 24)
         logs_btn.clicked.connect(functools.partial(
             self.logsRequested.emit, project, job_id))
 
-        duplicate_path = os.path.join(
-            script_dir, "src_static", "duplicate.svg")
-        duplicate_btn = self._create_action_button(
-            duplicate_path, "Duplicate job", "duplicateBtn")
+        duplicate_btn = QPushButton()
+        duplicate_btn.setObjectName("actionDuplicateBtn")
+        duplicate_btn.setToolTip("Duplicate job")
+        # duplicate_btn.setFixedSize(24, 24)
         duplicate_btn.clicked.connect(functools.partial(
             self.duplicateRequested.emit, project, job_id))
 
-        modify_path = os.path.join(script_dir, "src_static", "edit.svg")
-        modify_btn = self._create_action_button(
-            modify_path, "Modify job", "modifyBtn")
+        modify_btn = QPushButton()
+        modify_btn.setObjectName("actionModifyBtn")
+        modify_btn.setToolTip("Modify job")
+        # modify_btn.setFixedSize(24, 24)
         modify_btn.clicked.connect(functools.partial(
             self.modifyRequested.emit, project, job_id))
 
@@ -194,7 +182,7 @@ class JobsGroup(QWidget):
         for i, head in enumerate(headers):
             if head == "Actions":
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
-                table.setColumnWidth(i, 210)
+                table.setColumnWidth(i, 220)  # Reduced width for smaller buttons
             elif head in ["CPU", "GPU", "RAM"]:
                 h.setSectionResizeMode(
                     i, QHeaderView.ResizeMode.ResizeToContents)

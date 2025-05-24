@@ -436,19 +436,19 @@ class SlurmJobManagerApp(QMainWindow):
         self.filter_jobs.setFixedWidth(filter_width)
         header_layout.addWidget(self.filter_jobs)
         
-        self.filter_btn = QPushButton()
-        filter_icon_path = os.path.join(script_dir, "src_static", "filter.png")
+        # self.filter_btn = QPushButton()
+        # filter_icon_path = os.path.join(script_dir, "src_static", "filter.png")
         
         # Use pre-calculated icon size
-        icon_size = QSize(self.icon_size_small, self.icon_size_small)
-        self.filter_btn.setIcon(QIcon(filter_icon_path))
-        self.filter_btn.setIconSize(icon_size)
-        button_size = get_dpi_aware_size(24)
-        self.filter_btn.setFixedSize(button_size, button_size)
+        # icon_size = QSize(self.icon_size_small, self.icon_size_small)
+        # self.filter_btn.setIcon(QIcon(filter_icon_path))
+        # self.filter_btn.setIconSize(icon_size)
+        # button_size = get_dpi_aware_size(24)
+        # self.filter_btn.setFixedSize(button_size, button_size)
         
-        header_layout.addWidget(self.filter_btn)
-        self.filter_btn.clicked.connect(
-            lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+        # header_layout.addWidget(self.filter_btn)
+        # self.filter_btn.clicked.connect(
+            # lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
         self.filter_jobs.textChanged.connect(
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 

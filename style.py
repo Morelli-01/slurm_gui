@@ -153,90 +153,145 @@ class AppStyles:
             background-color: #4fa8d8;
             border: 2px solid #4fa8d8;
         }}
-        
-        /* Small action buttons for job tables - Clear hover states */
-        QPushButton#submitBtn, QPushButton#stopBtn, QPushButton#cancelBtn, 
-        QPushButton#logsBtn, QPushButton#duplicateBtn, QPushButton#modifyBtn {{
-            border-radius: 15px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
-            margin: 2px;
-            border: 2px solid transparent;
-        }}
+        """
 
-        QPushButton#submitBtn {{
+    @classmethod
+    def get_job_action_styles(cls, theme=THEME_DARK):
+        """Specific styles for job action buttons with icons"""
+        colors = cls.THEMES[theme]
+        
+        # Convert Windows paths to forward slashes for CSS
+        script_path = script_dir.replace('\\', '/')
+        
+        return f"""
+        /* Action container styling */
+        QWidget#actionContainer {{
+            background: transparent;
+            padding: 2px;
+            margin: 0px;
+        }}
+        
+        /* Base style for all action buttons */
+        QPushButton#actionSubmitBtn, QPushButton#actionStopBtn, QPushButton#actionCancelBtn,
+        QPushButton#actionLogsBtn, QPushButton#actionDuplicateBtn, QPushButton#actionModifyBtn {{
+            border: 2px solid transparent;
+            border-radius: 10px;
+            padding: 0px;
+            margin: 1px;
+            min-width: 26px;
+            max-width: 26px;
+            min-height: 26px;
+            max-height: 26px;
+            background-repeat: no-repeat;
+            background-position: center;
+        }}
+        
+        /* Submit button */
+        QPushButton#actionSubmitBtn {{
             background-color: {COLOR_GREEN};
+            background-image: url({script_path}/src_static/submit.svg);
             border-color: {COLOR_GREEN};
         }}
-        QPushButton#submitBtn:hover {{
+        QPushButton#actionSubmitBtn:hover {{
             background-color: #12ff4a;
             border-color: #ffffff;
         }}
-        QPushButton#submitBtn:pressed {{
+        QPushButton#actionSubmitBtn:pressed {{
             background-color: #089428;
+            border-color: #089428;
         }}
-
-        QPushButton#stopBtn {{
+        QPushButton#actionSubmitBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Stop button */
+        QPushButton#actionStopBtn {{
             background-color: {COLOR_PURPLE};
+            background-image: url({script_path}/src_static/stop.svg);
             border-color: {COLOR_PURPLE};
         }}
-        QPushButton#stopBtn:hover {{
+        QPushButton#actionStopBtn:hover {{
             background-color: #a855f7;
             border-color: #ffffff;
         }}
-        QPushButton#stopBtn:pressed {{
+        QPushButton#actionStopBtn:pressed {{
             background-color: #6a03ca;
+            border-color: #6a03ca;
         }}
-
-        QPushButton#cancelBtn {{
+        QPushButton#actionStopBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Cancel/Delete button */
+        QPushButton#actionCancelBtn {{
             background-color: {COLOR_RED};
+            background-image: url({script_path}/src_static/delete.svg);
             border-color: {COLOR_RED};
         }}
-        QPushButton#cancelBtn:hover {{
+        QPushButton#actionCancelBtn:hover {{
             background-color: #ff4444;
             border-color: #ffffff;
         }}
-        QPushButton#cancelBtn:pressed {{
+        QPushButton#actionCancelBtn:pressed {{
             background-color: #c12828;
+            border-color: #c12828;
         }}
-
-        QPushButton#logsBtn {{
+        QPushButton#actionCancelBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Logs button */
+        QPushButton#actionLogsBtn {{
             background-color: #6DB8E8;
+            background-image: url({script_path}/src_static/view_logs.svg);
             border-color: #6DB8E8;
         }}
-        QPushButton#logsBtn:hover {{
+        QPushButton#actionLogsBtn:hover {{
             background-color: #8dd4ff;
             border-color: #ffffff;
         }}
-        QPushButton#logsBtn:pressed {{
+        QPushButton#actionLogsBtn:pressed {{
             background-color: #4a8bb8;
+            border-color: #4a8bb8;
         }}
-
-        QPushButton#duplicateBtn {{
+        QPushButton#actionLogsBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Duplicate button */
+        QPushButton#actionDuplicateBtn {{
             background-color: {COLOR_ORANGE};
+            background-image: url({script_path}/src_static/duplicate.svg);
             border-color: {COLOR_ORANGE};
         }}
-        QPushButton#duplicateBtn:hover {{
+        QPushButton#actionDuplicateBtn:hover {{
             background-color: #ffcc44;
             border-color: #ffffff;
         }}
-        QPushButton#duplicateBtn:pressed {{
+        QPushButton#actionDuplicateBtn:pressed {{
             background-color: #cc8f00;
+            border-color: #cc8f00;
         }}
-
-        QPushButton#modifyBtn {{
+        QPushButton#actionDuplicateBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Modify button */
+        QPushButton#actionModifyBtn {{
             background-color: #6272a4;
+            background-image: url({script_path}/src_static/edit.svg);
             border-color: #6272a4;
         }}
-        QPushButton#modifyBtn:hover {{
+        QPushButton#actionModifyBtn:hover {{
             background-color: #7b8bc4;
             border-color: #ffffff;
         }}
-        QPushButton#modifyBtn:pressed {{
+        QPushButton#actionModifyBtn:pressed {{
             background-color: #4a5578;
+            border-color: #4a5578;
+        }}
+        QPushButton#actionModifyBtn:disabled {{
+            opacity: 0.4;
         }}
         """
 
@@ -507,9 +562,10 @@ class AppStyles:
             text-align: center;
             color: {colors['fg']};
             font-size: 10pt;
+            font-weight: bold;
         }}
         QProgressBar::chunk {{
-            background-color: {COLOR_BLUE};
+            background-color: {COLOR_USED};
             border-radius: 2px;
         }}
         
@@ -587,7 +643,7 @@ class AppStyles:
         return f"""
         /* Section titles */
         QLabel#sectionTitle {{
-            font-size: 14pt;
+            font-size: 16pt;
             font-weight: bold;
             margin-bottom: 8px;
             color: {colors['fg']};
@@ -657,19 +713,21 @@ class AppStyles:
 
     @classmethod
     def get_job_action_container_styles(cls):
-        """Styles for job action button containers"""
+        """Styles for job action button containers - DEPRECATED, use get_job_action_styles instead"""
         return """
         QWidget#actionContainer {
             background: transparent;
-            padding: 2px;
+            padding: 5px;
         }
         """
+    
     @classmethod
     def get_complete_stylesheet(cls, theme=THEME_DARK):
         """Get complete stylesheet for the application"""
         stylesheet = ""
         stylesheet += cls.get_main_window_style(theme)
         stylesheet += cls.get_button_styles(theme)
+        stylesheet += cls.get_job_action_styles(theme)  # Add job action styles
         stylesheet += cls.get_input_styles(theme)
         stylesheet += cls.get_table_styles(theme)
         stylesheet += cls.get_combobox_styles(theme)
