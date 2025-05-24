@@ -34,7 +34,7 @@ from modules.defaults import (
     scroll_bar_stylesheet,
     STATE_COLORS
 )
-
+from style import AppStyles
 
 
 
@@ -76,61 +76,15 @@ class JobsGroup(QWidget):
         self._apply_stylesheet()
 
     def _apply_stylesheet(self):
-        style = f"""
-            QTableWidget {{
-                background-color: {BASE_BG};
-                color: {FG};
-                selection-background-color: {BASE_BG};
-                selection-color: {FG};
-                gridline-color: {BASE_BG};
-                border: 1px solid {GRID};
-                border-radius: 14px;
-                font-size: 14px;
-                show-decoration-selected: 1;
-                padding-top: 5px;
-            }}
-            QTableWidget::item {{
-                background-color: {ALT_BG};
-                border: 0px solid {GRID};
-                border-radius: 14px;
-                margin-top: 2px;
-                margin-bottom: 2px;
-                padding: 5px;
-            }}
-            QTableWidget::item:hover {{
-                background-color: {HOVER_BG};
-            }}
-            QHeaderView::section {{
-                background-color: {ALT_BG};
-                color: {FG};
-                padding: 6px;
-                border: 0px solid {GRID};
-                border-bottom: 2px solid {COLOR_BLUE};
-                font-weight: bold;
-                border-radius: 14px;
-            }}
-            
-            QPushButton {{
-                border: none;
-                border-radius: 14px;
-                min-width: 30px;
-                min-height: 30px;
-                max-width: 30px;
-                max-height: 30px;
-                padding: 0px;
-            }}
-            
-            QPushButton#submitBtn {{ background-color: {COLOR_GREEN}; }}
-            QPushButton#stopBtn {{ background-color: {COLOR_PURPLE}; }}
-            QPushButton#cancelBtn {{ background-color: {COLOR_RED}; }}
-            QPushButton#logsBtn {{ background-color: #6DB8E8; }}
-            QPushButton#duplicateBtn {{ background-color: {COLOR_ORANGE}; }}
-            QPushButton#modifyBtn {{ background-color: #6272a4; }}
-            
-            QWidget#actionContainer {{ background: transparent; }}
-        """ + scroll_bar_stylesheet
+        """Apply centralized styles to the jobs group"""
+        # Use centralized styling system
+        style = AppStyles.get_table_styles()
+        style += AppStyles.get_button_styles()
+        style += AppStyles.get_scrollbar_styles()
+        style += AppStyles.get_job_action_container_styles()
+        
         self.setStyleSheet(style)
-
+        
     def _create_action_button(self, icon_path, tooltip, button_id):
         """Create an action button with a simple ID-based style"""
         button = QPushButton()
@@ -467,38 +421,6 @@ class JobsGroup(QWidget):
             # Update tracking
             if project_name in self._project_jobs and job_id in self._project_jobs[project_name]:
                 del self._project_jobs[project_name][job_id]
-
-    def highlight_job_row(self, project_name: str, job_id: str, duration: int = 3000):
-        """Briefly highlight a job row to draw attention to status changes."""
-        if project_name not in self._indices:
-            return
-            
-        table = self._stack.widget(self._indices[project_name])
-        if not table:
-            return
-            
-        row = self._find_job_row(table, job_id)
-        if row == -1:
-            return
-            
-        # Temporarily change row background color
-        original_colors = []
-        highlight_color = QtGui.QColor("#4CAF50")  # Green highlight
-        
-        for col in range(table.columnCount() - 1):  # Exclude actions column
-            item = table.item(row, col)
-            if item:
-                original_colors.append(item.background())
-                item.setBackground(highlight_color)
-        
-        # Use QTimer to restore original colors after duration
-        def restore_colors():
-            for col, original_color in enumerate(original_colors):
-                item = table.item(row, col)
-                if item:
-                    item.setBackground(original_color)
-        
-        QTimer.singleShot(duration, restore_colors)
 
     def show_project(self, project_name: str) -> None:
         """Show the specified project's table"""

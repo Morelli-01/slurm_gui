@@ -8,16 +8,13 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from modules.defaults import *
-from utils import get_dark_theme_stylesheet, get_light_theme_stylesheet
+from style import AppStyles
 
 
 class SettingsWidget(QWidget):
     def __init__(self, parent=..., flags=...):
         super().__init__()
-        self.themes = {
-            THEME_DARK: get_dark_theme_stylesheet(),
-            THEME_LIGHT: get_light_theme_stylesheet(),
-        }
+        self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
         self.current_theme = THEME_DARK
         settings_layout = QVBoxLayout(self)
         settings_layout.setContentsMargins(25, 25, 25, 25)

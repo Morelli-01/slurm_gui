@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QColor, QFont, QBrush, QPalette
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from modules.defaults import *
-from utils import get_dark_theme_stylesheet
 
 from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtCore import Qt

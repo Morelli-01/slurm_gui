@@ -10,6 +10,7 @@ from slurm_connection import SlurmConnection
 from utils import script_dir
 import time
 import threading
+from style import AppStyles
 
 
 class ContinuousLogFetcherThread(QThread):
@@ -142,76 +143,11 @@ class JobLogsDialog(QDialog):
         self._setup_ui()
         self._load_job_data()
         self._start_continuous_fetching()
-    
+        
     def _setup_stylesheet(self):
         """Set up the dialog styling"""
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {COLOR_DARK_BG};
-                color: {COLOR_DARK_FG};
-            }}
-            QLabel {{
-                background-color: {COLOR_DARK_BG};
-                color: {COLOR_DARK_FG};
-                font-size: 14px;
-            }}
-            QTextEdit {{
-                background-color: {COLOR_DARK_BG_ALT};
-                color: {COLOR_DARK_FG};
-                border: 1px solid {COLOR_DARK_BORDER};
-                border-radius: 5px;
-                padding: 10px;
-                font-family: "Consolas", "Monaco", "Courier New", monospace;
-                font-size: 12px;
-                line-height: 1.4;
-            }}
-            QPushButton {{
-                background-color: {COLOR_DARK_BORDER};
-                color: {COLOR_DARK_FG};
-                border: none;
-                border-radius: 5px;
-                padding: 8px 16px;
-                font-size: 14px;
-                min-width: 80px;
-            }}
-            QPushButton:hover {{
-                background-color: #3a3d4d;
-            }}
-            QPushButton[objectName="{BTN_BLUE}"] {{
-                background-color: {COLOR_BLUE};
-                color: #000000;
-                font-weight: bold;
-            }}
-            QPushButton[objectName="{BTN_BLUE}"]:hover {{
-                background-color: #c4f5ff;
-            }}
-            QPushButton:disabled {{
-                background-color: #2a2d3a;
-                color: #666666;
-            }}
-            QTabWidget::pane {{
-                border: 1px solid {COLOR_DARK_BORDER};
-                background-color: {COLOR_DARK_BG};
-                border-radius: 5px;
-            }}
-            QTabBar::tab {{
-                background-color: {COLOR_DARK_BG_ALT};
-                color: {COLOR_DARK_FG};
-                padding: 8px 16px;
-                border-top-left-radius: 5px;
-                border-top-right-radius: 5px;
-                margin-right: 2px;
-            }}
-            QTabBar::tab:selected {{
-                background-color: {COLOR_BLUE};
-                color: #000000;
-                font-weight: bold;
-            }}
-            QTabBar::tab:hover:!selected {{
-                background-color: #3a3d4d;
-            }}
-        """)
-    
+        self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
+
     def _setup_ui(self):
         """Set up the user interface"""
         layout = QVBoxLayout(self)

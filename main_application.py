@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie, QFontMetrics, QScreen
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QStandardPaths
+from style import AppStyles
 
 # Get the script directory to construct relative paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -88,7 +89,9 @@ class ConnectionSetupDialog(QDialog):
         base_width = 400
         scaled_width = get_dpi_aware_size(base_width)
         self.setMinimumWidth(scaled_width)
-
+        self.setStyleSheet(AppStyles.get_dialog_styles() + 
+                        AppStyles.get_input_styles() + 
+                        AppStyles.get_button_styles())
         layout = QVBoxLayout(self)
         
         # Scale spacing based on DPI
@@ -169,12 +172,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.setWindowIcon(QIcon(window_icon_path))
 
         # --- Theme Setup ---
-        self.themes = {
-            THEME_DARK: get_dark_theme_stylesheet(),
-            THEME_LIGHT: get_light_theme_stylesheet(),
-        }
         self.current_theme = THEME_DARK
-        self.setStyleSheet(self.themes[self.current_theme])
+        self.apply_theme()
 
         # --- Central Widget and Layout ---
         self.central_widget = QWidget()
@@ -298,13 +297,14 @@ class SlurmJobManagerApp(QMainWindow):
     # --- Theme Handling ---
     def change_theme(self, theme_name):
         """Applies the selected theme stylesheet."""
-        if theme_name in self.themes:
+        if theme_name in [THEME_DARK, THEME_LIGHT]:
             self.current_theme = theme_name
-            self.setStyleSheet(self.themes[theme_name])
-            self.cluster_status_overview_widget.setStyleSheet(
-                self.cluster_status_overview_widget.themes[theme_name]
-            )
-            self.job_queue_widget.setStyleSheet(self.themes[theme_name])
+            self.apply_theme()
+            
+            # Update cluster status widget theme
+            self.cluster_status_overview_widget.switch_theme(theme_name)
+            
+            # Update separator color
             separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
             for i in range(self.main_layout.count()):
                 widget = self.main_layout.itemAt(i).widget()
@@ -627,6 +627,10 @@ class SlurmJobManagerApp(QMainWindow):
         print("Closing application.")
         event.accept()
 
+    def apply_theme(self):
+        """Apply the current theme using centralized styles"""
+        stylesheet = AppStyles.get_complete_stylesheet(self.current_theme)
+        self.setStyleSheet(stylesheet)
 
 # --- Main Execution ---
 if __name__ == "__main__":

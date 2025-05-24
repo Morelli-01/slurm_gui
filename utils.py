@@ -16,6 +16,7 @@ BTN_RED = "btnRed"
 BTN_BLUE = "btnBlue"
 
 
+
 def parse_memory_size(size_str):
     """Convert memory size string with suffix to bytes as integer"""
 
@@ -196,58 +197,6 @@ class ButtonGroupWidget(QWidget):  # Assuming this is a QWidget subclass
             return checked_btn.text()
         return None
 
-# --- Stylesheet Definitions ---
-
-
-def get_dark_theme_stylesheet():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    settings_path = os.path.join(script_dir, "configs", "settings.ini")
-    configs_dir = os.path.join(script_dir, "configs")
-    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
-    dark_theme_path = os.path.join(script_dir, "src_static", "dark_theme.txt")
-    with open(str(dark_theme_path), "r") as f:
-        stylesheet_template = f.read()
-
-    return stylesheet_template.format(
-        COLOR_DARK_BG=COLOR_DARK_BG,
-        COLOR_DARK_FG=COLOR_DARK_FG,
-        COLOR_DARK_BG_ALT=COLOR_DARK_BG_ALT,
-        COLOR_DARK_BG_HOVER=COLOR_DARK_BG_HOVER,
-        COLOR_DARK_BORDER=COLOR_DARK_BORDER,
-        COLOR_GREEN=COLOR_GREEN,
-        COLOR_RED=COLOR_RED,
-        COLOR_BLUE=COLOR_BLUE,
-        COLOR_ORANGE=COLOR_ORANGE,
-        BTN_GREEN=BTN_GREEN,
-        BTN_RED=BTN_RED,
-        BTN_BLUE=BTN_BLUE,
-    )
-
-
-def get_light_theme_stylesheet():
-    """Loads and returns the CSS stylesheet for the light theme from a file."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    settings_path = os.path.join(script_dir, "configs", "settings.ini")
-    configs_dir = os.path.join(script_dir, "configs")
-    default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
-    light_theme_path = os.path.join(script_dir, "src_static", "light_theme.txt")
-    with open(str(light_theme_path), "r") as f:
-        stylesheet = f.read()
-
-    return stylesheet.format(
-        COLOR_LIGHT_BG=COLOR_LIGHT_BG,
-        COLOR_LIGHT_FG=COLOR_LIGHT_FG,
-        COLOR_LIGHT_BG_ALT=COLOR_LIGHT_BG_ALT,
-        COLOR_LIGHT_BG_HOVER=COLOR_LIGHT_BG_HOVER,
-        COLOR_LIGHT_BORDER=COLOR_LIGHT_BORDER,
-        COLOR_GREEN=COLOR_GREEN,
-        COLOR_RED=COLOR_RED,
-        COLOR_BLUE=COLOR_BLUE,
-        COLOR_ORANGE=COLOR_ORANGE,
-        BTN_GREEN=BTN_GREEN,
-        BTN_RED=BTN_RED,
-        BTN_BLUE=BTN_BLUE,
-    )
 
 def create_separator(shape=QFrame.Shape.HLine, color=COLOR_DARK_BORDER):
     """Creates a styled separator QFrame."""

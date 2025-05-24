@@ -14,12 +14,12 @@ from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
 from modules import project_store
 from modules.job_logs import JobLogsDialog
 from slurm_connection import SlurmConnection
-from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_stylesheet, script_dir
+from utils import create_separator, script_dir
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
 from modules.new_job_dp import ModifyJobDialog, NewJobDialog
-# Add a new dialog for creating a new job
+from style import AppStyles
 
 
 class CustomInputDialog(QDialog):
@@ -28,39 +28,9 @@ class CustomInputDialog(QDialog):
         self.setWindowTitle("New Project")
         self.setMinimumSize(400, 180)  # Larger size
 
-        # Set window background color
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #565a70;
-                color: #f8f8f2;
-            }
-            QLabel{
-            background-color: #565a70;
-            }
-            QLineEdit {
-                background-color: #44475a;
-                color: #f8f8f2;
-                border: 1px solid #6272a4;
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 14px;
-            }
-            QPushButton {
-                background-color: #6272a4;
-                color: #f8f8f2;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #7281b5;
-            }
-            QLabel {
-                color: #f8f8f2;
-                font-size: 16px;
-            }
-        """)
+        self.setStyleSheet(AppStyles.get_dialog_styles() +
+                           AppStyles.get_input_styles() +
+                           AppStyles.get_button_styles())
 
         # Create widgets
         self.label = QLabel("Enter project name:")
@@ -106,35 +76,8 @@ class CustomConfirmDialog(QDialog):
         self.setMinimumSize(400, 180)  # Larger size
 
         # Set window background color - same as CustomInputDialog
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #565a70;
-                color: #f8f8f2;
-            }
-            QLabel {
-                background-color: #565a70;
-                color: #f8f8f2;
-                font-size: 16px;
-            }
-            QPushButton {
-                background-color: #6272a4;
-                color: #f8f8f2;
-                border: none;
-                border-radius: 4px;
-                padding: 10px 20px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #7281b5;
-            }
-            #confirm_btn {
-                background-color: #ff5555;
-            }
-            #confirm_btn:hover {
-                background-color: #ff6e6e;
-            }
-        """)
-
+        self.setStyleSheet(AppStyles.get_dialog_styles() +
+                           AppStyles.get_button_styles())
         # Create widgets
         self.label = QLabel(message)
         self.label.setFont(QFont("Arial", 12))
@@ -1199,8 +1142,8 @@ class JobsPanel(QWidget):
                         project_name, old_job_id, str(new_job_id), job_row)
 
                     # Highlight the submitted job briefly
-                    self.jobs_group.highlight_job_row(
-                        project_name, str(new_job_id), 2000)
+                    # self.jobs_group.highlight_job_row(
+                    #     project_name, str(new_job_id), 2000)
 
                 # Show success message
                 QMessageBox.information(self, "Job Submitted",
