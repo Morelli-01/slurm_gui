@@ -188,7 +188,7 @@ class JobsGroup(QWidget):
             stop_btn.setEnabled(job_status in ["RUNNING", "PENDING"])
             cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
             logs_btn.setEnabled(True)
-            modify_btn.setEnabled(job_status == "NOT_SUBMITTED")
+            modify_btn.setEnabled(job_status == "NOT_SUBMITTED")  # Only allow modify for not submitted jobs
             duplicate_btn.setEnabled(True)
 
         # Add buttons to layout
@@ -200,7 +200,6 @@ class JobsGroup(QWidget):
         layout.addWidget(modify_btn)
 
         return container
-
     def add_project(self, project_name: str, headers: List[str] | None = None) -> QTableWidget:
         """Add a project table if it doesn't exist"""
         if project_name in self._indices:

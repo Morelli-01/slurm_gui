@@ -18,7 +18,7 @@ from utils import create_separator, get_dark_theme_stylesheet, get_light_theme_s
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
-from modules.new_job_dp import NewJobDialog
+from modules.new_job_dp import ModifyJobDialog, NewJobDialog
 # Add a new dialog for creating a new job
 
 
@@ -418,7 +418,8 @@ class ProjectWidget(QGroupBox):
         # Map of status keys to counts
         status_mapping = {
             "COMPLETED": job_stats.get("COMPLETED", 0),
-            "FAILED": job_stats.get("FAILED", 0) + job_stats.get("CANCELLED", 0),  # Count cancelled as failed
+            # Count cancelled as failed
+            "FAILED": job_stats.get("FAILED", 0) + job_stats.get("CANCELLED", 0),
             "PENDING": job_stats.get("PENDING", 0) + job_stats.get("NOT_SUBMITTED", 0),
             "RUNNING": job_stats.get("RUNNING", 0),
         }
@@ -807,6 +808,7 @@ class JobsPanel(QWidget):
         self.jobs_group.stopRequested.connect(self.stop_job)
         self.jobs_group.logsRequested.connect(self.show_job_logs)
         self.jobs_group.duplicateRequested.connect(self.duplicate_job)
+        self.jobs_group.modifyRequested.connect(self.modify_job)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1315,33 +1317,36 @@ class JobsPanel(QWidget):
             )
             import traceback
             traceback.print_exc()
-       
+
     def duplicate_job(self, project_name, job_id):
         """Duplicate an existing job with a new name"""
         if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to project store.")
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
             return
 
         try:
             # Get the original job
             project = self.project_storer.get(project_name)
             if not project:
-                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
                 return
 
             original_job = project.get_job(job_id)
             if not original_job:
-                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
                 return
 
             # Ask user for new job name
             new_name, ok = QInputDialog.getText(
-                self, 
-                "Duplicate Job", 
+                self,
+                "Duplicate Job",
                 f"Enter name for duplicated job (original: '{original_job.name}'):",
                 text=f"{original_job.name}_copy"
             )
-            
+
             if not ok or not new_name.strip():
                 return  # User cancelled or entered empty name
 
@@ -1373,7 +1378,8 @@ class JobsPanel(QWidget):
                 job_details["dependency"] = original_job.dependency
 
             # Create the duplicated job
-            new_job_id = self.project_storer.add_new_job(project_name, job_details)
+            new_job_id = self.project_storer.add_new_job(
+                project_name, job_details)
 
             if new_job_id:
                 # Parse GPU count from gres if available
@@ -1401,7 +1407,7 @@ class JobsPanel(QWidget):
 
                 # Add the job to the jobs group UI
                 self.jobs_group.add_single_job(project_name, job_row)
-                
+
                 # Update project status display
                 # self.project_group.update_project_status(project_name)
                 if project_name in self.project_group.projects_children:
@@ -1424,7 +1430,135 @@ class JobsPanel(QWidget):
             )
             import traceback
             traceback.print_exc()
-    # SIMPLIFIED PROJECT LOADING
+
+    def modify_job(self, project_name, job_id):
+        """Modify an existing job"""
+        if not self.project_storer:
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
+            return
+
+        try:
+            # Get the job to modify
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            # Only allow modification of NOT_SUBMITTED jobs
+            if job.status != "NOT_SUBMITTED":
+                QMessageBox.warning(
+                    self,
+                    "Cannot Modify Job",
+                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'.\n"
+                    "Only jobs with status 'NOT_SUBMITTED' can be modified."
+                )
+                return
+
+            # Open the modify dialog
+            dialog = ModifyJobDialog(
+                job=job,
+                project_name=project_name,
+                slurm_connection=self.slurm_connection,
+                parent=self
+            )
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                modified_details = dialog.get_job_details()
+
+                try:
+                    # Update the job in the project store
+                    self._update_job_from_details(job, modified_details)
+
+                    # Update the job in the store
+                    self.project_storer.add_job(project_name, job)
+
+                    # Update the UI
+                    job_row = job.to_table_row()
+                    self.jobs_group.update_single_job_row(
+                        project_name, str(job_id), job_row)
+
+                    # Show success message
+                    QMessageBox.information(
+                        self,
+                        "Job Modified",
+                        f"Job '{job.name}' has been successfully modified."
+                    )
+
+                except Exception as e:
+                    QMessageBox.critical(
+                        self,
+                        "Modification Error",
+                        f"An error occurred while modifying the job: {str(e)}"
+                    )
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Modification Error",
+                f"An error occurred while opening the modify dialog: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
+    def _update_job_from_details(self, job, details):
+        """Update job object with new details from the modify dialog"""
+
+        # Update basic job information
+        job.name = details.get("job_name", job.name)
+        job.partition = details.get("partition", job.partition)
+        job.account = details.get("account", job.account)
+        job.time_limit = details.get("time_limit", job.time_limit)
+        job.command = details.get("command", job.command)
+        job.nodes = details.get("nodes", job.nodes)
+        job.cpus = details.get("cpus_per_task", job.cpus)
+        job.memory = details.get("memory", job.memory)
+
+        # Update optional fields
+        job.constraints = details.get("constraint", job.constraints)
+        job.qos = details.get("qos", job.qos)
+        job.gres = details.get("gres", job.gres)
+        job.output_file = details.get("output_file", job.output_file)
+        job.error_file = details.get("error_file", job.error_file)
+        job.working_dir = details.get("working_dir", job.working_dir)
+
+        # Update GPU count from GRES if available
+        if job.gres and "gpu:" in job.gres:
+            try:
+                gpu_parts = job.gres.split(":")
+                if len(gpu_parts) == 2:  # Format: gpu:N
+                    job.gpus = int(gpu_parts[1])
+                elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                    job.gpus = int(gpu_parts[2])
+            except (ValueError, IndexError):
+                pass  # Keep existing GPU count if parsing fails
+
+        # Update job array settings
+        if "array" in details:
+            job.array_spec = details["array"]
+            if "array_max_jobs" in details:
+                job.array_max_jobs = details["array_max_jobs"]
+        else:
+            job.array_spec = None
+            job.array_max_jobs = None
+
+        # Update dependencies
+        if "dependency" in details:
+            job.dependency = details["dependency"]
+        else:
+            job.dependency = None
+
+        # Update submission details for later use
+        job.info["submission_details"] = details
 
     def start_project_loading(self):
         """

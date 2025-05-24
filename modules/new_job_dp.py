@@ -375,12 +375,12 @@ class NewJobDialog(QDialog):
 
         # Essential tab
         self.essential_tab = QWidget()
-        self.tabs.addTab(self.essential_tab, "Essential Settings")
+        self.tabs.addTab(self.essential_tab, "Essentials")
         self._setup_essential_tab()
 
         # Advanced tab
         self.advanced_tab = QWidget()
-        self.tabs.addTab(self.advanced_tab, "Advanced Settings")
+        self.tabs.addTab(self.advanced_tab, "Advanced")
         self._setup_advanced_tab()
 
         # Command tab
@@ -390,7 +390,7 @@ class NewJobDialog(QDialog):
 
         # NEW: Job Array Tab
         self.job_array_tab = QWidget()
-        self.tabs.addTab(self.job_array_tab, "Job Array Settings")
+        self.tabs.addTab(self.job_array_tab, "Job Array")
         self._setup_job_array_tab()  # Call the new setup method
 
         # NEW: Job Dependencies Tab
@@ -860,7 +860,7 @@ class NewJobDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
 
         # Job Dependencies Group
-        self.dependency_group = QGroupBox("Job Dependencies Settings")
+        self.dependency_group = QGroupBox("Job Dependencies")
         # Removed setCheckable and setChecked
         self.dependency_group.setContentsMargins(
             0, 0, 0, 0)  # Adjusted margins
@@ -1313,3 +1313,228 @@ class NewJobDialog(QDialog):
             if selected_directory:
                 self.working_dir_edit.setText(selected_directory)
                 self._update_preview()  # Update preview after changing working directory
+
+"""
+Dialog for modifying existing job parameters.
+Inherits from NewJobDialog and pre-fills fields with existing job data.
+"""
+
+class ModifyJobDialog(NewJobDialog):
+    """
+    Dialog for modifying existing job parameters.
+    Inherits from NewJobDialog and pre-fills fields with existing job data.
+    """
+    
+    def __init__(self, job, project_name, slurm_connection=None, parent=None):
+        self.job = job
+        self.project_name = project_name
+        
+        # Call parent constructor but override the window title
+        super().__init__(project_name, slurm_connection, parent)
+        
+        # Update window title and header
+        self.setWindowTitle(f"Modify Job: {job.name}")
+        self._update_header_for_modify()
+        
+        # Pre-fill all fields with existing job data
+        self._populate_fields_from_job()
+        
+    def _update_header_for_modify(self):
+        """Update the dialog header to reflect modify mode"""
+        # Find and update the header label
+        for i in range(self.main_layout.count()):
+            item = self.main_layout.itemAt(i)
+            if item and item.layout():
+                layout = item.layout()
+                for j in range(layout.count()):
+                    widget = layout.itemAt(j).widget()
+                    if isinstance(widget, QLabel) and "New Job for Project" in widget.text():
+                        widget.setText(f"Modify Job: {self.job.name}")
+                        widget.setStyleSheet(f"color: {COLOR_ORANGE}; font-size: 14px; font-weight: bold;")
+                        break
+                        
+        # Update the create button text and icon
+        self.create_button.setText("Save Changes")
+        self.create_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
+        
+    def _populate_fields_from_job(self):
+        """Pre-fill all dialog fields with data from the existing job"""
+        
+        # Essential tab fields
+        if self.job.name:
+            self.job_name_edit.setText(self.job.name)
+            
+        if self.job.partition:
+            index = self.partition_combo.findText(self.job.partition)
+            if index >= 0:
+                self.partition_combo.setCurrentIndex(index)
+                
+        if self.job.account:
+            index = self.account_combo.findText(self.job.account)
+            if index >= 0:
+                self.account_combo.setCurrentIndex(index)
+                
+        if self.job.time_limit:
+            try:
+                # Parse time limit string (HH:MM:SS format)
+                time_parts = self.job.time_limit.split(':')
+                if len(time_parts) == 3:
+                    hours, minutes, seconds = map(int, time_parts)
+                    time = QTime(hours, minutes, seconds)
+                    self.time_limit_edit.setTime(time)
+            except (ValueError, AttributeError):
+                pass
+                
+        if self.job.nodes:
+            self.nodes_spin.setValue(self.job.nodes)
+            
+        if self.job.cpus:
+            self.cpu_per_task_spin.setValue(self.job.cpus)
+            
+        # Parse memory
+        if self.job.memory:
+            try:
+                memory_str = self.job.memory.upper()
+                if memory_str.endswith('G') or memory_str.endswith('GB'):
+                    value = float(memory_str.rstrip('GB'))
+                    self.memory_spin.setValue(int(value))
+                    self.memory_unit_combo.setCurrentText("GB")
+                elif memory_str.endswith('M') or memory_str.endswith('MB'):
+                    value = float(memory_str.rstrip('MB'))
+                    self.memory_spin.setValue(int(value))
+                    self.memory_unit_combo.setCurrentText("MB")
+            except (ValueError, AttributeError):
+                pass
+        
+        # Advanced tab fields
+        if self.job.constraints:
+            # Handle constraints - need to check items in the CheckableComboBox
+            constraints_str = self.job.constraints.strip('"') if self.job.constraints else ""
+            if constraints_str:
+                constraints = constraints_str.split('|')
+                for i in range(self.constraint_combo.model.rowCount()):
+                    item = self.constraint_combo.model.item(i)
+                    if item and item.text() in constraints:
+                        item.setCheckState(Qt.CheckState.Checked)
+                self.constraint_combo._update_selected_text()
+            
+        if self.job.qos:
+            index = self.qos_combo.findText(self.job.qos)
+            if index >= 0:
+                self.qos_combo.setCurrentIndex(index)
+            else:
+                # If QoS not in list, set to "None"
+                none_index = self.qos_combo.findText("None")
+                if none_index >= 0:
+                    self.qos_combo.setCurrentIndex(none_index)
+                    
+        # GPU settings
+        if self.job.gres and "gpu" in self.job.gres.lower():
+            self.gpu_check.setChecked(True)
+            self._toggle_gpu_selection(True)
+            
+            try:
+                # Parse GPU specification (e.g., "gpu:rtx5000:2" or "gpu:2")
+                gpu_parts = self.job.gres.split(':')
+                if len(gpu_parts) == 2:  # gpu:count
+                    gpu_count = int(gpu_parts[1])
+                    self.gpu_type_combo.setCurrentText("any")
+                    self.gpu_count_spin.setValue(gpu_count)
+                elif len(gpu_parts) == 3:  # gpu:type:count
+                    gpu_type = gpu_parts[1]
+                    gpu_count = int(gpu_parts[2])
+                    type_index = self.gpu_type_combo.findText(gpu_type)
+                    if type_index >= 0:
+                        self.gpu_type_combo.setCurrentIndex(type_index)
+                    self.gpu_count_spin.setValue(gpu_count)
+            except (ValueError, IndexError, AttributeError):
+                pass
+                
+        if self.job.output_file:
+            self.output_file_edit.setText(self.job.output_file)
+            
+        if self.job.error_file:
+            self.error_file_edit.setText(self.job.error_file)
+            
+        if self.job.working_dir:
+            self.working_dir_edit.setText(self.job.working_dir)
+            
+        # Command tab
+        if self.job.command:
+            self.command_text.setPlainText(self.job.command)
+            
+        # Job Array tab
+        if self.job.array_spec:
+            self.array_group.setChecked(True)
+            
+            # Parse array specification
+            array_spec = self.job.array_spec
+            if '-' in array_spec and ':' in array_spec:
+                # Range with step (e.g., "1-10:2")
+                self.array_format_combo.setCurrentIndex(2)  # Range with step
+                try:
+                    range_part, step = array_spec.split(':')
+                    start, end = range_part.split('-')
+                    self.array_start_spin.setValue(int(start))
+                    self.array_end_spin.setValue(int(end))
+                    self.array_step_spin.setValue(int(step))
+                except ValueError:
+                    pass
+            elif '-' in array_spec:
+                # Simple range (e.g., "1-10")
+                self.array_format_combo.setCurrentIndex(0)  # Range
+                try:
+                    start, end = array_spec.split('-')
+                    self.array_start_spin.setValue(int(start))
+                    self.array_end_spin.setValue(int(end))
+                except ValueError:
+                    pass
+            else:
+                # Assume it's a list format
+                self.array_format_combo.setCurrentIndex(1)  # List
+                self.array_list_edit.setText(array_spec)
+                
+            self._update_array_inputs(self.array_format_combo.currentIndex())
+            
+            # Set max concurrent jobs if specified
+            if self.job.array_max_jobs:
+                self.max_jobs_check.setChecked(True)
+                self.max_jobs_spin.setValue(self.job.array_max_jobs)
+                self._toggle_max_jobs(True)
+                
+        # Dependencies tab
+        if self.job.dependency:
+            dep_parts = self.job.dependency.split(':')
+            if len(dep_parts) >= 1:
+                dep_type = dep_parts[0]
+                
+                # Find matching dependency type in combo
+                for i in range(self.dep_type_combo.count()):
+                    item_text = self.dep_type_combo.itemText(i)
+                    if item_text.startswith(dep_type):
+                        self.dep_type_combo.setCurrentIndex(i)
+                        break
+                        
+                # Add job IDs if not singleton
+                if dep_type != "singleton" and len(dep_parts) > 1:
+                    job_ids = dep_parts[1].split(',') if len(dep_parts) > 1 else []
+                    for job_id in job_ids:
+                        if job_id.strip():
+                            self.dep_id_display_combo.addItem(job_id.strip())
+                            
+        # Update the preview after populating all fields
+        self._update_preview()
+        
+    def get_job_details(self):
+        """
+        Override to return modified job details.
+        This method is called when the user clicks "Save Changes"
+        """
+        # Get the base job details from parent class
+        details = super().get_job_details()
+        
+        # Add any additional information needed for modification
+        details["original_job_id"] = self.job.id
+        details["is_modification"] = True
+        
+        return details

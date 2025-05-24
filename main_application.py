@@ -29,8 +29,8 @@ APP_TITLE = "SlurmAIO"
 # Base dimensions as percentages of screen size
 SCREEN_WIDTH_PERCENTAGE = 0.8  # Use 80% of screen width
 SCREEN_HEIGHT_PERCENTAGE = 0.85  # Use 80% of screen height
-MIN_WIDTH_PERCENTAGE = 0.6  # Minimum 60% of screen width
-MIN_HEIGHT_PERCENTAGE = 0.85  # Minimum 60% of screen height
+MIN_WIDTH_PERCENTAGE = 0.4  # Minimum 60% of screen width
+MIN_HEIGHT_PERCENTAGE = 0.4  # Minimum 60% of screen height
 REFRESH_INTERVAL_MS = 5000  # 5 seconds
 
 
