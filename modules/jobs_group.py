@@ -37,7 +37,6 @@ from modules.defaults import (
 from style import AppStyles
 
 
-
 class JobsGroup(QWidget):
     """Container for project-specific job tables with efficient updates."""
 
@@ -49,7 +48,7 @@ class JobsGroup(QWidget):
     submitRequested = pyqtSignal(str, object)
     duplicateRequested = pyqtSignal(str, object)
     modifyRequested = pyqtSignal(str, object)
-    
+
     _ROW_HEIGHT = 50
 
     def __init__(self, parent: QWidget | None = None):
@@ -57,13 +56,14 @@ class JobsGroup(QWidget):
 
         self._stack = QStackedLayout(self)
         self._indices: Dict[str, int] = {}
-        
+
         # Track job data for each project to enable efficient updates
-        self._project_jobs: Dict[str, Dict[str, List[Any]]] = {}  # {project: {job_id: job_data}}
+        # {project: {job_id: job_data}}
+        self._project_jobs: Dict[str, Dict[str, List[Any]]] = {}
 
         self._default_headers = [
             "Job ID",
-            "Name", 
+            "Name",
             "Status",
             "Runtime",
             "CPU",
@@ -72,7 +72,8 @@ class JobsGroup(QWidget):
             "Actions",
         ]
 
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Expanding)
         self._apply_stylesheet()
 
     def _apply_stylesheet(self):
@@ -82,67 +83,83 @@ class JobsGroup(QWidget):
         style += AppStyles.get_button_styles()
         style += AppStyles.get_scrollbar_styles()
         style += AppStyles.get_job_action_container_styles()
-        
+
         self.setStyleSheet(style)
-        
+    
     def _create_action_button(self, icon_path, tooltip, button_id):
-        """Create an action button with a simple ID-based style"""
+        """Create an action button with consistent sizing"""
         button = QPushButton()
         button.setObjectName(button_id)
         button.setToolTip(tooltip)
-        button.setFixedSize(30, 30)
+        button.setFixedSize(30, 30)  # Consistent size
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         icon = QtGui.QIcon(icon_path)
         if icon.isNull():
             print(f"Warning: Could not load icon from {icon_path}")
         button.setIcon(icon)
-        button.setIconSize(QSize(16, 16))
+        button.setIconSize(QSize(16, 16))  # Appropriate icon size
         button.setCursor(Qt.CursorShape.PointingHandCursor)
 
         return button
-
+    
     def _create_actions_widget(self, project: str, job_id: Any, job_status: str = None) -> QWidget:
         """Creates a widget containing action buttons for a job row."""
         container = QWidget()
         container.setObjectName("actionContainer")
 
         layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setContentsMargins(5, 5, 5, 5)  # Add some padding
+        layout.setSpacing(6)  # Increase spacing between buttons
+        # Center align buttons
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Create buttons
+        # Create buttons with consistent sizing
         submit_path = os.path.join(script_dir, "src_static", "submit.svg")
-        submit_btn = self._create_action_button(submit_path, "Submit job", "submitBtn")
-        submit_btn.clicked.connect(functools.partial(self.submitRequested.emit, project, job_id))
+        submit_btn = self._create_action_button(
+            submit_path, "Submit job", "submitBtn")
+        submit_btn.clicked.connect(functools.partial(
+            self.submitRequested.emit, project, job_id))
 
         stop_path = os.path.join(script_dir, "src_static", "stop.svg")
         stop_btn = self._create_action_button(stop_path, "Stop job", "stopBtn")
-        stop_btn.clicked.connect(functools.partial(self.stopRequested.emit, project, job_id))
+        stop_btn.clicked.connect(functools.partial(
+            self.stopRequested.emit, project, job_id))
 
         cancel_path = os.path.join(script_dir, "src_static", "delete.svg")
-        cancel_btn = self._create_action_button(cancel_path, "Cancel job", "cancelBtn")
-        cancel_btn.clicked.connect(functools.partial(self.cancelRequested.emit, project, job_id))
+        cancel_btn = self._create_action_button(
+            cancel_path, "Cancel job", "cancelBtn")
+        cancel_btn.clicked.connect(functools.partial(
+            self.cancelRequested.emit, project, job_id))
 
         logs_path = os.path.join(script_dir, "src_static", "view_logs.svg")
-        logs_btn = self._create_action_button(logs_path, "View logs", "logsBtn")
-        logs_btn.clicked.connect(functools.partial(self.logsRequested.emit, project, job_id))
+        logs_btn = self._create_action_button(
+            logs_path, "View logs", "logsBtn")
+        logs_btn.clicked.connect(functools.partial(
+            self.logsRequested.emit, project, job_id))
 
-        duplicate_path = os.path.join(script_dir, "src_static", "duplicate.svg")
-        duplicate_btn = self._create_action_button(duplicate_path, "Duplicate job", "duplicateBtn")
-        duplicate_btn.clicked.connect(functools.partial(self.duplicateRequested.emit, project, job_id))
+        duplicate_path = os.path.join(
+            script_dir, "src_static", "duplicate.svg")
+        duplicate_btn = self._create_action_button(
+            duplicate_path, "Duplicate job", "duplicateBtn")
+        duplicate_btn.clicked.connect(functools.partial(
+            self.duplicateRequested.emit, project, job_id))
 
         modify_path = os.path.join(script_dir, "src_static", "edit.svg")
-        modify_btn = self._create_action_button(modify_path, "Modify job", "modifyBtn")
-        modify_btn.clicked.connect(functools.partial(self.modifyRequested.emit, project, job_id))
+        modify_btn = self._create_action_button(
+            modify_path, "Modify job", "modifyBtn")
+        modify_btn.clicked.connect(functools.partial(
+            self.modifyRequested.emit, project, job_id))
 
         # Enable/disable buttons based on job status
         if job_status:
             job_status = job_status.upper()
             submit_btn.setEnabled(job_status == "NOT_SUBMITTED")
             stop_btn.setEnabled(job_status in ["RUNNING", "PENDING"])
-            cancel_btn.setEnabled(job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
+            cancel_btn.setEnabled(
+                job_status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED"])
             logs_btn.setEnabled(True)
-            modify_btn.setEnabled(job_status == "NOT_SUBMITTED")  # Only allow modify for not submitted jobs
+            modify_btn.setEnabled(job_status == "NOT_SUBMITTED")
             duplicate_btn.setEnabled(True)
 
         # Add buttons to layout
@@ -154,6 +171,7 @@ class JobsGroup(QWidget):
         layout.addWidget(modify_btn)
 
         return container
+
     def add_project(self, project_name: str, headers: List[str] | None = None) -> QTableWidget:
         """Add a project table if it doesn't exist"""
         if project_name in self._indices:
@@ -178,19 +196,21 @@ class JobsGroup(QWidget):
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
                 table.setColumnWidth(i, 210)
             elif head in ["CPU", "GPU", "RAM"]:
-                h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+                h.setSectionResizeMode(
+                    i, QHeaderView.ResizeMode.ResizeToContents)
                 table.setColumnWidth(i, 70)
             elif head == "Name":
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
             else:
-                h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+                h.setSectionResizeMode(
+                    i, QHeaderView.ResizeMode.ResizeToContents)
 
         index = self._stack.addWidget(table)
         self._indices[project_name] = index
-        
+
         # Initialize job tracking for this project
         self._project_jobs[project_name] = {}
-        
+
         return table
 
     def _apply_state_color(self, item: QTableWidgetItem):
@@ -222,33 +242,35 @@ class JobsGroup(QWidget):
                 if not item:
                     item = QTableWidgetItem()
                     table.setItem(row, col, item)
-                
+
                 old_text = item.text()
                 new_text = str(job_data[col])
-                
+
                 # Only update if text has changed
                 if old_text != new_text:
                     item.setText(new_text)
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    
+
                     # Apply status coloring for status column
                     if col == 2:
                         self._apply_state_color(item)
-                    
+
                     # Resource columns styling
                     if 4 <= col <= 6:
-                        item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                        item.setTextAlignment(
+                            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Update action buttons only if status changed
         current_action_widget = table.cellWidget(row, actions_col)
         needs_new_actions = True
-        
+
         if current_action_widget and hasattr(current_action_widget, '_job_status'):
             if current_action_widget._job_status == job_status:
                 needs_new_actions = False
-        
+
         if needs_new_actions:
-            action_widget = self._create_actions_widget(project_name, job_id, job_status)
+            action_widget = self._create_actions_widget(
+                project_name, job_id, job_status)
             action_widget._job_status = job_status  # Store status for comparison
             table.setCellWidget(row, actions_col, action_widget)
 
@@ -273,7 +295,8 @@ class JobsGroup(QWidget):
 
             # Resource columns styling
             if 4 <= col <= 6:
-                item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                item.setTextAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
             # Apply alternating row colors
             if row_position % 2 == 0:
@@ -284,7 +307,8 @@ class JobsGroup(QWidget):
             table.setItem(row_position, col, item)
 
         # Add action buttons
-        action_widget = self._create_actions_widget(project_name, job_id, job_status)
+        action_widget = self._create_actions_widget(
+            project_name, job_id, job_status)
         action_widget._job_status = job_status
         table.setCellWidget(row_position, actions_col, action_widget)
 
@@ -295,22 +319,22 @@ class JobsGroup(QWidget):
         """
         table = self.add_project(project_name)
         rows_list = list(rows)
-        
+
         # Convert new job data to a dictionary keyed by job_id
         new_jobs = {}
         for row in rows_list:
             if row:
                 job_id = str(row[0])
                 new_jobs[job_id] = list(row)
-        
+
         # Get current jobs for this project
         current_jobs = self._project_jobs.get(project_name, {})
-        
+
         # Find jobs to update, add, or remove
         jobs_to_update = []
         jobs_to_add = []
         jobs_to_remove = []
-        
+
         for job_id, job_data in new_jobs.items():
             if job_id in current_jobs:
                 # Check if job data has changed
@@ -318,27 +342,27 @@ class JobsGroup(QWidget):
                     jobs_to_update.append((job_id, job_data))
             else:
                 jobs_to_add.append((job_id, job_data))
-        
+
         for job_id in current_jobs:
             if job_id not in new_jobs:
                 jobs_to_remove.append(job_id)
-        
+
         # Remove jobs that no longer exist
         for job_id in jobs_to_remove:
             row = self._find_job_row(table, job_id)
             if row >= 0:
                 table.removeRow(row)
-        
+
         # Update existing jobs
         for job_id, job_data in jobs_to_update:
             row = self._find_job_row(table, job_id)
             if row >= 0:
                 self._update_job_row(table, row, job_data, project_name)
-        
+
         # Add new jobs
         for job_id, job_data in jobs_to_add:
             self._add_job_row(table, job_data, project_name)
-        
+
         # Update our tracking dictionary
         self._project_jobs[project_name] = new_jobs.copy()
 
@@ -346,17 +370,18 @@ class JobsGroup(QWidget):
         """Add a single new job to the specified project's table."""
         table = self.add_project(project_name)
         job_id = str(job_data[0]) if job_data else None
-        
+
         if job_id:
             # Check if job already exists
             existing_row = self._find_job_row(table, job_id)
             if existing_row >= 0:
                 # Update existing job
-                self._update_job_row(table, existing_row, list(job_data), project_name)
+                self._update_job_row(table, existing_row,
+                                     list(job_data), project_name)
             else:
                 # Add new job
                 self._add_job_row(table, list(job_data), project_name)
-            
+
             # Update tracking
             if project_name not in self._project_jobs:
                 self._project_jobs[project_name] = {}
@@ -366,15 +391,15 @@ class JobsGroup(QWidget):
         """Update a single job row in the specified project's table."""
         if project_name not in self._indices:
             return
-            
+
         table = self._stack.widget(self._indices[project_name])
         if not table:
             return
-            
+
         row = self._find_job_row(table, job_id)
         if row >= 0:
             self._update_job_row(table, row, job_data, project_name)
-            
+
             # Update tracking
             if project_name not in self._project_jobs:
                 self._project_jobs[project_name] = {}
@@ -386,19 +411,19 @@ class JobsGroup(QWidget):
         """
         if project_name not in self._indices:
             return
-            
+
         table = self._stack.widget(self._indices[project_name])
         if not table:
             return
-            
+
         # Find and remove the old job row
         old_row = self._find_job_row(table, old_job_id)
         if old_row >= 0:
             table.removeRow(old_row)
-            
+
         # Add the new job with updated ID and data
         self._add_job_row(table, updated_job_data, project_name)
-        
+
         # Update tracking - remove old ID and add new one
         if project_name in self._project_jobs:
             if old_job_id in self._project_jobs[project_name]:
@@ -409,15 +434,15 @@ class JobsGroup(QWidget):
         """Remove a job from the project table."""
         if project_name not in self._indices:
             return
-            
+
         table = self._stack.widget(self._indices[project_name])
         if not table:
             return
-            
+
         row = self._find_job_row(table, job_id)
         if row >= 0:
             table.removeRow(row)
-            
+
             # Update tracking
             if project_name in self._project_jobs and job_id in self._project_jobs[project_name]:
                 del self._project_jobs[project_name][job_id]
@@ -435,16 +460,16 @@ class JobsGroup(QWidget):
         """Remove a project and its table"""
         if project_name not in self._indices:
             return
-            
+
         index = self._indices[project_name]
         item = self._stack.widget(index)
         self._stack.removeWidget(item)
         del self._indices[project_name]
-        
+
         # Clean up tracking
         if project_name in self._project_jobs:
             del self._project_jobs[project_name]
-        
+
         # Show first available project
         if self._indices:
             first_project = list(self._indices.keys())[0]

@@ -8,9 +8,10 @@ from modules.defaults import *
 from utils import script_dir
 # Get script directory for icon paths
 
+
 class AppStyles:
     """Central class containing all application styles"""
-    
+
     # Base colors and theme definitions
     THEMES = {
         THEME_DARK: {
@@ -28,12 +29,12 @@ class AppStyles:
             'border': COLOR_LIGHT_BORDER,
         }
     }
-    
+
     @classmethod
     def get_main_window_style(cls, theme=THEME_DARK):
         """Main window and base widget styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QMainWindow, QWidget {{
             background-color: {colors['bg']};
@@ -41,152 +42,209 @@ class AppStyles:
             font-family: Inter, sans-serif;
         }}
         """
-    
+
     @classmethod
     def get_button_styles(cls, theme=THEME_DARK):
         """All button styles including navigation and action buttons"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
-        /* Base button style */
+        /* Base button style - Clean and responsive */
         QPushButton {{
             background-color: {colors['bg_alt']};
             color: {colors['fg']};
-            border-radius: 5px;
-            padding: 8px 16px;
-            border: none;
-            font-weight: 500;
+            border-radius: 8px;
+            padding: 10px 20px;
+            border: 2px solid {colors['border']};
+            font-weight: 600;
+            font-size: 14px;
         }}
         QPushButton:hover {{
             background-color: {colors['bg_hover']};
+            border: 2px solid {COLOR_BLUE};
+            color: {COLOR_BLUE};
+        }}
+        QPushButton:pressed {{
+            background-color: {colors['bg']};
+            border: 2px solid {COLOR_BLUE};
+        }}
+        QPushButton:disabled {{
+            background-color: {colors['border']};
+            color: #666666;
+            border: 2px solid #444444;
         }}
         
-        /* Navigation buttons */
+        /* Navigation buttons - Clean tab design */
         QPushButton#navButton {{
             background-color: transparent;
             border: none;
-            border-bottom: 2px solid transparent;
-            padding: 8px 5px;
-            margin-right: 10px;
+            border-bottom: 3px solid transparent;
+            padding: 12px 20px;
+            margin-right: 8px;
             font-weight: 600;
+            font-size: 16px;
+            border-radius: 0;
         }}
         QPushButton#navButton:hover {{
-            color: {COLOR_GREEN};
+            background-color: {colors['bg_alt']};
+            color: {COLOR_BLUE};
+            border-bottom: 3px solid {COLOR_BLUE};
         }}
         QPushButton#navButtonActive {{
-            background-color: transparent;
+            background-color: {colors['bg_alt']};
             border: none;
-            border-bottom: 2px solid {COLOR_GREEN};
-            padding: 8px 5px;
-            margin-right: 10px;
-            font-weight: 600;
+            border-bottom: 3px solid {COLOR_GREEN};
+            padding: 12px 20px;
+            margin-right: 8px;
+            font-weight: 700;
             color: {COLOR_GREEN};
+            font-size: 16px;
+            border-radius: 0;
         }}
         
-        /* Colored action buttons */
+        /* Colored action buttons - Vibrant and clear feedback */
         QPushButton#{BTN_GREEN} {{
             background-color: {COLOR_GREEN};
             color: #000000;
             font-weight: bold;
+            border: 2px solid {COLOR_GREEN};
+            border-radius: 8px;
         }}
         QPushButton#{BTN_GREEN}:hover {{
-            background-color: #8affce;
+            background-color: #12ff4a;
+            border: 2px solid #ffffff;
             color: #000000;
+        }}
+        QPushButton#{BTN_GREEN}:pressed {{
+            background-color: #089428;
+            border: 2px solid #089428;
         }}
         
         QPushButton#{BTN_RED} {{
             background-color: {COLOR_RED};
-            color: #000000;
+            color: #ffffff;
             font-weight: bold;
+            border: 2px solid {COLOR_RED};
+            border-radius: 8px;
         }}
         QPushButton#{BTN_RED}:hover {{
-            background-color: #ff9e9e;
-            color: #000000;
+            background-color: #ff4444;
+            border: 2px solid #ffffff;
+            color: #ffffff;
+        }}
+        QPushButton#{BTN_RED}:pressed {{
+            background-color: #c12828;
+            border: 2px solid #c12828;
         }}
         
         QPushButton#{BTN_BLUE} {{
             background-color: {COLOR_BLUE};
             color: #000000;
             font-weight: bold;
+            border: 2px solid {COLOR_BLUE};
+            border-radius: 8px;
         }}
         QPushButton#{BTN_BLUE}:hover {{
-            background-color: #c4f5ff;
+            background-color: #a8f4ff;
+            border: 2px solid #ffffff;
             color: #000000;
         }}
+        QPushButton#{BTN_BLUE}:pressed {{
+            background-color: #4fa8d8;
+            border: 2px solid #4fa8d8;
+        }}
         
-        /* Small action buttons for job tables */
+        /* Small action buttons for job tables - Clear hover states */
+        QPushButton#submitBtn, QPushButton#stopBtn, QPushButton#cancelBtn, 
+        QPushButton#logsBtn, QPushButton#duplicateBtn, QPushButton#modifyBtn {{
+            border-radius: 15px;
+            min-width: 30px;
+            min-height: 30px;
+            max-width: 30px;
+            max-height: 30px;
+            padding: 0px;
+            margin: 2px;
+            border: 2px solid transparent;
+        }}
+
         QPushButton#submitBtn {{
             background-color: {COLOR_GREEN};
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: {COLOR_GREEN};
         }}
-        
+        QPushButton#submitBtn:hover {{
+            background-color: #12ff4a;
+            border-color: #ffffff;
+        }}
+        QPushButton#submitBtn:pressed {{
+            background-color: #089428;
+        }}
+
         QPushButton#stopBtn {{
             background-color: {COLOR_PURPLE};
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: {COLOR_PURPLE};
         }}
-        
+        QPushButton#stopBtn:hover {{
+            background-color: #a855f7;
+            border-color: #ffffff;
+        }}
+        QPushButton#stopBtn:pressed {{
+            background-color: #6a03ca;
+        }}
+
         QPushButton#cancelBtn {{
             background-color: {COLOR_RED};
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: {COLOR_RED};
         }}
-        
+        QPushButton#cancelBtn:hover {{
+            background-color: #ff4444;
+            border-color: #ffffff;
+        }}
+        QPushButton#cancelBtn:pressed {{
+            background-color: #c12828;
+        }}
+
         QPushButton#logsBtn {{
             background-color: #6DB8E8;
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: #6DB8E8;
         }}
-        
+        QPushButton#logsBtn:hover {{
+            background-color: #8dd4ff;
+            border-color: #ffffff;
+        }}
+        QPushButton#logsBtn:pressed {{
+            background-color: #4a8bb8;
+        }}
+
         QPushButton#duplicateBtn {{
             background-color: {COLOR_ORANGE};
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: {COLOR_ORANGE};
         }}
-        
+        QPushButton#duplicateBtn:hover {{
+            background-color: #ffcc44;
+            border-color: #ffffff;
+        }}
+        QPushButton#duplicateBtn:pressed {{
+            background-color: #cc8f00;
+        }}
+
         QPushButton#modifyBtn {{
             background-color: #6272a4;
-            border: none;
-            border-radius: 14px;
-            min-width: 30px;
-            min-height: 30px;
-            max-width: 30px;
-            max-height: 30px;
-            padding: 0px;
+            border-color: #6272a4;
+        }}
+        QPushButton#modifyBtn:hover {{
+            background-color: #7b8bc4;
+            border-color: #ffffff;
+        }}
+        QPushButton#modifyBtn:pressed {{
+            background-color: #4a5578;
         }}
         """
-    
+
     @classmethod
     def get_input_styles(cls, theme=THEME_DARK):
         """Input fields and form controls"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QLineEdit, QTextEdit, QSpinBox, QDoubleSpinBox, QTimeEdit {{
             background-color: {colors['bg_alt']};
@@ -201,7 +259,7 @@ class AppStyles:
             border: 1px solid {COLOR_BLUE};
         }}
         QLineEdit:focus, QTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QTimeEdit:focus {{
-            border: 1px solid {COLOR_BLUE};
+            border: 2px solid {COLOR_BLUE};
             background-color: {colors['bg']};
         }}
         
@@ -223,12 +281,12 @@ class AppStyles:
             height: 10px;
         }}
         """
-    
+
     @classmethod
     def get_table_styles(cls, theme=THEME_DARK):
         """Table and list styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QTableWidget {{
             background-color: {colors['bg']};
@@ -286,12 +344,12 @@ class AppStyles:
             color: #000000;
         }}
         """
-    
+
     @classmethod
     def get_combobox_styles(cls, theme=THEME_DARK):
         """Combobox and dropdown styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QComboBox {{
             background-color: {colors['bg_alt']};
@@ -326,12 +384,12 @@ class AppStyles:
             padding: 5px;
         }}
         """
-    
+
     @classmethod
     def get_checkbox_styles(cls, theme=THEME_DARK):
         """Checkbox styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QCheckBox {{
             color: {colors['fg']};
@@ -350,12 +408,12 @@ class AppStyles:
             image: url({os.path.join(script_dir, "src_static", "check.svg").replace('\\', '/')});
         }}
         """
-    
+
     @classmethod
     def get_groupbox_styles(cls, theme=THEME_DARK):
         """Group box styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QGroupBox {{
             border: 2px solid {colors['border']};
@@ -396,12 +454,12 @@ class AppStyles:
             image: url({os.path.join(script_dir, "src_static", "checkmark.svg").replace('\\', '/')});
         }}
         """
-    
+
     @classmethod
     def get_tab_styles(cls, theme=THEME_DARK):
         """Tab widget styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QTabWidget::pane {{
             border: 1px solid {colors['border']};
@@ -435,12 +493,12 @@ class AppStyles:
             margin-top: 2px;
         }}
         """
-    
+
     @classmethod
     def get_progressbar_styles(cls, theme=THEME_DARK):
         """Progress bar styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QProgressBar {{
             border: 1px solid {colors['border']};
@@ -469,12 +527,12 @@ class AppStyles:
             background-color: {BLOCK_COLOR_MAP['mid-constraint-ram_cpu']};
         }}
         """
-    
+
     @classmethod
     def get_scrollbar_styles(cls, theme=THEME_DARK):
         """Scrollbar styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QScrollBar:vertical {{
             border: none;
@@ -520,12 +578,12 @@ class AppStyles:
             background: none;
         }}
         """
-    
+
     @classmethod
     def get_cluster_status_styles(cls, theme=THEME_DARK):
         """Cluster status widget specific styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         /* Section titles */
         QLabel#sectionTitle {{
@@ -584,28 +642,28 @@ class AppStyles:
             border: 1px solid {BLOCK_COLOR_MAP['prod_used']};
         }}
         """
-    
+
     @classmethod
     def get_dialog_styles(cls, theme=THEME_DARK):
         """Dialog specific styles"""
         colors = cls.THEMES[theme]
-        
+
         return f"""
         QDialog {{
             background-color: {colors['bg']};
             color: {colors['fg']};
         }}
         """
-    
+
     @classmethod
     def get_job_action_container_styles(cls):
         """Styles for job action button containers"""
         return """
         QWidget#actionContainer {
             background: transparent;
+            padding: 2px;
         }
         """
-    
     @classmethod
     def get_complete_stylesheet(cls, theme=THEME_DARK):
         """Get complete stylesheet for the application"""
@@ -623,12 +681,14 @@ class AppStyles:
         stylesheet += cls.get_cluster_status_styles(theme)
         stylesheet += cls.get_dialog_styles(theme)
         stylesheet += cls.get_job_action_container_styles()
-        
+
         return stylesheet
+
 
 def get_dark_theme_stylesheet():
     """Get dark theme stylesheet - for backward compatibility"""
     return AppStyles.get_complete_stylesheet(THEME_DARK)
+
 
 def get_light_theme_stylesheet():
     """Get light theme stylesheet - for backward compatibility"""

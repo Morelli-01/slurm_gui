@@ -260,9 +260,14 @@ class SlurmJobManagerApp(QMainWindow):
                 QPushButton#statusButton {
                     background-color: #4caf50;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 8px;
                     font-weight: bold;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
+                    border: 2px solid #4caf50;
+                }
+                QPushButton#statusButton:hover {
+                    background-color: #66bb6a;
+                    border: 2px solid #ffffff;
                 }
             """)
         else:
@@ -275,9 +280,14 @@ class SlurmJobManagerApp(QMainWindow):
                 QPushButton#statusButton {
                     background-color: #f44336;
                     color: white;
-                    border-radius: 5px;
+                    border-radius: 8px;
                     font-weight: bold;
-                    padding: 6px 12px;
+                    padding: 8px 16px;
+                    border: 2px solid #f44336;
+                }
+                QPushButton#statusButton:hover {
+                    background-color: #ef5350;
+                    border: 2px solid #ffffff;
                 }
             """)
 
