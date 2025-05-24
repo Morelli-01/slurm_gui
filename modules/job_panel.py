@@ -170,9 +170,10 @@ class ProjectWidget(QGroupBox):
 
     def __init__(self, project_name="", parent=None, storer=None):
         super().__init__("", parent)
-        self.parent_group = parent  # Store parent reference for deletion
+        self.parent_group = parent
         self.project_storer = storer
-        self._is_selected = False  # Add selection state
+        self._is_selected = False
+
         # Main layout
         self.layout = QVBoxLayout(self)
         self.layout.setSpacing(8)
@@ -181,8 +182,7 @@ class ProjectWidget(QGroupBox):
         self.title_label = QLabel(project_name)
         self.title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         self.title_label.setContentsMargins(15, 0, 0, 10)
-        self.title_label.setStyleSheet(
-            "color: #f8f8f2;")  # Match dark theme color
+        self.title_label.setStyleSheet("color: #f8f8f2;")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         # Top section with title only
@@ -191,6 +191,7 @@ class ProjectWidget(QGroupBox):
         # Status bar and delete button on the same row
         status_layout = QHBoxLayout()
         status_layout.setContentsMargins(15, 0, 15, 0)
+
         # Status bar (smaller version of the main status bar)
         self.status_bar = self.create_project_status_bar()
         status_layout.addWidget(self.status_bar)
@@ -201,7 +202,6 @@ class ProjectWidget(QGroupBox):
         # Delete button
         self.delete_button = QPushButton()
         self.delete_button.setObjectName(BTN_RED)
-
         self.delete_button.setIcon(
             QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
         self.delete_button.setFixedSize(26, 26)
@@ -269,23 +269,28 @@ class ProjectWidget(QGroupBox):
         status_layout.setSpacing(5)
         status_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Define blocks with smaller size: (icon_color, count_color, icon_path, count)
-        blocks = [
-            ("#2DCB89", "#1F8A5D", os.path.join(script_dir, "src_static",
-             "ok.svg"), 0, "Completed"),  # Green - Placeholder path
-            ("#DA5B5B", "#992F2F", os.path.join(script_dir, "src_static",
-             "err.svg"), 0, "Crashed"),    # Red - Placeholder path
-            ("#8570DB", "#5C4C9D", os.path.join(script_dir, "src_static",
-             "pending.svg"), 0, "Pending"),   # Purple - Placeholder path
-            ("#6DB8E8", "#345D7E", os.path.join(script_dir, "src_static",
-             "loading_2.gif"), 0, "Running jobs"),  # Blue - Placeholder path
+        # Store references to the status blocks for updating
+        self.status_blocks = {}
+
+        # Define blocks with smaller size: (icon_color, count_color, icon_path, initial_count, tooltip, status_key)
+        blocks_config = [
+            ("#2DCB89", "#1F8A5D", os.path.join(script_dir,
+             "src_static", "ok.svg"), 0, "Completed", "COMPLETED"),
+            ("#DA5B5B", "#992F2F", os.path.join(script_dir,
+             "src_static", "err.svg"), 0, "Failed", "FAILED"),
+            ("#8570DB", "#5C4C9D", os.path.join(script_dir,
+             "src_static", "pending.svg"), 0, "Pending", "PENDING"),
+            ("#6DB8E8", "#345D7E", os.path.join(script_dir,
+             "src_static", "loading_2.gif"), 0, "Running", "RUNNING"),
         ]
 
-        for icon_color, count_color, icon_path, count, tooltip in blocks:
-            # Create smaller status blocks
+        for icon_color, count_color, icon_path, count, tooltip, status_key in blocks_config:
             mini_block = self.create_mini_status_block(
                 icon_color, count_color, icon_path, count, tooltip)
             status_layout.addWidget(mini_block)
+
+            # Store reference to this block for updating
+            self.status_blocks[status_key] = mini_block
 
         return status_container
 
@@ -308,10 +313,9 @@ class ProjectWidget(QGroupBox):
                     if not movie.isValid():
                         icon_label.setText("?")
                     else:
-                        movie.setScaledSize(QSize(16, 16))  # Smaller size
+                        movie.setScaledSize(QSize(16, 16))
                         icon_label.setMovie(movie)
                         movie.start()
-                        # Store movie reference to prevent garbage collection
                         icon_label.movie = movie
                 else:
                     pixmap = QPixmap(icon_path)
@@ -327,7 +331,7 @@ class ProjectWidget(QGroupBox):
 
         # Create smaller blocks
         mini_icon_section = QFrame()
-        mini_icon_section.setFixedSize(24, 26)  # Smaller size
+        mini_icon_section.setFixedSize(24, 26)
         mini_icon_section.setStyleSheet(f"""
             background-color: {icon_color};
             border-top-left-radius: 6px;
@@ -341,8 +345,11 @@ class ProjectWidget(QGroupBox):
         # Count section (smaller)
         count_label = QLabel(str(count))
 
+        # Store reference to count label for updates
+        block.count_label = count_label
+
         mini_count_section = QFrame()
-        mini_count_section.setFixedSize(24, 26)  # Smaller size
+        mini_count_section.setFixedSize(24, 26)
         mini_count_section.setStyleSheet(f"""
             background-color: {count_color};
             border-top-right-radius: 6px;
@@ -359,12 +366,6 @@ class ProjectWidget(QGroupBox):
 
         return block
 
-    def update_status_count(self, status_type, count):
-        """Update the count for a specific status type"""
-        # This is a placeholder - in a real implementation, you'd
-        # identify the correct status block and update its count
-        pass
-
     def delete_project(self):
         """Remove this project from the parent's layout using custom styled dialog"""
         if self.parent_group and hasattr(self.parent_group, 'scroll_content_layout'):
@@ -380,7 +381,7 @@ class ProjectWidget(QGroupBox):
 
             if confirm_dialog.exec() == QDialog.DialogCode.Accepted:
                 # previously change selected project or else everything will crash
-                if len(self.parent_group.projects_children.keys()) >1:
+                if len(self.parent_group.projects_children.keys()) > 1:
                     new_selected_project = list(self.parent_group.projects_children.keys())[-1] if list(
                         self.parent_group.projects_children.keys())[-1] != project_name else list(self.parent_group.projects_children.keys())[-2]
                     self.parent_group.handle_project_selection(
@@ -408,6 +409,26 @@ class ProjectWidget(QGroupBox):
         self.selected.emit(self.title_label.text())
         # Call the parent's mousePressEvent
         super().mousePressEvent(event)
+
+    def update_status_counts(self, job_stats):
+        """Update the status counts based on job statistics"""
+        if not hasattr(self, 'status_blocks') or not self.status_blocks:
+            return
+
+        # Map of status keys to counts
+        status_mapping = {
+            "COMPLETED": job_stats.get("COMPLETED", 0),
+            "FAILED": job_stats.get("FAILED", 0) + job_stats.get("CANCELLED", 0),  # Count cancelled as failed
+            "PENDING": job_stats.get("PENDING", 0) + job_stats.get("NOT_SUBMITTED", 0),
+            "RUNNING": job_stats.get("RUNNING", 0),
+        }
+
+        # Update each status block
+        for status_key, count in status_mapping.items():
+            if status_key in self.status_blocks:
+                block = self.status_blocks[status_key]
+                if hasattr(block, 'count_label'):
+                    block.count_label.setText(str(count))
 
 
 class ProjectGroup(QGroupBox):
@@ -706,7 +727,7 @@ class StatusBar(QWidget):
 
 
 class JobsPanel(QWidget):
-    def __init__(self, parent=None, slurm_connection: SlurmConnection=None):
+    def __init__(self, parent=None, slurm_connection: SlurmConnection = None):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
         try:
@@ -785,6 +806,7 @@ class JobsPanel(QWidget):
         self.jobs_group.cancelRequested.connect(self.delete_job)
         self.jobs_group.stopRequested.connect(self.stop_job)
         self.jobs_group.logsRequested.connect(self.show_job_logs)
+        self.jobs_group.duplicateRequested.connect(self.duplicate_job)
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1051,26 +1073,28 @@ class JobsPanel(QWidget):
             self.project_storer.stop_job_monitoring()
         super().closeEvent(event)
 
-
     def _connect_project_store_signals(self):
         """Connect to project store signals for real-time updates"""
         if not self.project_storer:
             return
 
         # Connect to job status changes using the signals object
-        self.project_storer.signals.job_status_changed.connect(self._on_job_status_changed)
+        self.project_storer.signals.job_status_changed.connect(
+            self._on_job_status_changed)
         self.project_storer.signals.job_updated.connect(self._on_job_updated)
-        self.project_storer.signals.project_stats_changed.connect(self._on_project_stats_changed)
+        self.project_storer.signals.project_stats_changed.connect(
+            self._on_project_stats_changed)
 
     def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Handle job status changes from project store - SIMPLIFIED VERSION"""
         print(f"Job {job_id} in {project_name}: {old_status} -> {new_status}")
-        
+
         # Update the specific job row efficiently
         self._update_single_job_from_store(project_name, job_id)
-        
+
         # Show brief notification for important status changes
-        self._show_status_notification(project_name, job_id, old_status, new_status)
+        self._show_status_notification(
+            project_name, job_id, old_status, new_status)
 
     def _on_job_updated(self, project_name: str, job_id: str):
         """Handle general job updates (timing, resources, etc.) - SIMPLIFIED VERSION"""
@@ -1096,9 +1120,10 @@ class JobsPanel(QWidget):
 
         # Convert job to table row format
         job_row = job.to_table_row()
-        
+
         # Update the specific row in the jobs table
-        self.jobs_group.update_single_job_row(project_name, str(job_id), job_row)
+        self.jobs_group.update_single_job_row(
+            project_name, str(job_id), job_row)
 
     def _show_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Show brief notifications for important status changes"""
@@ -1109,14 +1134,14 @@ class JobsPanel(QWidget):
             'RUNNING': f'🏃 Job {job_id} started running.',
             'CANCELLED': f'🛑 Job {job_id} was cancelled.'
         }
-        
+
         if new_status in important_changes:
             message = important_changes[new_status]
-            
+
             # Show in status bar if parent has one
             if hasattr(self.parent(), 'statusBar'):
                 self.parent().statusBar().showMessage(message, 3000)  # 3 seconds
-            
+
             # print(f"📢 {message}")
 
     def _update_project_status_display(self, project_name: str, stats: dict):
@@ -1125,7 +1150,7 @@ class JobsPanel(QWidget):
             return
 
         project_widget = self.project_group.projects_children[project_name]
-        
+
         # Update status counts in project widget if it has the method
         if hasattr(project_widget, 'update_status_counts'):
             project_widget.update_status_counts(stats)
@@ -1140,17 +1165,19 @@ class JobsPanel(QWidget):
             # Get job and validate
             project = self.project_storer.get(project_name)
             if not project:
-                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
                 return
 
             job = project.get_job(job_id)
             if not job:
-                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
                 return
 
             if job.status != "NOT_SUBMITTED":
-                QMessageBox.information(self, "Already Submitted", 
-                                    f"Job '{job_id}' has already been submitted with status: {job.status}.")
+                QMessageBox.information(self, "Already Submitted",
+                                        f"Job '{job_id}' has already been submitted with status: {job.status}.")
                 return
 
             # Store the old job ID for UI updates
@@ -1164,23 +1191,25 @@ class JobsPanel(QWidget):
                 updated_job = project.get_job(new_job_id)
                 if updated_job:
                     job_row = updated_job.to_table_row()
-                    
+
                     # Update the UI to reflect the ID change efficiently
-                    self.jobs_group.update_job_id(project_name, old_job_id, str(new_job_id), job_row)
-                    
+                    self.jobs_group.update_job_id(
+                        project_name, old_job_id, str(new_job_id), job_row)
+
                     # Highlight the submitted job briefly
-                    self.jobs_group.highlight_job_row(project_name, str(new_job_id), 2000)
-                
+                    self.jobs_group.highlight_job_row(
+                        project_name, str(new_job_id), 2000)
+
                 # Show success message
-                QMessageBox.information(self, "Job Submitted", 
-                                    f"Job has been submitted with ID {new_job_id}")
+                QMessageBox.information(self, "Job Submitted",
+                                        f"Job has been submitted with ID {new_job_id}")
             else:
-                QMessageBox.warning(self, "Submission Failed", 
-                                "Failed to submit job. Please check logs for more information.")
+                QMessageBox.warning(self, "Submission Failed",
+                                    "Failed to submit job. Please check logs for more information.")
 
         except Exception as e:
-            QMessageBox.critical(self, "Submission Error", 
-                                f"An error occurred during job submission: {str(e)}")
+            QMessageBox.critical(self, "Submission Error",
+                                 f"An error occurred during job submission: {str(e)}")
             import traceback
             traceback.print_exc()
 
@@ -1194,73 +1223,80 @@ class JobsPanel(QWidget):
             # Get job and validate
             project = self.project_storer.get(project_name)
             if not project:
-                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
                 return
-                
+
             job = project.get_job(job_id)
             if not job:
-                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
                 return
-                
+
             if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED", "CANCELLED"]:
-                QMessageBox.warning(self, "Error", 
-                                f"Job can't be deleted since it is {job.status} status\n"
-                                f"Job '{job_id}' needs to be stopped before deleting.")
+                QMessageBox.warning(self, "Error",
+                                    f"Job can't be deleted since it is {job.status} status\n"
+                                    f"Job '{job_id}' needs to be stopped before deleting.")
                 return
 
             # Remove the job from store
             self.project_storer.remove_job(project_name, job_id)
-            
+
             # Remove from UI efficiently
             self.jobs_group.remove_job(project_name, job_id)
-            
+
             print(f"Job {job_id} deleted successfully")
 
         except Exception as e:
-            QMessageBox.critical(self, "Deletion Error", 
-                                f"An error occurred during job deletion: {str(e)}")
+            QMessageBox.critical(self, "Deletion Error",
+                                 f"An error occurred during job deletion: {str(e)}")
             import traceback
             traceback.print_exc()
 
     def stop_job(self, project_name, job_id):
-            if not self.project_storer:
-                        QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-                        return
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
 
-            try:
-                # Get job and validate
-                project = self.project_storer.get(project_name)
-                if not project:
-                    QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
-                    return
-                    
-                job = project.get_job(job_id)
-                if not job:
-                    QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
-                    return
-                    
-                if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
-                    QMessageBox.warning(self, "Error", 
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
+                QMessageBox.warning(self, "Error",
                                     f"Job can't be deleted since it is {job.status} status\n")
-                    return
+                return
 
-                stdout, stderr = self.slurm_connection.run_command(f"scancel {job_id}")
-                if stderr:
-                        QMessageBox.warning(self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
-                        return
+            stdout, stderr = self.slurm_connection.run_command(
+                f"scancel {job_id}")
+            if stderr:
+                QMessageBox.warning(
+                    self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
+                return
 
-            except Exception as e:
-                QMessageBox.critical(self, "Deletion Error", 
-                                    f"An error occurred during job deletion: {str(e)}")
-                import traceback
-                traceback.print_exc()
+        except Exception as e:
+            QMessageBox.critical(self, "Deletion Error",
+                                 f"An error occurred during job deletion: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def show_job_logs(self, project_name, job_id):
         """Show the job logs dialog"""
         if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to project store.")
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
             return
-        
+
         try:
             # Create and show the logs dialog
             dialog = JobLogsDialog(
@@ -1270,16 +1306,126 @@ class JobsPanel(QWidget):
                 parent=self
             )
             dialog.exec()
-            
+
         except Exception as e:
             QMessageBox.critical(
-                self, 
-                "Error Opening Logs", 
+                self,
+                "Error Opening Logs",
                 f"Failed to open job logs:\n{str(e)}"
             )
             import traceback
             traceback.print_exc()
+       
+    def duplicate_job(self, project_name, job_id):
+        """Duplicate an existing job with a new name"""
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to project store.")
+            return
+
+        try:
+            # Get the original job
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            original_job = project.get_job(job_id)
+            if not original_job:
+                QMessageBox.warning(self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            # Ask user for new job name
+            new_name, ok = QInputDialog.getText(
+                self, 
+                "Duplicate Job", 
+                f"Enter name for duplicated job (original: '{original_job.name}'):",
+                text=f"{original_job.name}_copy"
+            )
+            
+            if not ok or not new_name.strip():
+                return  # User cancelled or entered empty name
+
+            # Create job details from the original job
+            job_details = {
+                "job_name": new_name.strip(),
+                "partition": original_job.partition,
+                "time_limit": original_job.time_limit,
+                "command": original_job.command,
+                "account": original_job.account,
+                "constraint": original_job.constraints,
+                "qos": original_job.qos,
+                "gres": original_job.gres,
+                "nodes": original_job.nodes,
+                "cpus_per_task": original_job.cpus,
+                "memory": original_job.memory,
+                "output_file": original_job.output_file,
+                "error_file": original_job.error_file,
+                "working_dir": original_job.working_dir,
+            }
+
+            # Add optional array and dependency settings if they exist
+            if original_job.array_spec:
+                job_details["array"] = original_job.array_spec
+                if original_job.array_max_jobs:
+                    job_details["array_max_jobs"] = original_job.array_max_jobs
+
+            if original_job.dependency:
+                job_details["dependency"] = original_job.dependency
+
+            # Create the duplicated job
+            new_job_id = self.project_storer.add_new_job(project_name, job_details)
+
+            if new_job_id:
+                # Parse GPU count from gres if available
+                gpu_count = 0
+                if original_job.gres and "gpu:" in original_job.gres:
+                    try:
+                        gpu_parts = original_job.gres.split(":")
+                        if len(gpu_parts) == 2:  # Format: gpu:N
+                            gpu_count = int(gpu_parts[1])
+                        elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                            gpu_count = int(gpu_parts[2])
+                    except (ValueError, IndexError):
+                        pass
+
+                # Create a job row for the UI display
+                job_row = [
+                    new_job_id,
+                    new_name.strip(),
+                    "NOT_SUBMITTED",  # New job starts as not submitted
+                    "00:00:00",  # Initial runtime is zero
+                    original_job.cpus,  # CPU count
+                    gpu_count,  # GPU count
+                    original_job.memory,  # Memory
+                ]
+
+                # Add the job to the jobs group UI
+                self.jobs_group.add_single_job(project_name, job_row)
+                
+                # Update project status display
+                # self.project_group.update_project_status(project_name)
+                if project_name in self.project_group.projects_children:
+                    project_widget = self.project_group.projects_children[project_name]
+                    if hasattr(project_widget, 'update_status_counts'):
+                        job_stats = project.get_job_stats()
+                        project_widget.update_status_counts(job_stats)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Duplication Failed",
+                    "Failed to duplicate job. Please check logs for more information."
+                )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Duplication Error",
+                f"An error occurred while duplicating the job: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
     # SIMPLIFIED PROJECT LOADING
+
     def start_project_loading(self):
         """
         Load and display all projects from the project storer - SIMPLIFIED VERSION.
@@ -1302,7 +1448,7 @@ class JobsPanel(QWidget):
                 if project and project.jobs:
                     # Convert jobs to rows for display
                     job_rows = [job.to_table_row() for job in project.jobs]
-                    
+
                     # Update jobs UI efficiently - this will use the new efficient update system
                     self.parent.jobs_group.update_jobs(proj_name, job_rows)
 
