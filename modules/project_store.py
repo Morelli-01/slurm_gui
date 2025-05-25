@@ -899,8 +899,8 @@ class ProjectStore:
             self._write_to_settings()
 
             # Emit signal for UI updates using signals object
-            self.signals.job_status_changed.emit(
-                project, str(job_id), old_status, status)
+            # self.signals.job_status_changed.emit(
+            #     project, str(job_id), old_status, status)
 
     def get_active_jobs(self) -> List[Tuple[str, Job]]:
         """Get all jobs that are currently active (need monitoring)"""

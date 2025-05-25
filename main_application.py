@@ -671,7 +671,6 @@ if __name__ == "__main__":
             configs_dir = Path(script_dir) / "configs"
 
     settings_path = configs_dir / "settings.ini"
-    default_settings_path = Path(script_dir) / "configs" / "default_settings.ini"
 
     if not os.path.isfile(settings_path):
         print(f"Settings file not found at: {settings_path}")

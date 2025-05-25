@@ -397,6 +397,26 @@ class SlurmConnection:
         except Exception as e:
             raise RuntimeError(f"Job submission failed: {e}")
 
+    def _normalize_path(self, path: str) -> str:
+        """
+        Normalize a file path - if it's absolute, return as-is; if relative, prepend home directory.
+        
+        Args:
+            path: File path (can be absolute or relative)
+            
+        Returns:
+            str: Normalized absolute path
+        """
+        if not path:
+            return ""
+            
+        # Check if path is absolute (starts with /)
+        if path.startswith('/'):
+            return path
+        else:
+            # Relative path - prepend home directory
+            return f"{self.remote_home}/{path}"
+
     def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                            constraint: Optional[str], qos: Optional[str], gres: Optional[str],
                            nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int) -> str:
@@ -409,6 +429,11 @@ class SlurmConnection:
         Returns:
             str: Content of SLURM job script
         """
+        
+        # Normalize output and error file paths
+        normalized_output = self._normalize_path(output_file)
+        normalized_error = self._normalize_path(error_file)
+        
         script_lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name=\"{job_name}\"",
@@ -416,8 +441,8 @@ class SlurmConnection:
             f"#SBATCH --time={time_limit}",
             f"#SBATCH --nodes={nodes}",
             f"#SBATCH --ntasks={ntasks}",
-            f"#SBATCH --output={self.remote_home}/{output_file}",
-            f"#SBATCH --error={self.remote_home}/{error_file}",
+            f"#SBATCH --output={normalized_output}",
+            f"#SBATCH --error={normalized_error}",
             f"#SBATCH --mem={memory}",
             f"#SBATCH --cpus-per-task={cpus}",
 
@@ -442,6 +467,8 @@ class SlurmConnection:
     def get_job_logs(self, job_id: str, preserve_progress_bars: bool = False) -> Tuple[str, str]:
         """
         Get the output and error logs for a job with proper handling of progress bars.
+        Enhanced to handle both relative and absolute log file paths.
+        
         Args:
             job_id: Job ID
             preserve_progress_bars: If True, keeps final progress bar state; if False, removes all progress bar lines
@@ -494,38 +521,87 @@ class SlurmConnection:
         if not self.is_connected():
             raise ConnectionError("SSH connection not established.")
         
-        remote_log_dir = f"{self.remote_home}/.logs"
-        stdout_file = f"{remote_log_dir}/out_{job_id}.log"
-        stderr_file = f"{remote_log_dir}/err_{job_id}.log"
+        # Try multiple possible log file locations
+        possible_stdout_files = [
+            f"{self.remote_home}/.logs/out_{job_id}.log",  # Default relative path
+            f"/tmp/out_{job_id}.log",  # Common temp location
+            f"out_{job_id}.log",  # Current directory
+        ]
+        
+        possible_stderr_files = [
+            f"{self.remote_home}/.logs/err_{job_id}.log",  # Default relative path
+            f"/tmp/err_{job_id}.log",  # Common temp location
+            f"err_{job_id}.log",  # Current directory
+        ]
+        
+        # Also check if job has custom output/error paths by querying SLURM
+        try:
+            # Get job details to find actual output/error file paths
+            job_details_cmd = f"scontrol show job {job_id}"
+            job_details_output, _ = self.run_command(job_details_cmd)
+            
+            # Parse output to find StdOut and StdErr paths
+            for line in job_details_output.split('\n'):
+                if 'StdOut=' in line:
+                    stdout_match = re.search(r'StdOut=([^\s]+)', line)
+                    if stdout_match:
+                        custom_stdout = stdout_match.group(1)
+                        if custom_stdout not in possible_stdout_files:
+                            possible_stdout_files.insert(0, custom_stdout)  # Try custom path first
+                            
+                if 'StdErr=' in line:
+                    stderr_match = re.search(r'StdErr=([^\s]+)', line)
+                    if stderr_match:
+                        custom_stderr = stderr_match.group(1)
+                        if custom_stderr not in possible_stderr_files:
+                            possible_stderr_files.insert(0, custom_stderr)  # Try custom path first
+        except Exception as e:
+            print(f"Warning: Could not query job details for {job_id}: {e}")
+        
         stdout, stderr = "", ""
 
         try:
-            # Use SFTP to fetch the log files in binary mode to preserve all characters
             sftp = self.client.open_sftp()
             
-            # stdout
-            try:
-                with sftp.open(stdout_file, 'rb') as f:
-                    out_bytes = f.read()
-                out = out_bytes.decode(errors='replace')
-                stdout = clean_progress_output(out, preserve_progress_bars)
-            except Exception:
-                stdout = f"[!] Output log {stdout_file} not found or unreadable."
+            # Try to find stdout file
+            stdout_found = False
+            for stdout_file in possible_stdout_files:
+                try:
+                    with sftp.open(stdout_file, 'rb') as f:
+                        out_bytes = f.read()
+                    out = out_bytes.decode(errors='replace')
+                    stdout = clean_progress_output(out, preserve_progress_bars)
+                    stdout_found = True
+                    break
+                except Exception:
+                    continue
             
-            # stderr
-            try:
-                with sftp.open(stderr_file, 'rb') as f:
-                    err_bytes = f.read()
-                err = err_bytes.decode(errors='replace')
-                stderr = clean_progress_output(err, preserve_progress_bars)
-            except Exception:
-                stderr = f"[!] Error log {stderr_file} not found or unreadable."
+            if not stdout_found:
+                stdout = f"[!] Output log for job {job_id} not found. Searched locations:\n" + \
+                        "\n".join(f"  - {path}" for path in possible_stdout_files)
+            
+            # Try to find stderr file
+            stderr_found = False
+            for stderr_file in possible_stderr_files:
+                try:
+                    with sftp.open(stderr_file, 'rb') as f:
+                        err_bytes = f.read()
+                    err = err_bytes.decode(errors='replace')
+                    stderr = clean_progress_output(err, preserve_progress_bars)
+                    stderr_found = True
+                    break
+                except Exception:
+                    continue
+            
+            if not stderr_found:
+                stderr = f"[!] Error log for job {job_id} not found. Searched locations:\n" + \
+                        "\n".join(f"  - {path}" for path in possible_stderr_files)
             
             sftp.close()
         except Exception as e:
             print(f"Error fetching logs for job {job_id}: {e}")
-            stdout = f"[!] Output log {stdout_file} not found or unreadable."
-            stderr = f"[!] Error log {stderr_file} not found or unreadable."
+            stdout = f"[!] Error accessing log files for job {job_id}: {e}"
+            stderr = f"[!] Error accessing log files for job {job_id}: {e}"
         
         return stdout, stderr    
 
@@ -978,9 +1054,6 @@ class JobStatusMonitor(QThread):
         """Parse sacct command output"""
         job_details = {}
         
-
-
-
         for line in output.strip().split('\n'):
             if not line.strip():
                 continue
