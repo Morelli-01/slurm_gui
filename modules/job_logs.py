@@ -1,16 +1,8 @@
-import os
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTextEdit, QTabWidget, QWidget, QMessageBox
-)
-from PyQt6.QtGui import QFont, QIcon
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMutex, QWaitCondition
 from modules.defaults import *
 from slurm_connection import SlurmConnection
 from utils import script_dir
-import time
-import threading
 from style import AppStyles
+from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 
 
 class ContinuousLogFetcherThread(QThread):
@@ -621,7 +613,8 @@ class JobLogsDialog(QDialog):
         self.info_text.setText(f"Error: {message}")
         self.output_text.setText(f"Error: {message}")
         self.error_text.setText(f"Error: {message}")
-        QMessageBox.warning(self, "Error", message)
+        show_warning_toast(self, "Error", message)
+
     
     def closeEvent(self, event):
         """Handle dialog close event"""

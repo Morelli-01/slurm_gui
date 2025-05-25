@@ -3,7 +3,7 @@ from PyQt6.QtCore import pyqtSignal
 import sys, os
 from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
 from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
-from modules.defaults import *
+COLOR_DARK_BORDER = "#6272a4"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 settings_path = os.path.join(script_dir, "configs", "settings.ini")

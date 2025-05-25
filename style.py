@@ -5,7 +5,7 @@ All styles are defined here for better maintainability and organization.
 
 import os
 from modules.defaults import *
-from utils import script_dir
+from utils import  script_dir
 # Get script directory for icon paths
 
 

@@ -1,11 +1,3 @@
-import sys
-import re
-from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QGridLayout, QFrame, QSizePolicy,
-                             QTabWidget, QTableWidget, QTableWidgetItem,
-                             QHeaderView, QGroupBox,
-                             QProgressBar)  # Import QProgressBar
-from PyQt6.QtCore import Qt, QSize, QTimer
 from slurm_connection import SlurmConnection
 from utils import parse_memory_size
 from modules.defaults import *

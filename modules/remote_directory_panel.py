@@ -2,6 +2,7 @@
 from modules.defaults import *
 from utils import script_dir
 from style import AppStyles
+from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 
 BUTTON_SIZE = 36  # Larger button size (was 36)
 ICON_SIZE = 24
@@ -283,8 +284,8 @@ class RemoteDirectoryDialog(QDialog):
                 self.selected_path = new_path
                 self._load_current_path()
             else:
-                QMessageBox.warning(self, "Navigation Error",
-                                    f"'{new_path}' is not accessible.")
+                show_warning_toast(self, "Navigation Error", f"'{new_path}' is not accessible.")
+
 
     def _go_up_directory(self):
         """Navigate to parent directory"""
@@ -309,7 +310,8 @@ class RemoteDirectoryDialog(QDialog):
                 self.selected_path = home_path
                 self._load_current_path()
         else:
-            QMessageBox.warning(self, "Error", "Home directory not found")
+            show_warning_toast(self, "Error", "Home directory not found")
+
 
     def _refresh(self):
         """Refresh current directory listing"""
@@ -326,8 +328,7 @@ class RemoteDirectoryDialog(QDialog):
             self.selected_path = new_path
             self._load_current_path()
         else:
-            QMessageBox.warning(self, "Invalid Path",
-                                f"Path '{new_path}' does not exist or is not accessible.")
+            show_warning_toast(self, "Invalid Path", f"Path '{new_path}' does not exist or is not accessible.")
             self.path_display_edit.setText(self.current_remote_path)
 
     def _select_directory(self):
@@ -335,8 +336,8 @@ class RemoteDirectoryDialog(QDialog):
         if self.slurm_connection.remote_path_exists(self.selected_path):
             self.accept()
         else:
-            QMessageBox.warning(self, "Invalid Selection",
-                                "Please select a valid directory.")
+            show_warning_toast(self, "Invalid Selection", "Please select a valid directory.")
+
 
     def get_selected_directory(self):
         """Return the selected directory path"""

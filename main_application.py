@@ -1,26 +1,14 @@
-from modules.job_panel import JobsPanel
 from modules.defaults import *
+from modules.job_panel import JobsPanel
 import modules.cluster_status_widget as cluster_status_widget
 from modules.job_queue_widget import JobQueueWidget
+import slurm_connection
+from style import AppStyles
 from utils import *
 from pathlib import Path
 import shutil
 from modules.settings_widget import SettingsWidget
-import sys
-import slurm_connection
-
-import threading
-import os
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
-    QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QComboBox, QFrame, QSizePolicy, QStackedWidget, QFormLayout, QGroupBox,
-    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea,
-    QDialog, QDialogButtonBox
-)
-from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie, QFontMetrics, QScreen
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QStandardPaths
-from style import AppStyles
+from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 
 # Get the script directory to construct relative paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -70,14 +58,15 @@ def get_scaled_dimensions(screen=None):
     return width, height, min_width, min_height
 
 
-def show_message(parent, title, text, icon=QMessageBox.Icon.Information):
-    """Displays a simple message box."""
-    msg_box = QMessageBox(parent)
-    msg_box.setWindowTitle(title)
-    msg_box.setText(text)
-    msg_box.setIcon(icon)
-    msg_box.exec()
-
+def show_message(parent, title, text, icon="Information"):
+    """Displays a toast notification."""
+    
+    if "Critical" in str(icon) or "Error" in str(icon):
+        show_error_toast(parent, title, text)
+    elif "Warning" in str(icon):
+        show_warning_toast(parent, title, text)
+    else:
+        show_info_toast(parent, title, text)
 
 # --- New Connection Setup Dialog ---
 class ConnectionSetupDialog(QDialog):
@@ -156,9 +145,8 @@ class SlurmJobManagerApp(QMainWindow):
             self.slurm_connection.connect()
         except Exception as e:
             print(f"Initial connection failed: {e}")
-            show_message(self, "Connection Error",
-                         f"Failed to connect to the cluster:\n{e}\nPlease check settings.", 
-                         QMessageBox.Icon.Critical)
+            show_error_toast(self, "Connection Error", f"Failed to connect to the cluster: {e}. Please check settings.")
+
 
         self.setWindowTitle(APP_TITLE)
         

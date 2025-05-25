@@ -1,14 +1,7 @@
 from datetime import datetime
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QPushButton, QHBoxLayout, QVBoxLayout,
-    QLabel, QLineEdit, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-    QComboBox, QFrame, QSizePolicy, QStackedWidget, QFormLayout, QGroupBox,
-    QTextEdit, QSpinBox, QFileDialog, QProgressBar, QMessageBox, QGridLayout, QScrollArea
-)
-from PyQt6.QtGui import QIcon, QColor, QPalette, QFont, QPixmap, QMovie
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from modules.defaults import *
 from style import AppStyles
+from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 
 
 class SettingsWidget(QWidget):
@@ -140,7 +133,7 @@ class SettingsWidget(QWidget):
         webhook_url = self.discord_webhook_url.text().strip()
         
         if not webhook_url:
-            QMessageBox.warning(self, "Warning", "Please enter a Discord webhook URL first.")
+            show_warning_toast(self, "Warning", "Please enter a Discord webhook URL first.")
             return
             
         try:
@@ -168,14 +161,14 @@ class SettingsWidget(QWidget):
             response = requests.post(webhook_url, data=json.dumps(payload), headers=headers, timeout=10)
             
             if response.status_code == 204:
-                QMessageBox.information(self, "Success", "Test message sent successfully to Discord!")
+                show_success_toast(self, "Success", "Test message sent successfully to Discord!")
             else:
-                QMessageBox.warning(self, "Error", f"Failed to send test message. Status code: {response.status_code}")
+                show_warning_toast(self, "Error", f"Failed to send test message. Status code: {response.status_code}")
                 
         except ImportError:
-            QMessageBox.warning(self, "Error", "The 'requests' library is required for Discord notifications.\nPlease install it with: pip install requests")
+            show_warning_toast(self, "Error", "The 'requests' library is required for Discord notifications. Please install it with: pip install requests")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to send test message:\n{str(e)}")
+            show_error_toast(self, "Error", f"Failed to send test message: {str(e)}")
 
     def get_notification_settings(self):
         """Get current notification settings as a dictionary"""

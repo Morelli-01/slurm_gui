@@ -1,18 +1,6 @@
-import os
-import random
-import sys
-from unittest import result
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox,
-    QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit,
-    QDialog
-)
-from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime
-
-# Assuming these modules/files exist in your project structure
 from modules import project_store
 from modules.job_logs import JobLogsDialog
+from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 from slurm_connection import SlurmConnection
 from utils import create_separator, script_dir
 from modules.defaults import *
@@ -809,27 +797,23 @@ class JobsPanel(QWidget):
                         self.jobs_group.add_single_job(
                             self.current_project, job_row)
 
-                        # Show success message
-                        QMessageBox.information(
-                            self,
-                            "Job Created",
-                            f"Job '{job_details.get('job_name')}' has been created and saved to the project. Click 'Submit' in the Actions column to submit it to SLURM."
-                        )
+                        show_success_toast(self, "Job Created", 
+                                           f"Job '{job_details.get('job_name')}' has been created!")
                     else:
-                        QMessageBox.warning(
+                        show_warning_toast(
                             self,
                             "Creation Failed",
                             "Failed to create job. Please check logs for more information."
                         )
                 except Exception as e:
-                    QMessageBox.critical(
+                    show_error_toast(
                         self,
                         "Job Creation Error",
                         f"An error occurred while creating the job: {str(e)}"
                     )
 
         else:
-            QMessageBox.warning(
+            show_warning_toast(
                 self,
                 "No Project Selected",
                 "Please select a project first before creating a new job."
@@ -1103,26 +1087,27 @@ class JobsPanel(QWidget):
     def submit_job(self, project_name, job_id):
         """Submit job - SIMPLIFIED VERSION with efficient UI update"""
         if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            show_warning_toast(self, "Error", "Not connected to SLURM.")
             return
 
         try:
             # Get job and validate
             project = self.project_storer.get(project_name)
             if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
+                show_warning_toast(self, "Error", f"Project '{project_name}' not found.")
                 return
 
             job = project.get_job(job_id)
             if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
+                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
                 return
 
             if job.status != "NOT_SUBMITTED":
-                QMessageBox.information(self, "Already Submitted",
-                                        f"Job '{job_id}' has already been submitted with status: {job.status}.")
+                show_info_toast(
+                    self,
+                    "Already Submitted",
+                    f"Job '{job_id}' has already been submitted with status: {job.status}."
+                )
                 return
 
             # Store the old job ID for UI updates
@@ -1141,20 +1126,15 @@ class JobsPanel(QWidget):
                     self.jobs_group.update_job_id(
                         project_name, old_job_id, str(new_job_id), job_row)
 
-                    # Highlight the submitted job briefly
-                    # self.jobs_group.highlight_job_row(
-                    #     project_name, str(new_job_id), 2000)
-
                 # Show success message
-                QMessageBox.information(self, "Job Submitted",
-                                        f"Job has been submitted with ID {new_job_id}")
+                show_success_toast(self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
+
             else:
-                QMessageBox.warning(self, "Submission Failed",
-                                    "Failed to submit job. Please check logs for more information.")
+                show_warning_toast(self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
+
 
         except Exception as e:
-            QMessageBox.critical(self, "Submission Error",
-                                 f"An error occurred during job submission: {str(e)}")
+            show_error_toast(self, "Submission Error", f"An error occurred during job submission: {str(e)}")
             import traceback
             traceback.print_exc()
 
@@ -1397,11 +1377,10 @@ class JobsPanel(QWidget):
 
             # Only allow modification of NOT_SUBMITTED jobs
             if job.status != "NOT_SUBMITTED":
-                QMessageBox.warning(
+                show_warning_toast(
                     self,
                     "Cannot Modify Job",
-                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'.\n"
-                    "Only jobs with status 'NOT_SUBMITTED' can be modified."
+                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'. Only jobs with status 'NOT_SUBMITTED' can be modified."
                 )
                 return
 
@@ -1429,11 +1408,7 @@ class JobsPanel(QWidget):
                         project_name, str(job_id), job_row)
 
                     # Show success message
-                    QMessageBox.information(
-                        self,
-                        "Job Modified",
-                        f"Job '{job.name}' has been successfully modified."
-                    )
+                    show_success_toast(self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
 
                 except Exception as e:
                     QMessageBox.critical(

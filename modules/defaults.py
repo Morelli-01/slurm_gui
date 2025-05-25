@@ -2,12 +2,17 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGroupBox,
     QApplication, QScrollArea, QPushButton, QInputDialog, QLineEdit,
     QDialog, QComboBox, QSpinBox, QCheckBox, QTimeEdit, QTextEdit,
-    QFormLayout, QFileDialog, QDoubleSpinBox, QTabWidget, QListView, QStyledItemDelegate, QMessageBox,QAbstractItemView,
-    QProgressBar, QToolButton, QSizePolicy, QSplitter
+    QFormLayout, QFileDialog, QDoubleSpinBox, QTabWidget, QListView, QStyledItemDelegate, QMessageBox, QAbstractItemView,
+    QProgressBar, QToolButton, QSizePolicy, QSplitter, QDialogButtonBox, QMainWindow, QStackedWidget, QGridLayout, QTableWidget,
+    QHeaderView, QWidget, QStackedLayout, QTableWidgetItem, QGraphicsDropShadowEffect
 )
-from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem
-from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyModel, QThread, QTimer, QEvent
-import os, sys, time
+from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem, QBrush, QColor
+from PyQt6.QtCore import (Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyModel, QObject, QPropertyAnimation,
+                          QThread, QTimer, QEvent, QSettings, QStandardPaths, QWaitCondition, QMutex,
+                          QPoint, QEasingCurve)
+import os, sys, threading, shutil, json, tempfile
+import time
+
 JOB_QUEUE_FIELDS = [
     "Job ID", "Job Name", "User",
     "Account", "Priority", "Status",

@@ -5,6 +5,7 @@ from modules.remote_directory_panel import RemoteDirectoryDialog
 # Assuming these modules/files exist in your project structure
 from utils import create_separator, script_dir
 from style import AppStyles
+from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 
 
 COLOR_BLUE = "#06b0d6"
@@ -1084,8 +1085,7 @@ class NewJobDialog(QDialog):
     def _browse_working_dir(self):
         """Open a dialog to select working directory from the SLURM cluster."""
         if not self.slurm_connection or not self.slurm_connection.check_connection():
-            QMessageBox.warning(self, "SLURM Connection Error",
-                                "Not connected to SLURM. Cannot browse remote directories.")
+            show_warning_toast(self, "SLURM Connection Error", "Not connected to SLURM. Cannot browse remote directories.")
             return
 
         initial_path = self.working_dir_edit.text()

@@ -1,39 +1,7 @@
 import functools
 from typing import Iterable, Sequence, Any, List, Dict, Optional
-import os
-from PyQt6.QtWidgets import (
-    QWidget,
-    QStackedLayout,
-    QTableWidget,
-    QTableWidgetItem,
-    QHeaderView,
-    QSizePolicy,
-    QPushButton,
-    QHBoxLayout,
-)
-from PyQt6.QtCore import pyqtSignal, Qt, QSize, QTimer
-from PyQt6 import QtGui
 from utils import script_dir
-from modules.defaults import (
-    COLOR_DARK_BG as BASE_BG,
-    COLOR_DARK_BG_ALT as ALT_BG,
-    COLOR_DARK_BG_HOVER as HOVER_BG,
-    COLOR_DARK_FG as FG,
-    COLOR_DARK_BORDER as GRID,
-    COLOR_GREEN,
-    COLOR_RED,
-    COLOR_BLUE,
-    COLOR_ORANGE,
-    COLOR_PURPLE,
-    COLOR_GRAY,
-    STATUS_RUNNING,
-    STATUS_PENDING,
-    STATUS_COMPLETED,
-    STATUS_FAILED,
-    NOT_SUBMITTED,
-    scroll_bar_stylesheet,
-    STATE_COLORS
-)
+from modules.defaults import *
 from style import AppStyles
 
 
@@ -205,8 +173,8 @@ class JobsGroup(QWidget):
         """Apply color based on job status"""
         txt = item.text().lower()
         if txt in STATE_COLORS:
-            color = QtGui.QColor(STATE_COLORS[txt])
-            item.setData(Qt.ItemDataRole.ForegroundRole, QtGui.QBrush(color))
+            color = QColor(STATE_COLORS[txt])
+            item.setData(Qt.ItemDataRole.ForegroundRole, QBrush(color))
             item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def _find_job_row(self, table: QTableWidget, job_id: str) -> int:
@@ -288,9 +256,9 @@ class JobsGroup(QWidget):
 
             # Apply alternating row colors
             if row_position % 2 == 0:
-                item.setBackground(QtGui.QColor(BASE_BG))
+                item.setBackground(QColor(COLOR_DARK_BG))
             else:
-                item.setBackground(QtGui.QColor(ALT_BG))
+                item.setBackground(QColor(COLOR_DARK_BG_ALT))
 
             table.setItem(row_position, col, item)
 

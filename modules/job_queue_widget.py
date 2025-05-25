@@ -1,14 +1,8 @@
 from pathlib import Path
-from PyQt6.QtWidgets import (
-    QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox
-)
-from PyQt6.QtGui import QColor, QFont, QBrush, QPalette
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from modules.defaults import *
 
 from PyQt6.QtWidgets import QTableWidgetItem
 from PyQt6.QtCore import Qt
-from datetime import datetime, timedelta
 
 class JobQueueWidget(QGroupBox):
     """

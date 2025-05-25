@@ -1,19 +1,14 @@
-import functools
-import json
-import tempfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from PyQt6.QtCore import QSettings
 
 # Forward import for type checking – real instance is passed at runtime
 from slurm_connection import SlurmConnection, determine_job_status, parse_duration
 from datetime import datetime
-from PyQt6.QtCore import QObject, pyqtSignal
-
+from modules.defaults import *
 __all__ = [
     "Job",
     "Project",
