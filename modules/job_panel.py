@@ -1013,18 +1013,18 @@ class JobsPanel(QWidget):
         self.project_storer.signals.job_updated.connect(self._on_job_updated)
         self.project_storer.signals.project_stats_changed.connect(
             self._on_project_stats_changed)
-
     def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
-        """Handle job status changes from project store - SIMPLIFIED VERSION"""
+        """Handle job status changes from project store with optimized notifications"""
         print(f"Job {job_id} in {project_name}: {old_status} -> {new_status}")
 
         # Update the specific job row efficiently
         self._update_single_job_from_store(project_name, job_id)
 
-        # Show brief notification for important status changes
-        self._show_status_notification(
-            project_name, job_id, old_status, new_status)
+        # Show immediate toast notification (optimized)
+        self._show_immediate_job_toast(project_name, job_id, old_status, new_status)
 
+        # Show brief notification for important status changes (status bar)
+        self._show_status_notification(project_name, job_id, old_status, new_status)
     def _on_job_updated(self, project_name: str, job_id: str):
         """Handle general job updates (timing, resources, etc.) - SIMPLIFIED VERSION"""
         self._update_single_job_from_store(project_name, job_id)
@@ -1508,3 +1508,94 @@ class JobsPanel(QWidget):
             print(f"Error loading projects: {e}")
             import traceback
             traceback.print_exc()
+
+    def _show_immediate_job_toast(self, project_name: str, job_id: str, old_status: str, new_status: str):
+        """Show immediate toast notifications with minimal processing"""
+        
+        # Quick settings check - use cached value if possible
+        if not self._should_show_desktop_notifications():
+            return
+        
+        # Get job name quickly (with fallback)
+        job_name = self._get_job_name_fast(project_name, job_id)
+        
+        # Simplified notification config for better performance
+        notifications = {
+            'COMPLETED': {
+                'title': '✅ Job Completed',
+                'message': f"'{job_name}' finished successfully!",
+                'show_func': show_success_toast,
+                'duration': 5000
+            },
+            'FAILED': {
+                'title': '❌ Job Failed', 
+                'message': f"'{job_name}' failed - check logs",
+                'show_func': show_error_toast,
+                'duration': 6000
+            },
+            'RUNNING': {
+                'title': '🏃 Job Started',
+                'message': f"'{job_name}' is now running",
+                'show_func': show_info_toast,
+                'duration': 3000
+            },
+            'CANCELLED': {
+                'title': '🛑 Job Cancelled',
+                'message': f"'{job_name}' was cancelled",
+                'show_func': show_warning_toast,
+                'duration': 4000
+            },
+            'TIMEOUT': {
+                'title': '⏰ Job Timed Out',
+                'message': f"'{job_name}' exceeded time limit",
+                'show_func': show_error_toast,
+                'duration': 5000
+            }
+        }
+        
+        # Show notification immediately if status is in our config
+        if new_status in notifications:
+            config = notifications[new_status]
+            
+            # Use Qt's queued connection to ensure UI thread execution
+            QTimer.singleShot(0, lambda: config['show_func'](
+                self, 
+                config['title'], 
+                config['message'], 
+                config['duration']
+            ))
+    
+    def _should_show_desktop_notifications(self):
+        """Quick check for desktop notifications setting with caching"""
+        # Cache the setting to avoid repeated lookups
+        if not hasattr(self, '_desktop_notifications_cache'):
+            try:
+                if hasattr(self, 'parent') and hasattr(self.parent(), 'settings_panel'):
+                    settings = self.parent().settings_panel.get_notification_settings()
+                    self._desktop_notifications_cache = settings.get("desktop_notifications", True)
+                else:
+                    self._desktop_notifications_cache = True
+            except:
+                self._desktop_notifications_cache = True
+        
+        return self._desktop_notifications_cache
+
+    def _get_job_name_fast(self, project_name: str, job_id: str):
+        """Get job name with minimal overhead and fallback"""
+        try:
+            if self.project_storer:
+                project = self.project_storer.get(project_name)
+                if project:
+                    job = project.get_job(job_id)
+                    if job and job.name:
+                        return job.name
+        except:
+            pass
+        
+        # Fast fallback - just use job ID
+        return f"Job {job_id}"
+
+    def _clear_notification_cache(self):
+        """Clear notification settings cache when settings are updated"""
+        if hasattr(self, '_desktop_notifications_cache'):
+            delattr(self, '_desktop_notifications_cache')

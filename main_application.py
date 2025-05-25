@@ -531,10 +531,20 @@ class SlurmJobManagerApp(QMainWindow):
         """Saves the current settings using QSettings."""
         print("--- Saving Settings ---")
 
+        # Save general settings (SLURM connection)
         self.settings.beginGroup("GeneralSettings")
         self.settings.setValue("clusterAddress", self.settings_panel.cluster_address.text())
         self.settings.setValue("username", self.settings_panel.username.text())
         self.settings.setValue("psw", self.settings_panel.password.text())
+        self.settings.endGroup()
+
+        # Save notification settings (including Discord webhook)
+        self.settings.beginGroup("NotificationSettings")
+        notification_settings = self.settings_panel.get_notification_settings()
+        self.settings.setValue("desktop_notifications", notification_settings["desktop_notifications"])
+        self.settings.setValue("sound_notifications", notification_settings["sound_notifications"])
+        self.settings.setValue("discord_enabled", notification_settings["discord_enabled"])
+        self.settings.setValue("discord_webhook_url", notification_settings["discord_webhook_url"])
         self.settings.endGroup()
 
         self.settings.sync()
@@ -545,13 +555,12 @@ class SlurmJobManagerApp(QMainWindow):
         print("--- Loading Settings ---")
 
         self.settings = QSettings(str(Path("./configs/settings.ini")),
-                                  QSettings.Format.IniFormat)
+                                QSettings.Format.IniFormat)
 
+        # Load general settings
         self.settings.beginGroup("GeneralSettings")
         theme = self.settings.value("theme", "Dark")
-        # if hasattr(self, 'settings_panel') and self.settings_panel.theme_combo:
-        #     self.settings_panel.theme_combo.setCurrentText(theme)
-
+        
         cluster_address = self.settings.value("clusterAddress", "")
         if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
             self.settings_panel.cluster_address.setText(cluster_address)
@@ -565,15 +574,30 @@ class SlurmJobManagerApp(QMainWindow):
             self.settings_panel.password.setText(cluster_psw)
         self.settings.endGroup()
 
+        # Load appearance settings (jobs queue options)
         self.settings.beginGroup("AppearenceSettings")
         if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
             for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
                 value = self.settings.value(obj.objectName(), 'false', type=bool)
                 obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
-
         self.settings.endGroup()
-        print("--- Settings Loaded ---")
 
+        # Load notification settings (including Discord webhook)
+        self.settings.beginGroup("NotificationSettings")
+        notification_settings = {
+            "desktop_notifications": self.settings.value("desktop_notifications", True, type=bool),
+            "sound_notifications": self.settings.value("sound_notifications", False, type=bool),
+            "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
+            "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
+        }
+        
+        # Apply notification settings to the settings panel
+        if hasattr(self, 'settings_panel'):
+            self.settings_panel.set_notification_settings(notification_settings)
+        self.settings.endGroup()
+
+        print("--- Settings Loaded ---")
+    
     def _setup_job_monitoring(self):
         """Set up job status monitoring after UI initialization"""
         if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
