@@ -797,7 +797,7 @@ class JobsPanel(QWidget):
                         self.jobs_group.add_single_job(
                             self.current_project, job_row)
 
-                        show_success_toast(self, "Job Created", 
+                        show_success_toast(self, "Job Created",
                                            f"Job '{job_details.get('job_name')}' has been created!")
                     else:
                         show_warning_toast(
@@ -1013,6 +1013,7 @@ class JobsPanel(QWidget):
         self.project_storer.signals.job_updated.connect(self._on_job_updated)
         self.project_storer.signals.project_stats_changed.connect(
             self._on_project_stats_changed)
+
     def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Handle job status changes from project store with optimized notifications"""
         print(f"Job {job_id} in {project_name}: {old_status} -> {new_status}")
@@ -1021,10 +1022,13 @@ class JobsPanel(QWidget):
         self._update_single_job_from_store(project_name, job_id)
 
         # Show immediate toast notification (optimized)
-        self._show_immediate_job_toast(project_name, job_id, old_status, new_status)
+        self._show_immediate_job_toast(
+            project_name, job_id, old_status, new_status)
 
         # Show brief notification for important status changes (status bar)
-        self._show_status_notification(project_name, job_id, old_status, new_status)
+        self._show_status_notification(
+            project_name, job_id, old_status, new_status)
+
     def _on_job_updated(self, project_name: str, job_id: str):
         """Handle general job updates (timing, resources, etc.) - SIMPLIFIED VERSION"""
         self._update_single_job_from_store(project_name, job_id)
@@ -1094,7 +1098,8 @@ class JobsPanel(QWidget):
             # Get job and validate
             project = self.project_storer.get(project_name)
             if not project:
-                show_warning_toast(self, "Error", f"Project '{project_name}' not found.")
+                show_warning_toast(
+                    self, "Error", f"Project '{project_name}' not found.")
                 return
 
             job = project.get_job(job_id)
@@ -1127,14 +1132,16 @@ class JobsPanel(QWidget):
                         project_name, old_job_id, str(new_job_id), job_row)
 
                 # Show success message
-                show_success_toast(self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
+                show_success_toast(
+                    self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
 
             else:
-                show_warning_toast(self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
-
+                show_warning_toast(
+                    self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
 
         except Exception as e:
-            show_error_toast(self, "Submission Error", f"An error occurred during job submission: {str(e)}")
+            show_error_toast(self, "Submission Error",
+                             f"An error occurred during job submission: {str(e)}")
             import traceback
             traceback.print_exc()
 
@@ -1408,7 +1415,8 @@ class JobsPanel(QWidget):
                         project_name, str(job_id), job_row)
 
                     # Show success message
-                    show_success_toast(self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
+                    show_success_toast(
+                        self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
 
                 except Exception as e:
                     QMessageBox.critical(
@@ -1511,11 +1519,10 @@ class JobsPanel(QWidget):
 
     def _show_immediate_job_toast(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Show immediate toast notifications with minimal processing"""
-        
-        
+
         # Get job name quickly (with fallback)
         job_name = self._get_job_name_fast(project_name, job_id)
-        
+
         # Simplified notification config for better performance
         notifications = {
             'COMPLETED': {
@@ -1525,7 +1532,7 @@ class JobsPanel(QWidget):
                 'duration': 5000
             },
             'FAILED': {
-                'title': '❌ Job Failed', 
+                'title': '❌ Job Failed',
                 'message': f"'{job_name}' failed - check logs",
                 'show_func': show_error_toast,
                 'duration': 6000
@@ -1549,16 +1556,16 @@ class JobsPanel(QWidget):
                 'duration': 5000
             }
         }
-        
+
         # Show notification immediately if status is in our config
         if new_status in notifications:
             config = notifications[new_status]
-            
+
             # Use Qt's queued connection to ensure UI thread execution
             QTimer.singleShot(0, lambda: config['show_func'](
-                self, 
-                config['title'], 
-                config['message'], 
+                self,
+                config['title'],
+                config['message'],
                 config['duration']
             ))
 
@@ -1573,6 +1580,52 @@ class JobsPanel(QWidget):
                         return job.name
         except:
             pass
-        
+
         # Fast fallback - just use job ID
         return f"Job {job_id}"
+
+    def reload_after_reconnection(self):
+        """Reload all projects and jobs after connection is restored"""
+        if not self.project_storer:
+            return
+            
+        try:
+            # Clear any error messages from jobs group
+            for project_name in self.project_group.projects_children.keys():
+                # Get fresh job data from the project store
+                project = self.project_storer.get(project_name)
+                if project and project.jobs:
+                    job_rows = [job.to_table_row() for job in project.jobs]
+                    self.jobs_group.update_jobs(project_name, job_rows)
+                else:
+                    # Show empty table instead of error
+                    self.jobs_group.update_jobs(project_name, [])
+            
+            # Trigger a refresh of job statuses from SLURM
+            if hasattr(self.slurm_connection, '_fetch_squeue'):
+                try:
+                    queue_jobs = self.slurm_connection._fetch_squeue()
+                    if queue_jobs:
+                        self.project_storer.update_jobs_from_squeue(queue_jobs)
+                        
+                        # Update UI again with fresh data
+                        for project_name in self.project_storer.all_projects():
+                            project = self.project_storer.get(project_name)
+                            if project:
+                                job_rows = [job.to_table_row() for job in project.jobs]
+                                self.jobs_group.update_jobs(project_name, job_rows)
+                                
+                                # Update project status counts
+                                if project_name in self.project_group.projects_children:
+                                    project_widget = self.project_group.projects_children[project_name]
+                                    if hasattr(project_widget, 'update_status_counts'):
+                                        job_stats = project.get_job_stats()
+                                        project_widget.update_status_counts(job_stats)
+                except Exception as e:
+                    print(f"Error refreshing job queue after reconnection: {e}")
+                    
+        except Exception as e:
+            print(f"Error reloading projects after reconnection: {e}")
+            import traceback
+            traceback.print_exc()
+

@@ -804,9 +804,15 @@ class ProjectStore:
         """Start the background job status monitoring"""
         from slurm_connection import JobStatusMonitor
 
+        # Stop existing monitor if any
         if self.job_monitor is not None:
             self.job_monitor.stop()
             self.job_monitor.wait()
+
+        # Only start monitoring if we have a valid connection
+        if not self.slurm or not self.slurm.check_connection():
+            print("Cannot start job monitoring - no SLURM connection")
+            return
 
         self.job_monitor = JobStatusMonitor(
             self.slurm, self, update_interval=5)
@@ -821,7 +827,7 @@ class ProjectStore:
 
         self.job_monitor.start()
         print("Started job status monitoring")
-
+        
     def stop_job_monitoring(self):
         """Stop the background job status monitoring"""
         if self.job_monitor is not None:

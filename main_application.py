@@ -1,3 +1,4 @@
+from threading import Thread
 from modules.defaults import *
 from modules.job_panel import JobsPanel
 import modules.cluster_status_widget as cluster_status_widget
@@ -28,16 +29,16 @@ def get_dpi_aware_size(base_size, screen=None):
     """Calculate DPI-aware size based on screen DPI"""
     if screen is None:
         screen = QApplication.primaryScreen()
-    
+
     # Get the device pixel ratio for high DPI displays
     dpr = screen.devicePixelRatio()
-    
+
     # Get logical DPI (typical is 96 on Windows, 72 on macOS)
     logical_dpi = screen.logicalDotsPerInch()
-    
+
     # Calculate scaling factor (96 DPI is considered 100% on most systems)
     dpi_scale = logical_dpi / 96.0
-    
+
     # Apply both DPI scaling and device pixel ratio
     return int(base_size * dpi_scale)
 
@@ -46,21 +47,21 @@ def get_scaled_dimensions(screen=None):
     """Get window dimensions scaled to screen size and DPI"""
     if screen is None:
         screen = QApplication.primaryScreen()
-    
+
     geometry = screen.geometry()
-    
+
     # Calculate dimensions based on screen percentages
     width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
     height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
     min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
     min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
-    
+
     return width, height, min_width, min_height
 
 
 def show_message(parent, title, text, icon="Information"):
     """Displays a toast notification."""
-    
+
     if "Critical" in str(icon) or "Error" in str(icon):
         show_error_toast(parent, title, text)
     elif "Warning" in str(icon):
@@ -69,20 +70,22 @@ def show_message(parent, title, text, icon="Information"):
         show_info_toast(parent, title, text)
 
 # --- New Connection Setup Dialog ---
+
+
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Setup Initial Connection")
-        
+
         # Scale dialog width based on DPI
         base_width = 400
         scaled_width = get_dpi_aware_size(base_width)
         self.setMinimumWidth(scaled_width)
-        self.setStyleSheet(AppStyles.get_dialog_styles() + 
-                        AppStyles.get_input_styles() + 
-                        AppStyles.get_button_styles())
+        self.setStyleSheet(AppStyles.get_dialog_styles() +
+                           AppStyles.get_input_styles() +
+                           AppStyles.get_button_styles())
         layout = QVBoxLayout(self)
-        
+
         # Scale spacing based on DPI
         spacing = get_dpi_aware_size(10)
         layout.setSpacing(spacing)
@@ -95,9 +98,10 @@ class ConnectionSetupDialog(QDialog):
 
         form_layout = QFormLayout()
         form_layout.setSpacing(get_dpi_aware_size(8))
-        
+
         self.cluster_address_input = QLineEdit()
-        self.cluster_address_input.setPlaceholderText("e.g., your.cluster.address")
+        self.cluster_address_input.setPlaceholderText(
+            "e.g., your.cluster.address")
         form_layout.addRow("Cluster Address:", self.cluster_address_input)
 
         self.username_input = QLineEdit()
@@ -105,7 +109,8 @@ class ConnectionSetupDialog(QDialog):
         form_layout.addRow("Username:", self.username_input)
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Your password (optional, or use key)")
+        self.password_input.setPlaceholderText(
+            "Your password (optional, or use key)")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         form_layout.addRow("Password:", self.password_input)
 
@@ -130,10 +135,10 @@ class ConnectionSetupDialog(QDialog):
 class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
         # Initialize DPI-aware dimensions
         self.setup_dpi_aware_dimensions()
-        
+
         # The slurm_connection is initialized here
         self.slurm_connection = slurm_connection.SlurmConnection(settings_path)
         self.slurm_worker = slurm_connection.SlurmWorker(self.slurm_connection)
@@ -145,11 +150,11 @@ class SlurmJobManagerApp(QMainWindow):
             self.slurm_connection.connect()
         except Exception as e:
             print(f"Initial connection failed: {e}")
-            show_error_toast(self, "Connection Error", f"Failed to connect to the cluster: {e}. Please check settings.")
-
+            show_error_toast(self, "Connection Error",
+                             f"Failed to connect to the cluster: {e}. Please check settings.")
 
         self.setWindowTitle(APP_TITLE)
-        
+
         # Set window size based on screen dimensions
         width, height, min_width, min_height = get_scaled_dimensions()
         self.resize(width, height)
@@ -167,7 +172,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        
+
         # Scale margins and spacing
         margin = get_dpi_aware_size(10)
         spacing = get_dpi_aware_size(10)
@@ -195,7 +200,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.set_connection_status(self.slurm_connection.is_connected())
         self.refresh_all()
         self.load_settings()
-    
+
     def setup_dpi_aware_dimensions(self):
         """Setup commonly used DPI-aware dimensions"""
         self.base_spacing = get_dpi_aware_size(5)
@@ -203,20 +208,28 @@ class SlurmJobManagerApp(QMainWindow):
         self.icon_size_small = get_dpi_aware_size(16)
         self.icon_size_medium = get_dpi_aware_size(24)
         self.icon_size_large = get_dpi_aware_size(32)
-    
+
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling"""
+        previous_status = getattr(self, 'connection_status_', None)
+
         if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
             self.jobs_panel.setup_project_storer()
             self._setup_job_monitoring()
 
+            # Reload all projects and jobs when connection is restored
+            if previous_status == False:  # Was disconnected, now connected
+                print("Connection restored - reloading projects and jobs")
+                self.jobs_panel.reload_after_reconnection()
+
         self.connection_status_ = True if connected else False
-        
+
         # Use pre-calculated icon size
         icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
 
         if connecting:
-            loading_gif_path = os.path.join(script_dir, "src_static", "loading.gif")
+            loading_gif_path = os.path.join(
+                script_dir, "src_static", "loading.gif")
             loading_movie = QMovie(loading_gif_path)
             loading_movie.setScaledSize(icon_size)
             loading_movie.start()
@@ -287,10 +300,30 @@ class SlurmJobManagerApp(QMainWindow):
 
     def refresh_all(self):
         self.slurm_worker.start()
+        t = Thread(target=self.set_connection_status(
+            self.slurm_connection.is_connected()))
+        t.start()
 
     def update_ui_with_data(self, nodes_data, queue_jobs):
+        # Add connection check
+        if not self.slurm_connection.check_connection():
+            # Show error messages instead of updating with empty data
+            # Will trigger connection error display
+            self.job_queue_widget.update_queue_status([])
+            self.cluster_status_overview_widget.update_status(
+                None, [])  # Will trigger connection error display
+
+            # Update jobs panels to show connection error
+            if hasattr(self, 'jobs_panel') and self.jobs_panel.jobs_group:
+                for project_name in self.jobs_panel.project_group.projects_children.keys():
+                    self.jobs_panel.jobs_group.show_connection_error(
+                        project_name)
+            return
+
+        # Normal update if connection is good
         self.refresh_cluster_jobs_queue(queue_jobs)
-        self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
+        self.cluster_status_overview_widget.update_status(
+            nodes_data, queue_jobs)
 
     # --- Theme Handling ---
     def change_theme(self, theme_name):
@@ -298,16 +331,17 @@ class SlurmJobManagerApp(QMainWindow):
         if theme_name in [THEME_DARK, THEME_LIGHT]:
             self.current_theme = theme_name
             self.apply_theme()
-            
+
             # Update cluster status widget theme
             self.cluster_status_overview_widget.switch_theme(theme_name)
-            
+
             # Update separator color
             separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
             for i in range(self.main_layout.count()):
                 widget = self.main_layout.itemAt(i).widget()
                 if isinstance(widget, QFrame) and widget.frameShape() == QFrame.Shape.HLine:
-                    widget.setStyleSheet(f"background-color: {separator_color};")
+                    widget.setStyleSheet(
+                        f"background-color: {separator_color};")
                     break
             self.update_nav_styles()
         else:
@@ -329,9 +363,9 @@ class SlurmJobManagerApp(QMainWindow):
         nav_layout.addWidget(logo_label)
         logo_path = os.path.join(script_dir, "src_static", "icon3.png")
         pixmap = QPixmap(logo_path)
-        scaled_pixmap = pixmap.scaled(logo_size, logo_size, 
-                                     Qt.AspectRatioMode.KeepAspectRatio,
-                                     Qt.TransformationMode.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(logo_size, logo_size,
+                                      Qt.AspectRatioMode.KeepAspectRatio,
+                                      Qt.TransformationMode.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
 
         nav_layout.addSpacing(self.base_spacing * 4)
@@ -342,7 +376,8 @@ class SlurmJobManagerApp(QMainWindow):
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, index=i, button=btn: self.switch_panel(index, button))
+            btn.clicked.connect(lambda checked, index=i,
+                                button=btn: self.switch_panel(index, button))
             nav_layout.addWidget(btn)
             self.nav_buttons[name] = btn
 
@@ -350,15 +385,15 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.connection_status = ClickableLabel(" Connection status...")
         self.connection_status.setObjectName("statusButton")
-        
+
         # Set initial icon
         initial_status_icon_path = os.path.join(
             script_dir, "src_static", "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png")
         icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
         self.connection_status.setPixmap(
-            QPixmap(initial_status_icon_path).scaled(icon_size, 
-                                                    Qt.AspectRatioMode.KeepAspectRatio, 
-                                                    Qt.TransformationMode.SmoothTransformation))
+            QPixmap(initial_status_icon_path).scaled(icon_size,
+                                                     Qt.AspectRatioMode.KeepAspectRatio,
+                                                     Qt.TransformationMode.SmoothTransformation))
         self.connection_status.clicked.connect(self.update_connection_setting)
         nav_layout.addWidget(self.connection_status)
 
@@ -423,20 +458,20 @@ class SlurmJobManagerApp(QMainWindow):
         filter_width = get_dpi_aware_size(200)
         self.filter_jobs.setFixedWidth(filter_width)
         header_layout.addWidget(self.filter_jobs)
-        
+
         # self.filter_btn = QPushButton()
         # filter_icon_path = os.path.join(script_dir, "src_static", "filter.png")
-        
+
         # Use pre-calculated icon size
         # icon_size = QSize(self.icon_size_small, self.icon_size_small)
         # self.filter_btn.setIcon(QIcon(filter_icon_path))
         # self.filter_btn.setIconSize(icon_size)
         # button_size = get_dpi_aware_size(24)
         # self.filter_btn.setFixedSize(button_size, button_size)
-        
+
         # header_layout.addWidget(self.filter_btn)
         # self.filter_btn.clicked.connect(
-            # lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+        # lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
         self.filter_jobs.textChanged.connect(
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
@@ -479,21 +514,25 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        self.settings_panel.save_appearance_btn.clicked.connect(self.save_appearence_settings)
-        self.settings_panel.connection_settings_btn.clicked.connect(self.update_connection_setting)
+        self.settings_panel.save_appearance_btn.clicked.connect(
+            self.save_appearence_settings)
+        self.settings_panel.connection_settings_btn.clicked.connect(
+            self.update_connection_setting)
         self.settings_panel.save_button.clicked.connect(self.save_settings)
         self.stacked_widget.addWidget(self.settings_panel)
 
     # --- Action & Data Methods ---
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
-            self.job_queue_widget.filter_table(self.settings_panel.username.text())
+            self.job_queue_widget.filter_table(
+                self.settings_panel.username.text())
         elif account_type == "ALL":
             self.job_queue_widget.filter_table("")
         elif account_type == "STUD":
             self.job_queue_widget.filter_table_by_list(STUDENTS_JOBS_KEYWORD)
         elif account_type == "PROD":
-            self.job_queue_widget.filter_table_by_negative_keywords(STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_negative_keywords(
+                STUDENTS_JOBS_KEYWORD)
 
     def update_connection_setting(self):
         print("Updating connection settings...")
@@ -519,7 +558,8 @@ class SlurmJobManagerApp(QMainWindow):
         print("--- Saving Appearence Settings ---")
         self.settings.beginGroup("AppearenceSettings")
         for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-            self.settings.setValue(obj.objectName(), bool(obj.checkState().value))
+            self.settings.setValue(
+                obj.objectName(), bool(obj.checkState().value))
         self.settings.endGroup()
 
         self.settings.sync()
@@ -531,7 +571,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Save general settings (SLURM connection)
         self.settings.beginGroup("GeneralSettings")
-        self.settings.setValue("clusterAddress", self.settings_panel.cluster_address.text())
+        self.settings.setValue(
+            "clusterAddress", self.settings_panel.cluster_address.text())
         self.settings.setValue("username", self.settings_panel.username.text())
         self.settings.setValue("psw", self.settings_panel.password.text())
         self.settings.endGroup()
@@ -539,8 +580,10 @@ class SlurmJobManagerApp(QMainWindow):
         # Save notification settings (including Discord webhook)
         self.settings.beginGroup("NotificationSettings")
         notification_settings = self.settings_panel.get_notification_settings()
-        self.settings.setValue("discord_enabled", notification_settings["discord_enabled"])
-        self.settings.setValue("discord_webhook_url", notification_settings["discord_webhook_url"])
+        self.settings.setValue(
+            "discord_enabled", notification_settings["discord_enabled"])
+        self.settings.setValue("discord_webhook_url",
+                               notification_settings["discord_webhook_url"])
         self.settings.endGroup()
 
         self.settings.sync()
@@ -551,12 +594,12 @@ class SlurmJobManagerApp(QMainWindow):
         print("--- Loading Settings ---")
 
         self.settings = QSettings(str(Path("./configs/settings.ini")),
-                                QSettings.Format.IniFormat)
+                                  QSettings.Format.IniFormat)
 
         # Load general settings
         self.settings.beginGroup("GeneralSettings")
         theme = self.settings.value("theme", "Dark")
-        
+
         cluster_address = self.settings.value("clusterAddress", "")
         if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
             self.settings_panel.cluster_address.setText(cluster_address)
@@ -574,8 +617,10 @@ class SlurmJobManagerApp(QMainWindow):
         self.settings.beginGroup("AppearenceSettings")
         if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
             for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-                value = self.settings.value(obj.objectName(), 'false', type=bool)
-                obj.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+                value = self.settings.value(
+                    obj.objectName(), 'false', type=bool)
+                obj.setCheckState(
+                    Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
         self.settings.endGroup()
 
         # Load notification settings (including Discord webhook)
@@ -584,19 +629,22 @@ class SlurmJobManagerApp(QMainWindow):
             "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
             "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
         }
-        
+
         # Apply notification settings to the settings panel
         if hasattr(self, 'settings_panel'):
-            self.settings_panel.set_notification_settings(notification_settings)
+            self.settings_panel.set_notification_settings(
+                notification_settings)
         self.settings.endGroup()
 
         print("--- Settings Loaded ---")
-    
+
     def _setup_job_monitoring(self):
         """Set up job status monitoring after UI initialization"""
         if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
-            self.jobs_panel.project_storer.signals.job_status_changed.connect(self._on_global_job_status_change)
-            self.jobs_panel.project_storer.signals.project_stats_changed.connect(self._on_project_stats_updated)
+            self.jobs_panel.project_storer.signals.job_status_changed.connect(
+                self._on_global_job_status_change)
+            self.jobs_panel.project_storer.signals.project_stats_changed.connect(
+                self._on_project_stats_updated)
 
     def _on_global_job_status_change(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Handle global job status changes for main window notifications"""
@@ -621,14 +669,15 @@ class SlurmJobManagerApp(QMainWindow):
         """Update window title to show active jobs count"""
         if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
             return
-            
+
         try:
             active_jobs = self.jobs_panel.project_storer.get_active_jobs()
             active_count = len(active_jobs)
-            
+
             base_title = APP_TITLE
             if active_count > 0:
-                self.setWindowTitle(f"{base_title} - {active_count} active jobs")
+                self.setWindowTitle(
+                    f"{base_title} - {active_count} active jobs")
             else:
                 self.setWindowTitle(base_title)
         except Exception as e:
@@ -638,7 +687,7 @@ class SlurmJobManagerApp(QMainWindow):
         """Handles the window close event."""
         if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
             self.jobs_panel.project_storer.stop_job_monitoring()
-            
+
         self.slurm_connection.close()
         print("Closing application.")
         event.accept()
@@ -648,12 +697,13 @@ class SlurmJobManagerApp(QMainWindow):
         stylesheet = AppStyles.get_complete_stylesheet(self.current_theme)
         self.setStyleSheet(stylesheet)
 
+
 # --- Main Execution ---
 if __name__ == "__main__":
     # Enable High DPI scaling
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    
+
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
@@ -677,7 +727,7 @@ if __name__ == "__main__":
         print(f"Created settings file at: {settings_path} using defaults")
 
         app = QApplication(sys.argv)
-        
+
         # Set default font with fallback
         font_families = ["Inter", "Segoe UI", "Arial", "sans-serif"]
         for family in font_families:
@@ -690,16 +740,19 @@ if __name__ == "__main__":
         if dialog.exec() == QDialog.DialogCode.Accepted:
             connection_details = dialog.get_connection_details()
 
-            settings = QSettings(str(settings_path), QSettings.Format.IniFormat)
+            settings = QSettings(str(settings_path),
+                                 QSettings.Format.IniFormat)
             settings.beginGroup("GeneralSettings")
-            settings.setValue("clusterAddress", connection_details["clusterAddress"])
+            settings.setValue("clusterAddress",
+                              connection_details["clusterAddress"])
             settings.setValue("username", connection_details["username"])
             settings.setValue("psw", connection_details["psw"])
             settings.endGroup()
             settings.sync()
             print(f"Updated settings file at: {settings_path} with user input")
 
-            window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
+            window_icon_path = os.path.join(
+                script_dir, "src_static", "icon3.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
             window.show()
@@ -710,7 +763,7 @@ if __name__ == "__main__":
     else:
         print(f"Settings file found at: {settings_path}")
         app = QApplication(sys.argv)
-        
+
         # Set default font with fallback
         font_families = ["Inter", "Segoe UI", "Arial", "sans-serif"]
         for family in font_families:
@@ -718,7 +771,7 @@ if __name__ == "__main__":
             if font.exactMatch():
                 app.setFont(font)
                 break
-                
+
         window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()

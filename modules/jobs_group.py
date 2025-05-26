@@ -430,3 +430,18 @@ class JobsGroup(QWidget):
         if self._indices:
             first_project = list(self._indices.keys())[0]
             self.show_project(first_project)
+
+    def show_connection_error(self, project_name: str):
+        """Show connection error message in the project's job table"""
+        table = self.add_project(project_name)
+        table.setRowCount(1)
+        table.setColumnCount(1)
+        table.setHorizontalHeaderLabels(["Status"])
+        
+        error_item = QTableWidgetItem("⚠️ Unavailable Connection - Cannot load jobs")
+        error_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_item.setData(Qt.ItemDataRole.ForegroundRole, QBrush(QColor(COLOR_RED)))
+        error_item.setFlags(error_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        
+        table.setItem(0, 0, error_item)
+        table.horizontalHeader().setStretchLastSection(True)

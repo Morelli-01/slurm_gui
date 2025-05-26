@@ -48,6 +48,10 @@ class SlurmWorker(QThread):
             if not self.slurm_connection.is_connected():
                 result = self.slurm_connection.connect()
                 self.connected.emit(result)
+                if not result:
+                    # Emit empty data if connection failed
+                    self.data_ready.emit([], [])
+                    return
 
             nodes_data = self.slurm_connection._fetch_nodes_infos()
             queue_jobs = self.slurm_connection._fetch_squeue()
@@ -55,6 +59,7 @@ class SlurmWorker(QThread):
         except Exception as e:
             print(f"Worker error: {e}")
             self.connected.emit(False)
+            self.data_ready.emit([], [])  # Emit empty data on error
 
 
 def require_connection(func):

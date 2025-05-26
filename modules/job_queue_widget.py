@@ -129,6 +129,12 @@ class JobQueueWidget(QGroupBox):
         to enable filtering on all job attributes (visible or not).
         Re-applies the current filter after updating.
         """
+        if not jobs_data and hasattr(self.parent(), 'slurm_connection'):
+        # Check if we have no data due to connection issues
+            if self.parent().slurm_connection and not self.parent().slurm_connection.check_connection():
+                self._show_connection_error()
+                return
+    
         self.current_jobs_data = list(jobs_data)  # Keep a copy of the raw data
 
         self.queue_table.setSortingEnabled(False)
@@ -468,3 +474,18 @@ class JobQueueWidget(QGroupBox):
                         break  # Row is already marked to be hidden, no need to check other fields
 
             self.queue_table.setRowHidden(table_row_idx, row_should_be_hidden)
+
+    def _show_connection_error(self):
+        """Show connection error message in the table"""
+        self.queue_table.setRowCount(1)
+        self.queue_table.setColumnCount(1)
+        self.queue_table.setHorizontalHeaderLabels(["Status"])
+        
+        error_item = QTableWidgetItem("⚠️ Unavailable Connection - Please check SLURM connection")
+        error_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_item.setForeground(QBrush(QColor(COLOR_RED)))
+        error_item.setFlags(error_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        
+        self.queue_table.setItem(0, 0, error_item)
+        self.queue_table.horizontalHeader().setStretchLastSection(True)
+    

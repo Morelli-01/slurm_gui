@@ -125,6 +125,8 @@ class NodeStatusTab(QWidget):
         Updates the node status visualization based on the provided data.
         """
         if nodes_data is None:
+            # Add connection check
+            self._show_connection_error()
             return
         nodes_data = sort_nodes_data(nodes_data)
         self.total_gpu_used = 0
@@ -375,7 +377,21 @@ class NodeStatusTab(QWidget):
                     elif isinstance(sub_item.widget(), QLabel):  # Partition label
                         label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
                         sub_item.widget().setStyleSheet(f"color: {label_color};")
-
+    
+    def _show_connection_error(self):
+        """Show connection error message"""
+        # Clear existing content
+        for i in reversed(range(self.node_status_grid_layout.count())):
+            item = self.node_status_grid_layout.takeAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        
+        # Add error message
+        error_label = QLabel("⚠️ Unavailable Connection\n\nPlease check SLURM connection")
+        error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_label.setStyleSheet(f"color: {COLOR_RED}; font-size: 16px; padding: 40px;")
+        self.node_status_grid_layout.addWidget(error_label, 0, 0)
 
 class CpuUsageTab(QWidget):
     """Widget for displaying CPU usage visualization."""
@@ -424,6 +440,9 @@ class CpuUsageTab(QWidget):
 
     def update_content(self, nodes_data, jobs_data):
         """Updates the CPU usage visualization."""
+        if not nodes_data:
+            self._show_connection_error()
+            return
         nodes_data = sort_nodes_data(nodes_data)
 
         # Clear existing grid layout content
@@ -537,6 +556,20 @@ class CpuUsageTab(QWidget):
                         label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
                         sub_item.widget().setStyleSheet(f"color: {label_color};")
 
+    def _show_connection_error(self):
+        """Show connection error message"""
+        # Clear existing content
+        for i in reversed(range(self.usage_grid_layout.count())):
+            item = self.usage_grid_layout.takeAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        
+        # Add error message
+        error_label = QLabel("⚠️ Unavailable Connection\n\nPlease check SLURM connection")
+        error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_label.setStyleSheet(f"color: {COLOR_RED}; font-size: 16px; padding: 40px;")
+        self.usage_grid_layout.addWidget(error_label, 0, 0)
 
 class RamUsageTab(QWidget):
     """Widget for displaying RAM usage visualization."""
@@ -574,6 +607,9 @@ class RamUsageTab(QWidget):
 
     def update_content(self, nodes_data, jobs_data):
         """Updates the RAM usage visualization."""
+        if not nodes_data:
+            self._show_connection_error()
+            return
         nodes_data = sort_nodes_data(nodes_data)
 
         for i in reversed(range(self.usage_grid_layout.count())):
@@ -688,8 +724,22 @@ class RamUsageTab(QWidget):
                     elif isinstance(sub_item.widget(), QLabel):  # Partition label
                         label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
                         sub_item.widget().setStyleSheet(f"color: {label_color};")
-
-
+    
+    def _show_connection_error(self):
+        """Show connection error message"""
+        # Clear existing content
+        for i in reversed(range(self.usage_grid_layout.count())):
+            item = self.usage_grid_layout.takeAt(i)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        
+        # Add error message
+        error_label = QLabel("⚠️ Unavailable Connection\n\nPlease check SLURM connection")
+        error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        error_label.setStyleSheet(f"color: {COLOR_RED}; font-size: 16px; padding: 40px;")
+        self.usage_grid_layout.addWidget(error_label, 0, 0)
+    
 class ClusterStatusWidget(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
