@@ -442,7 +442,7 @@ class SlurmConnection:
         script_lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name=\"{job_name}\"",
-            f"#SBATCH --partition={partition.replace("*", "")}",
+            f"#SBATCH --partition={partition.replace('*', '')}",
             f"#SBATCH --time={time_limit}",
             f"#SBATCH --nodes={nodes}",
             f"#SBATCH --ntasks={ntasks}",
