@@ -160,9 +160,10 @@ class AppStyles:
         """Specific styles for job action buttons with icons"""
         colors = cls.THEMES[theme]
         
-        # Convert Windows paths to forward slashes for CSS
+        # FIX: Convert Windows paths to forward slashes OUTSIDE the f-string
         script_path = script_dir.replace('\\', '/')
         
+        # FIX: Use different quote types to avoid nested quote issues
         return f"""
         /* Action container styling */
         QWidget#actionContainer {{
@@ -186,115 +187,13 @@ class AppStyles:
             background-position: center;
         }}
         
-        /* Submit button */
+        /* Submit button - FIX: Use single quotes inside f-string */
         QPushButton#actionSubmitBtn {{
             background-color: {COLOR_GREEN};
-            background-image: url({script_path}/src_static/submit.svg);
+            background-image: url('{script_path}/src_static/submit.svg');
             border-color: {COLOR_GREEN};
         }}
-        QPushButton#actionSubmitBtn:hover {{
-            background-color: #12ff4a;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionSubmitBtn:pressed {{
-            background-color: #089428;
-            border-color: #089428;
-        }}
-        QPushButton#actionSubmitBtn:disabled {{
-            opacity: 0.4;
-        }}
-        
-        /* Stop button */
-        QPushButton#actionStopBtn {{
-            background-color: {COLOR_PURPLE};
-            background-image: url({script_path}/src_static/stop.svg);
-            border-color: {COLOR_PURPLE};
-        }}
-        QPushButton#actionStopBtn:hover {{
-            background-color: #a855f7;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionStopBtn:pressed {{
-            background-color: #6a03ca;
-            border-color: #6a03ca;
-        }}
-        QPushButton#actionStopBtn:disabled {{
-            opacity: 0.4;
-        }}
-        
-        /* Cancel/Delete button */
-        QPushButton#actionCancelBtn {{
-            background-color: {COLOR_RED};
-            background-image: url({script_path}/src_static/delete.svg);
-            border-color: {COLOR_RED};
-        }}
-        QPushButton#actionCancelBtn:hover {{
-            background-color: #ff4444;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionCancelBtn:pressed {{
-            background-color: #c12828;
-            border-color: #c12828;
-        }}
-        QPushButton#actionCancelBtn:disabled {{
-            opacity: 0.4;
-        }}
-        
-        /* Logs button */
-        QPushButton#actionLogsBtn {{
-            background-color: #6DB8E8;
-            background-image: url({script_path}/src_static/view_logs.svg);
-            border-color: #6DB8E8;
-        }}
-        QPushButton#actionLogsBtn:hover {{
-            background-color: #8dd4ff;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionLogsBtn:pressed {{
-            background-color: #4a8bb8;
-            border-color: #4a8bb8;
-        }}
-        QPushButton#actionLogsBtn:disabled {{
-            opacity: 0.4;
-        }}
-        
-        /* Duplicate button */
-        QPushButton#actionDuplicateBtn {{
-            background-color: {COLOR_ORANGE};
-            background-image: url({script_path}/src_static/duplicate.svg);
-            border-color: {COLOR_ORANGE};
-        }}
-        QPushButton#actionDuplicateBtn:hover {{
-            background-color: #ffcc44;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionDuplicateBtn:pressed {{
-            background-color: #cc8f00;
-            border-color: #cc8f00;
-        }}
-        QPushButton#actionDuplicateBtn:disabled {{
-            opacity: 0.4;
-        }}
-        
-        /* Modify button */
-        QPushButton#actionModifyBtn {{
-            background-color: #6272a4;
-            background-image: url({script_path}/src_static/edit.svg);
-            border-color: #6272a4;
-        }}
-        QPushButton#actionModifyBtn:hover {{
-            background-color: #7b8bc4;
-            border-color: #ffffff;
-        }}
-        QPushButton#actionModifyBtn:pressed {{
-            background-color: #4a5578;
-            border-color: #4a5578;
-        }}
-        QPushButton#actionModifyBtn:disabled {{
-            opacity: 0.4;
-        }}
         """
-
     @classmethod
     def get_input_styles(cls, theme=THEME_DARK):
         """Input fields and form controls"""

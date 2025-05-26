@@ -717,7 +717,7 @@ class JobsPanel(QWidget):
         # Using a placeholder object name, replace with appropriate style
         self.new_jobs_button.setObjectName(BTN_GREEN)
         self.new_jobs_button.clicked.connect(self.open_new_job_dialog)
-        self.new_jobs_button.setFixedSize(100, 40)  # Set a fixed size
+        self.new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
 
         # Initially position the button (will be adjusted in resizeEvent)
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
@@ -825,69 +825,6 @@ class JobsPanel(QWidget):
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
                                   self.height() - self.new_jobs_button.height() - 20)
         super().resizeEvent(event)
-
-    def setup_project_storer(self):
-        """
-        Initialize the project store when a connection becomes available.
-        This is called when the SSH connection to the SLURM cluster is established.
-        """
-        try:
-            # Create the ProjectStore instance with the current connection
-            self.project_storer = ProjectStore(self.slurm_connection)
-
-            # Ensure remote directory structure exists
-            if self.slurm_connection.remote_home:
-                slurm_gui_dir = f"{self.slurm_connection.remote_home}/.slurm_gui"
-                logs_dir = f"{self.slurm_connection.remote_home}/.logs"
-
-                # Create necessary directories if they don't exist
-                self.slurm_connection.run_command(f"mkdir -p {slurm_gui_dir}")
-                self.slurm_connection.run_command(f"mkdir -p {logs_dir}")
-
-            # Clear existing project widgets before reloading
-            if hasattr(self.project_group, 'scroll_content_layout'):
-                for i in reversed(range(self.project_group.scroll_content_layout.count())):
-                    widget = self.project_group.scroll_content_layout.itemAt(
-                        i).widget()
-                    if widget and widget not in (None, self.project_group.add_button):
-                        widget.setParent(None)
-
-                # Clear tracking dictionaries
-                self.project_group.projects_children.clear()
-                if hasattr(self.project_group, 'projects_keys'):
-                    self.project_group.projects_keys = []
-
-            # Start loading projects - this will create project widgets and load jobs
-            self.project_group.start()
-
-            # Refresh job data from SLURM queue to update statuses
-            if hasattr(self.slurm_connection, '_fetch_squeue'):
-                try:
-                    # Get current jobs from SLURM queue
-                    queue_jobs = self.slurm_connection._fetch_squeue()
-
-                    # Update job information in the store
-                    if queue_jobs:
-                        self.project_storer.update_jobs_from_squeue(queue_jobs)
-
-                        # Refresh all project displays to reflect updated job statuses
-                        for project_name in self.project_storer.all_projects():
-                            project = self.project_storer.get(project_name)
-                            if project:
-                                job_rows = [job.to_table_row()
-                                            for job in project.jobs]
-                                self.jobs_group.update_jobs(
-                                    project_name, job_rows)
-                except Exception as e:
-                    print(f"Error fetching job queue: {e}")
-                    import traceback
-                    traceback.print_exc()
-
-        except Exception as e:
-            print(f"Failed to initialize project store: {e}")
-            import traceback
-            traceback.print_exc()
-            self.project_storer = None
 
     def _update_job_in_table(self, project_name: str, job_id: str):
         """Update a specific job row in the jobs table"""
@@ -1583,49 +1520,4 @@ class JobsPanel(QWidget):
 
         # Fast fallback - just use job ID
         return f"Job {job_id}"
-
-    def reload_after_reconnection(self):
-        """Reload all projects and jobs after connection is restored"""
-        if not self.project_storer:
-            return
-            
-        try:
-            # Clear any error messages from jobs group
-            for project_name in self.project_group.projects_children.keys():
-                # Get fresh job data from the project store
-                project = self.project_storer.get(project_name)
-                if project and project.jobs:
-                    job_rows = [job.to_table_row() for job in project.jobs]
-                    self.jobs_group.update_jobs(project_name, job_rows)
-                else:
-                    # Show empty table instead of error
-                    self.jobs_group.update_jobs(project_name, [])
-            
-            # Trigger a refresh of job statuses from SLURM
-            if hasattr(self.slurm_connection, '_fetch_squeue'):
-                try:
-                    queue_jobs = self.slurm_connection._fetch_squeue()
-                    if queue_jobs:
-                        self.project_storer.update_jobs_from_squeue(queue_jobs)
-                        
-                        # Update UI again with fresh data
-                        for project_name in self.project_storer.all_projects():
-                            project = self.project_storer.get(project_name)
-                            if project:
-                                job_rows = [job.to_table_row() for job in project.jobs]
-                                self.jobs_group.update_jobs(project_name, job_rows)
-                                
-                                # Update project status counts
-                                if project_name in self.project_group.projects_children:
-                                    project_widget = self.project_group.projects_children[project_name]
-                                    if hasattr(project_widget, 'update_status_counts'):
-                                        job_stats = project.get_job_stats()
-                                        project_widget.update_status_counts(job_stats)
-                except Exception as e:
-                    print(f"Error refreshing job queue after reconnection: {e}")
-                    
-        except Exception as e:
-            print(f"Error reloading projects after reconnection: {e}")
-            import traceback
-            traceback.print_exc()
 

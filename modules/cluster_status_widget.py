@@ -377,22 +377,16 @@ class NodeStatusTab(QWidget):
                     elif isinstance(sub_item.widget(), QLabel):  # Partition label
                         label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
                         sub_item.widget().setStyleSheet(f"color: {label_color};")
-    
+        
     def _show_connection_error(self):
         """Show connection error message"""
-        # Clear existing content
-        for i in reversed(range(self.node_status_grid_layout.count())):
-            item = self.node_status_grid_layout.takeAt(i)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        # FIX: Pre-calculate complex expressions outside f-string
+        text_color = COLOR_DARK_FG if self.theme_stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
         
-        # Add error message
         error_label = QLabel("⚠️ Unavailable Connection\n\nPlease check SLURM connection")
         error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        error_label.setStyleSheet(f"color: {COLOR_RED}; font-size: 16px; padding: 40px;")
-        self.node_status_grid_layout.addWidget(error_label, 0, 0)
-
+        error_label.setStyleSheet(f"color: {text_color}; font-size: 16px; padding: 40px;")
+        
 class CpuUsageTab(QWidget):
     """Widget for displaying CPU usage visualization."""
 

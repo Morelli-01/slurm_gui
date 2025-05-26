@@ -208,89 +208,189 @@ class SlurmJobManagerApp(QMainWindow):
         self.icon_size_small = get_dpi_aware_size(16)
         self.icon_size_medium = get_dpi_aware_size(24)
         self.icon_size_large = get_dpi_aware_size(32)
-
     def set_connection_status(self, connected: bool, connecting=False):
-        """Enhanced connection status handling"""
-        previous_status = getattr(self, 'connection_status_', None)
+            """Enhanced connection status handling"""
+            previous_status = getattr(self, 'connection_status_', None)
 
-        if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
-            self.jobs_panel.setup_project_storer()
-            self._setup_job_monitoring()
+            # Check if we were previously disconnected and now reconnected
+            if previous_status == False and connected and hasattr(self, "jobs_panel"):
+                print("Connection restored - completely recreating jobs panel")
+                # 1. Get the current index of the jobs panel
+                jobs_panel_index = self.stacked_widget.indexOf(self.jobs_panel)
 
-            # Reload all projects and jobs when connection is restored
-            if previous_status == False:  # Was disconnected, now connected
-                print("Connection restored - reloading projects and jobs")
-                self.jobs_panel.reload_after_reconnection()
+                # 2. Remove the old jobs panel from the stacked widget
+                if jobs_panel_index != -1:
+                    self.stacked_widget.removeWidget(self.jobs_panel)
+                    self.jobs_panel.deleteLater() # Mark for deletion
 
-        self.connection_status_ = True if connected else False
+                # 3. Recreate the jobs panel
+                self.create_jobs_panel() # This will create a new JobsPanel instance
+                # The new panel will be added at the end, so its index will be the current count - 1
+                # If the jobs panel was at index 0, we need to insert it back there
+                # Assuming jobs panel is always the first one (index 0)
+                self.stacked_widget.insertWidget(0, self.jobs_panel)
 
-        # Use pre-calculated icon size
-        icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
 
-        if connecting:
-            loading_gif_path = os.path.join(
-                script_dir, "src_static", "loading.gif")
-            loading_movie = QMovie(loading_gif_path)
-            loading_movie.setScaledSize(icon_size)
-            loading_movie.start()
-            self.connection_status.setMovie(loading_movie)
-            self.connection_status.setText("")
-            self.connection_status.setToolTip("Connecting...")
-            self.connection_status.setStyleSheet("""
-                QPushButton#statusButton {
-                    background-color: #9e9e9e;
-                    color: white;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    padding: 6px 12px;
-                }
-            """)
-            return
+                # 4. Ensure the UI is updated and data is refreshed
+                # The new jobs_panel's __init__ and start methods will handle initial loading
+                # self._setup_job_monitoring() # Re-establish signals for the new panel
 
-        # Restore text after movie is done or connection status changes
-        self.connection_status.setMovie(None)
-        self.connection_status.setText(" Connection status...")
+                # Set the current index back to the jobs panel if it was active
+                # This is important if the user was on the jobs tab when connection was lost
+                if self.stacked_widget.currentIndex() == jobs_panel_index:
+                    self.stacked_widget.setCurrentIndex(0) # Assuming jobs panel is always at index 0
 
-        if connected:
-            self.connection_status.setToolTip("Connected")
-            good_connection_icon_path = os.path.join(
-                script_dir, "src_static", "good_connection.png")
-            self.connection_status.setPixmap(
-                QIcon(good_connection_icon_path).pixmap(icon_size))
-            self.connection_status.setStyleSheet("""
-                QPushButton#statusButton {
-                    background-color: #4caf50;
-                    color: white;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    padding: 8px 16px;
-                    border: 2px solid #4caf50;
-                }
-                QPushButton#statusButton:hover {
-                    background-color: #66bb6a;
-                    border: 2px solid #ffffff;
-                }
-            """)
-        else:
-            self.connection_status.setToolTip("Disconnected")
-            bad_connection_icon_path = os.path.join(
-                script_dir, "src_static", "bad_connection.png")
-            self.connection_status.setPixmap(
-                QIcon(bad_connection_icon_path).pixmap(icon_size))
-            self.connection_status.setStyleSheet("""
-                QPushButton#statusButton {
-                    background-color: #f44336;
-                    color: white;
-                    border-radius: 8px;
-                    font-weight: bold;
-                    padding: 8px 16px;
-                    border: 2px solid #f44336;
-                }
-                QPushButton#statusButton:hover {
-                    background-color: #ef5350;
-                    border: 2px solid #ffffff;
-                }
-            """)
+            self.connection_status_ = True if connected else False
+
+            # Use pre-calculated icon size
+            icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
+
+            if connecting:
+                loading_gif_path = os.path.join(
+                    script_dir, "src_static", "loading.gif")
+                loading_movie = QMovie(loading_gif_path)
+                loading_movie.setScaledSize(icon_size)
+                loading_movie.start()
+                self.connection_status.setMovie(loading_movie)
+                self.connection_status.setText("")
+                self.connection_status.setToolTip("Connecting...")
+                self.connection_status.setStyleSheet("""
+                    QPushButton#statusButton {
+                        background-color: #9e9e9e;
+                        color: white;
+                        border-radius: 5px;
+                        font-weight: bold;
+                        padding: 6px 12px;
+                    }
+                """)
+                return
+
+            # Restore text after movie is done or connection status changes
+            self.connection_status.setMovie(None)
+            self.connection_status.setText(" Connection status...")
+
+            if connected:
+                self.connection_status.setToolTip("Connected")
+                good_connection_icon_path = os.path.join(
+                    script_dir, "src_static", "good_connection.png")
+                self.connection_status.setPixmap(
+                    QIcon(good_connection_icon_path).pixmap(icon_size))
+                self.connection_status.setStyleSheet("""
+                    QPushButton#statusButton {
+                        background-color: #4caf50;
+                        color: white;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        padding: 8px 16px;
+                        border: 2px solid #4caf50;
+                    }
+                    QPushButton#statusButton:hover {
+                        background-color: #66bb6a;
+                        border: 2px solid #ffffff;
+                    }
+                """)
+            else:
+                self.connection_status.setToolTip("Disconnected")
+                bad_connection_icon_path = os.path.join(
+                    script_dir, "src_static", "bad_connection.png")
+                self.connection_status.setPixmap(
+                    QIcon(bad_connection_icon_path).pixmap(icon_size))
+                self.connection_status.setStyleSheet("""
+                    QPushButton#statusButton {
+                        background-color: #f44336;
+                        color: white;
+                        border-radius: 8px;
+                        font-weight: bold;
+                        padding: 8px 16px;
+                        border: 2px solid #f44336;
+                    }
+                    QPushButton#statusButton:hover {
+                        background-color: #ef5350;
+                        border: 2px solid #ffffff;
+                    }
+                """)
+    # def set_connection_status(self, connected: bool, connecting=False):
+    #     """Enhanced connection status handling"""
+    #     previous_status = getattr(self, 'connection_status_', None)
+
+    #     if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
+    #         self.jobs_panel.setup_project_storer()
+    #         self._setup_job_monitoring()
+
+    #         # Reload all projects and jobs when connection is restored
+    #         if previous_status == False:  # Was disconnected, now connected
+    #             print("Connection restored - reloading projects and jobs")
+    #             self.jobs_panel.reload_after_reconnection()
+
+    #     self.connection_status_ = True if connected else False
+
+    #     # Use pre-calculated icon size
+    #     icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
+
+    #     if connecting:
+    #         loading_gif_path = os.path.join(
+    #             script_dir, "src_static", "loading.gif")
+    #         loading_movie = QMovie(loading_gif_path)
+    #         loading_movie.setScaledSize(icon_size)
+    #         loading_movie.start()
+    #         self.connection_status.setMovie(loading_movie)
+    #         self.connection_status.setText("")
+    #         self.connection_status.setToolTip("Connecting...")
+    #         self.connection_status.setStyleSheet("""
+    #             QPushButton#statusButton {
+    #                 background-color: #9e9e9e;
+    #                 color: white;
+    #                 border-radius: 5px;
+    #                 font-weight: bold;
+    #                 padding: 6px 12px;
+    #             }
+    #         """)
+    #         return
+
+    #     # Restore text after movie is done or connection status changes
+    #     self.connection_status.setMovie(None)
+    #     self.connection_status.setText(" Connection status...")
+
+    #     if connected:
+    #         self.connection_status.setToolTip("Connected")
+    #         good_connection_icon_path = os.path.join(
+    #             script_dir, "src_static", "good_connection.png")
+    #         self.connection_status.setPixmap(
+    #             QIcon(good_connection_icon_path).pixmap(icon_size))
+    #         self.connection_status.setStyleSheet("""
+    #             QPushButton#statusButton {
+    #                 background-color: #4caf50;
+    #                 color: white;
+    #                 border-radius: 8px;
+    #                 font-weight: bold;
+    #                 padding: 8px 16px;
+    #                 border: 2px solid #4caf50;
+    #             }
+    #             QPushButton#statusButton:hover {
+    #                 background-color: #66bb6a;
+    #                 border: 2px solid #ffffff;
+    #             }
+    #         """)
+    #     else:
+    #         self.connection_status.setToolTip("Disconnected")
+    #         bad_connection_icon_path = os.path.join(
+    #             script_dir, "src_static", "bad_connection.png")
+    #         self.connection_status.setPixmap(
+    #             QIcon(bad_connection_icon_path).pixmap(icon_size))
+    #         self.connection_status.setStyleSheet("""
+    #             QPushButton#statusButton {
+    #                 background-color: #f44336;
+    #                 color: white;
+    #                 border-radius: 8px;
+    #                 font-weight: bold;
+    #                 padding: 8px 16px;
+    #                 border: 2px solid #f44336;
+    #             }
+    #             QPushButton#statusButton:hover {
+    #                 background-color: #ef5350;
+    #                 border: 2px solid #ffffff;
+    #             }
+    #         """)
 
     def setup_refresh_timer(self):
         """Sets up the timer for automatic data refreshing."""

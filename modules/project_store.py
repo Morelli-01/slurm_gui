@@ -374,7 +374,7 @@ class ProjectStore:
     """Thread‑safe singleton that mirrors a remote *settings.ini* file."""
     _instance: "ProjectStore | None" = None
     _lock = RLock()
-
+    
     def __new__(cls, slurm: SlurmConnection, remote_path: Optional[str] = None):
 
         with cls._lock:
@@ -391,7 +391,7 @@ class ProjectStore:
         #     raise RuntimeError("SlurmConnection must be *connected* before using ProjectStore")
         self.signals = ProjectStoreSignals()
         self.slurm = slurm
-
+        self._projects: Dict[str, Project] = {}
         # Where to put the INI on the cluster
         if remote_path is None:
             home = (
@@ -827,7 +827,7 @@ class ProjectStore:
 
         self.job_monitor.start()
         print("Started job status monitoring")
-        
+
     def stop_job_monitoring(self):
         """Stop the background job status monitoring"""
         if self.job_monitor is not None:
