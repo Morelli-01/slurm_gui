@@ -1092,39 +1092,33 @@ class NewJobDialog(QDialog):
             result["dependency"] = "singleton"
         elif dep_ids_str:
             result["dependency"] = f"{dep_type}:{dep_ids_str}"
+            
+        discord_settings = {
+            "enabled": False,
+            "notify_queued": True,
+            "notify_start": True, 
+            "notify_complete": True,
+            "notify_failed": True,
+            "message_prefix": f"[{self.selected_project}]"
+        }
         
-        # CRITICAL FIX: Discord notification settings
-        print(f"[DEBUG] Checking Discord settings - webhook available: {self.discord_webhook_available}")
-        if self.discord_webhook_available and hasattr(self, 'discord_notifications_check'):
-            print(f"[DEBUG] Discord checkbox checked: {self.discord_notifications_check.isChecked()}")
+        # Only collect Discord settings if tab exists and is configured
+        if hasattr(self, 'discord_notifications_check'):
+            discord_settings["enabled"] = self.discord_notifications_check.isChecked()
             
-            discord_settings = {
-                "enabled": self.discord_notifications_check.isChecked(),
-                "notify_start": False,
-                "notify_complete": False, 
-                "notify_failed": False,
-                "notify_queued": False,
-                "message_prefix": "",
-                "notification_level": 0
-            }
-            
-            # Only get detailed settings if main checkbox is enabled
-            if self.discord_notifications_check.isChecked():
+            if discord_settings["enabled"]:
+                # Get individual notification preferences
                 discord_settings.update({
-                    "notify_start": self.notify_job_start.isChecked() if hasattr(self, 'notify_job_start') else True,
-                    "notify_complete": self.notify_job_complete.isChecked() if hasattr(self, 'notify_job_complete') else True,
-                    "notify_failed": self.notify_job_failed.isChecked() if hasattr(self, 'notify_job_failed') else True,
-                    "notify_queued": self.notify_job_queued.isChecked() if hasattr(self, 'notify_job_queued') else False,
-                    "message_prefix": self.custom_message_prefix.text().strip() if hasattr(self, 'custom_message_prefix') else "",
-                    "notification_level": 0  # Since we removed the dropdown, default to essential
+                    "notify_queued": getattr(self, 'notify_job_queued', self.discord_options_widget.findChild(QCheckBox)).isChecked(),
+                    "notify_start": getattr(self, 'notify_job_start', self.discord_options_widget.findChild(QCheckBox)).isChecked(),
+                    "notify_complete": getattr(self, 'notify_job_complete', self.discord_options_widget.findChild(QCheckBox)).isChecked(),
+                    "notify_failed": getattr(self, 'notify_job_failed', self.discord_options_widget.findChild(QCheckBox)).isChecked(),
+                    "message_prefix": self.custom_message_prefix.text().strip() or f"[{self.selected_project}]"
                 })
-            
-            result["discord_notifications"] = discord_settings
-            print(f"[DEBUG] Discord settings added to result: {discord_settings}")
-        else:
-            print("[DEBUG] Discord not available or checkbox not found")
-
-        print(f"[DEBUG] Final job details keys: {list(result.keys())}")
+        
+        result["discord_notifications"] = discord_settings
+        
+        print(f"[DEBUG] Storing Discord settings: {discord_settings}")
         return result
 
     def _browse_working_dir(self):
@@ -1172,20 +1166,27 @@ class NewJobDialog(QDialog):
             return False
 
     def _setup_notifications_tab(self):
-        """Set up minimal notifications tab for Discord job notifications"""
+        """Set up simplified and reliable notifications tab"""
         layout = QVBoxLayout(self.notifications_tab)
-        layout.setSpacing(25)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(20)
+        layout.setContentsMargins(30, 30, 30, 30)
 
-        # Simple title
+        # Title
         title_label = QLabel("Discord Notifications")
         title_label.setFont(QFont("Inter", 16, QFont.Weight.Bold))
-        title_label.setStyleSheet(f"color: {COLOR_DARK_FG}; margin-bottom: 10px;")
+        title_label.setStyleSheet(f"color: {COLOR_DARK_FG}; margin-bottom: 15px;")
         layout.addWidget(title_label)
 
-        # Main enable checkbox
-        self.discord_notifications_check = QCheckBox("Enable notifications for this job")
-        self.discord_notifications_check.setChecked(True)
+        # Status check
+        discord_status = self._check_discord_configuration()
+        if not discord_status["configured"]:
+            warning_label = QLabel("⚠️ Discord notifications are not configured in settings.")
+            warning_label.setStyleSheet(f"color: {COLOR_ORANGE}; font-size: 12px; margin-bottom: 15px;")
+            layout.addWidget(warning_label)
+
+        # Main enable checkbox - ALWAYS visible
+        self.discord_notifications_check = QCheckBox("Enable Discord notifications for this job")
+        self.discord_notifications_check.setChecked(discord_status["configured"])  # Default to enabled if configured
         self.discord_notifications_check.setFont(QFont("Inter", 13))
         self.discord_notifications_check.setStyleSheet(f"""
             QCheckBox {{
@@ -1193,8 +1194,8 @@ class NewJobDialog(QDialog):
                 spacing: 8px;
             }}
             QCheckBox::indicator {{
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
                 border: 2px solid {COLOR_DARK_BORDER};
                 border-radius: 3px;
                 background-color: {COLOR_DARK_BG_ALT};
@@ -1207,18 +1208,18 @@ class NewJobDialog(QDialog):
         self.discord_notifications_check.stateChanged.connect(self._toggle_discord_options)
         layout.addWidget(self.discord_notifications_check)
 
-        # Notification options (indented)
+        # Notification options container
         self.discord_options_widget = QWidget()
         options_layout = QVBoxLayout(self.discord_options_widget)
-        options_layout.setContentsMargins(25, 15, 0, 0)
+        options_layout.setContentsMargins(20, 15, 0, 0)
         options_layout.setSpacing(12)
 
-        # Simple checkboxes
+        # Simplified notification options - fewer checkboxes, clearer names
         notification_options = [
-            ("notify_job_start", "Job starts", True),
-            ("notify_job_complete", "Job completes", True),
-            ("notify_job_failed", "Job fails", True),
-            ("notify_job_queued", "Job queued", False)
+            ("notify_job_queued", "📥 When job enters queue (PENDING)", True),
+            ("notify_job_start", "🏃 When job starts running", True),
+            ("notify_job_complete", "✅ When job completes successfully", True),
+            ("notify_job_failed", "❌ When job fails or is cancelled", True),
         ]
 
         for attr_name, label, default in notification_options:
@@ -1231,8 +1232,8 @@ class NewJobDialog(QDialog):
                     spacing: 6px;
                 }}
                 QCheckBox::indicator {{
-                    width: 14px;
-                    height: 14px;
+                    width: 16px;
+                    height: 16px;
                     border: 1px solid {COLOR_DARK_BORDER};
                     border-radius: 2px;
                     background-color: {COLOR_DARK_BG_ALT};
@@ -1247,24 +1248,24 @@ class NewJobDialog(QDialog):
 
         layout.addWidget(self.discord_options_widget)
 
-        # Message prefix (simple)
+        # Message prefix
         prefix_layout = QHBoxLayout()
         prefix_layout.setSpacing(10)
         
-        prefix_label = QLabel("Prefix:")
+        prefix_label = QLabel("Message prefix:")
         prefix_label.setFont(QFont("Inter", 11))
         prefix_label.setStyleSheet(f"color: {COLOR_DARK_FG};")
         
         self.custom_message_prefix = QLineEdit()
-        self.custom_message_prefix.setPlaceholderText("Optional")
+        self.custom_message_prefix.setPlaceholderText(f"[{self.selected_project}]")
         self.custom_message_prefix.setText(f"[{self.selected_project}]")
-        self.custom_message_prefix.setMaximumWidth(200)
+        self.custom_message_prefix.setMaximumWidth(250)
         self.custom_message_prefix.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {COLOR_DARK_BG_ALT};
                 border: 1px solid {COLOR_DARK_BORDER};
                 border-radius: 4px;
-                padding: 6px 8px;
+                padding: 8px;
                 font-size: 11px;
                 color: {COLOR_DARK_FG};
             }}
@@ -1278,16 +1279,78 @@ class NewJobDialog(QDialog):
         prefix_layout.addStretch()
         
         layout.addLayout(prefix_layout)
+
         layout.addStretch()
+
+        # Set initial state
+        self._toggle_discord_options(self.discord_notifications_check.isChecked())
+
+    def _check_discord_configuration(self):
+        """Check if Discord is properly configured"""
+        try:
+            settings = QSettings(str(Path("./configs/settings.ini")), QSettings.Format.IniFormat)
+            settings.beginGroup("NotificationSettings")
+            
+            enabled = settings.value("discord_enabled", False, type=bool)
+            webhook_url = settings.value("discord_webhook_url", "", type=str)
+            
+            settings.endGroup()
+            
+            return {
+                "configured": enabled and bool(webhook_url.strip()),
+                "enabled": enabled,
+                "webhook_url": webhook_url
+            }
+        except Exception:
+            return {"configured": False, "enabled": False, "webhook_url": ""}
 
     def _toggle_discord_options(self, state):
         """Enable/disable Discord notification options"""
-        enabled = state == Qt.CheckState.Checked.value or state == 2
-        self.discord_options_widget.setEnabled(enabled)
+        # Handle both boolean and Qt.CheckState
+        if hasattr(state, 'value'):
+            enabled = state == Qt.CheckState.Checked
+        else:
+            enabled = bool(state)
         
-        # Simple opacity change for disabled state
+        self.discord_options_widget.setEnabled(enabled)
+        self.test_notification_btn.setEnabled(enabled)
+        
+        # Visual feedback
         opacity = "1.0" if enabled else "0.4"
         self.discord_options_widget.setStyleSheet(f"QWidget {{ opacity: {opacity}; }}")
+
+    def _send_test_notification(self):
+        """Send a test Discord notification"""
+        try:
+            from modules.discord_manager import discord_manager
+            
+            if not discord_manager.is_configured():
+                show_warning_toast(self, "Not Configured", "Discord notifications are not configured in settings.")
+                return
+            
+            # Create test job settings
+            test_settings = {
+                "enabled": True,
+                "message_prefix": self.custom_message_prefix.text() or f"[{self.selected_project}]"
+            }
+            
+            success = discord_manager.send_notification(
+                project_name=self.selected_project,
+                job_id="TEST",
+                job_name="Test Notification",
+                old_status="",
+                new_status="COMPLETED",
+                job_settings=test_settings
+            )
+            
+            if success:
+                show_success_toast(self, "Test Sent", "Discord test notification sent successfully!")
+            else:
+                show_error_toast(self, "Test Failed", "Failed to send Discord test notification.")
+                
+        except Exception as e:
+            show_error_toast(self, "Error", f"Error sending test notification: {str(e)}")
+
 
 class ModifyJobDialog(NewJobDialog):
     """
