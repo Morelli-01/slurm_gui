@@ -659,15 +659,25 @@ class StatusBar(QWidget):
 
 
 class JobsPanel(QWidget):
+# In modules/job_panel.py - Replace the JobsPanel.__init__ method
+
     def __init__(self, parent=None, slurm_connection: SlurmConnection = None):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
-        try:
-            self.project_storer = ProjectStore(self.slurm_connection)
-            self._connect_project_store_signals()
-        except ConnectionError as e:
-            print(e)
-            self.project_storer = None
+        self.project_storer = None  # Initialize to None
+        
+        # Try to initialize project store if connection is available
+        if slurm_connection and slurm_connection.check_connection():
+            try:
+                self.project_storer = ProjectStore(self.slurm_connection)
+                self._connect_project_store_signals()
+                print("Project store initialized successfully")
+            except Exception as e:
+                print(f"Failed to initialize project store: {e}")
+                self.project_storer = None
+        else:
+            print("No SLURM connection available - project store will be initialized later")
+        
         self.current_project = None  # Add attribute to store selected project
 
         # Use a base layout for the main content (ProjectGroup and JobsGroup)
@@ -677,8 +687,13 @@ class JobsPanel(QWidget):
 
         self.jobs_group = JobsGroup()
         self.project_group = ProjectGroup(parent=self)
+        
+        # Only start loading projects if project_storer is available
         if self.project_storer is not None:
             self.project_group.start()
+        else:
+            # Show a message that connection is needed
+            self._show_connection_required_message()
 
         self.base_layout.addWidget(self.project_group)
         self.base_layout.addWidget(self.jobs_group)
@@ -721,11 +736,11 @@ class JobsPanel(QWidget):
 
         # Initially position the button (will be adjusted in resizeEvent)
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
-                                  self.height() - self.new_jobs_button.height() - 20)
+                                self.height() - self.new_jobs_button.height() - 20)
 
         # --- Initial Project Selection ---
         # After loading projects, select the first one if available
-        if self.project_storer is not None and self.project_group.projects_keys:
+        if self.project_storer is not None and hasattr(self.project_group, 'projects_keys') and self.project_group.projects_keys:
             first_project_name = self.project_group.projects_keys[-1]
             # Programmatically trigger the selection
             self.project_group.handle_project_selection(first_project_name)
@@ -734,6 +749,7 @@ class JobsPanel(QWidget):
             # FIXED: Explicitly show the project in JobsGroup to sync the stacked view
             self.jobs_group.show_project(first_project_name)
 
+        # Connect job action signals
         self.jobs_group.submitRequested.connect(self.submit_job)
         self.jobs_group.cancelRequested.connect(self.delete_job)
         self.jobs_group.stopRequested.connect(self.stop_job)
@@ -741,14 +757,89 @@ class JobsPanel(QWidget):
         self.jobs_group.duplicateRequested.connect(self.duplicate_job)
         self.jobs_group.modifyRequested.connect(self.modify_job)
 
-    def on_project_selected(self, project_name):
-        """Slot to update the currently selected project."""
-        self.current_project = project_name
-        # For debugging
-        print(f"Selected Project in JobsPanel: {self.current_project}")
+    def _show_connection_required_message(self):
+        """Show a message indicating that SLURM connection is required"""
+        try:
+            # Add a temporary project to show the message
+            temp_project = ProjectWidget("⚠️ Connection Required", self.project_group, storer=None)
+            temp_project.setMaximumHeight(100)
+            
+            # Remove the delete button and status bar for this special widget
+            if hasattr(temp_project, 'delete_button'):
+                temp_project.delete_button.hide()
+            if hasattr(temp_project, 'status_bar'):
+                temp_project.status_bar.hide()
+                
+            # Update the title to show the message
+            temp_project.title_label.setText("⚠️ SLURM Connection Required")
+            temp_project.title_label.setStyleSheet("color: #ffb86c; font-weight: bold;")
+            
+            # Add to the project group
+            self.project_group.scroll_content_layout.insertWidget(0, temp_project)
+            self.project_group.projects_children["connection_required"] = temp_project
+            
+            # Show message in jobs area too
+            self.jobs_group.show_connection_error("connection_required")
+            
+            print("Showing connection required message")
+            
+        except Exception as e:
+            print(f"Error showing connection required message: {e}")
 
+    def setup_project_storer(self):
+        """
+        Initialize the project store when a connection becomes available.
+        Enhanced version with proper cleanup and reinitialization.
+        """
+        try:
+            # Remove connection required message if it exists
+            if "connection_required" in self.project_group.projects_children:
+                temp_widget = self.project_group.projects_children["connection_required"]
+                self.project_group.scroll_content_layout.removeWidget(temp_widget)
+                temp_widget.hide()
+                temp_widget.deleteLater()
+                del self.project_group.projects_children["connection_required"]
+                
+            # Create/recreate the ProjectStore instance with the current connection
+            if self.project_storer:
+                # Stop existing monitoring
+                self.project_storer.stop_job_monitoring()
+                
+            self.project_storer = ProjectStore(self.slurm_connection)
+
+            # Connect signals for real-time updates
+            self._connect_project_store_signals()
+
+            # Start loading projects
+            self.project_group.start()
+            
+            print("Project store setup completed successfully")
+
+        except Exception as e:
+            print(f"Failed to setup project store: {e}")
+            import traceback
+            traceback.print_exc()
+            self.project_storer = None
+            
+            # Show error message
+            show_error_toast(self, "Setup Error", 
+                            f"Failed to initialize project store: {str(e)}")
+
+    # Also add this method to handle cases where project_storer is None
+    def _check_project_storer(self):
+        """Check if project_storer is available and show appropriate message"""
+        if not self.project_storer:
+            show_warning_toast(self, "No Connection", 
+                            "Please establish SLURM connection first.")
+            return False
+        return True
+
+    # Update methods that use project_storer to check if it's available first
     def open_new_job_dialog(self):
         """Opens the dialog to create a new job for the selected project."""
+        if not self._check_project_storer():
+            return
+            
         if self.current_project:
             dialog = NewJobDialog(
                 selected_project=self.current_project, slurm_connection=self.slurm_connection)
@@ -798,7 +889,7 @@ class JobsPanel(QWidget):
                             self.current_project, job_row)
 
                         show_success_toast(self, "Job Created",
-                                           f"Job '{job_details.get('job_name')}' has been created!")
+                                        f"Job '{job_details.get('job_name')}' has been created!")
                     else:
                         show_warning_toast(
                             self,
@@ -818,6 +909,69 @@ class JobsPanel(QWidget):
                 "No Project Selected",
                 "Please select a project first before creating a new job."
             )
+
+    def submit_job(self, project_name, job_id):
+        """Submit job - Enhanced version with project_storer check"""
+        if not self._check_project_storer():
+            return
+            
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                show_warning_toast(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status != "NOT_SUBMITTED":
+                show_info_toast(
+                    self,
+                    "Already Submitted",
+                    f"Job '{job_id}' has already been submitted with status: {job.status}."
+                )
+                return
+
+            # Store the old job ID for UI updates
+            old_job_id = str(job_id)
+
+            # Submit the job
+            new_job_id = self.project_storer.submit_job(project_name, job_id)
+
+            if new_job_id:
+                # Get the updated job with the new ID
+                updated_job = project.get_job(new_job_id)
+                if updated_job:
+                    job_row = updated_job.to_table_row()
+
+                    # Update the UI to reflect the ID change efficiently
+                    self.jobs_group.update_job_id(
+                        project_name, old_job_id, str(new_job_id), job_row)
+
+                # Show success message
+                show_success_toast(
+                    self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
+
+            else:
+                show_warning_toast(
+                    self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
+
+        except Exception as e:
+            show_error_toast(self, "Submission Error",
+                            f"An error occurred during job submission: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    
+    def on_project_selected(self, project_name):
+        """Slot to update the currently selected project."""
+        self.current_project = project_name
+        # For debugging
+        print(f"Selected Project in JobsPanel: {self.current_project}")
 
     def resizeEvent(self, event):
         """Adjust the position of the floating button when the widget is resized."""
@@ -912,26 +1066,6 @@ class JobsPanel(QWidget):
         except ImportError:
             pass
 
-    def setup_project_storer(self):
-        """
-        Initialize the project store when a connection becomes available.
-        Enhanced version with signal connections.
-        """
-        try:
-            # Create the ProjectStore instance with the current connection
-            self.project_storer = ProjectStore(self.slurm_connection)
-
-            # Connect signals for real-time updates
-            self._connect_project_store_signals()
-
-            # ... existing setup code ...
-
-        except Exception as e:
-            print(f"Failed to initialize project store: {e}")
-            import traceback
-            traceback.print_exc()
-            self.project_storer = None
-
     def closeEvent(self, event):
         """Handle widget close event"""
         # Stop job monitoring when panel is closed
@@ -1024,63 +1158,6 @@ class JobsPanel(QWidget):
         # Update status counts in project widget if it has the method
         if hasattr(project_widget, 'update_status_counts'):
             project_widget.update_status_counts(stats)
-
-    def submit_job(self, project_name, job_id):
-        """Submit job - SIMPLIFIED VERSION with efficient UI update"""
-        if not self.project_storer:
-            show_warning_toast(self, "Error", "Not connected to SLURM.")
-            return
-
-        try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                show_warning_toast(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            if job.status != "NOT_SUBMITTED":
-                show_info_toast(
-                    self,
-                    "Already Submitted",
-                    f"Job '{job_id}' has already been submitted with status: {job.status}."
-                )
-                return
-
-            # Store the old job ID for UI updates
-            old_job_id = str(job_id)
-
-            # Submit the job
-            new_job_id = self.project_storer.submit_job(project_name, job_id)
-
-            if new_job_id:
-                # Get the updated job with the new ID
-                updated_job = project.get_job(new_job_id)
-                if updated_job:
-                    job_row = updated_job.to_table_row()
-
-                    # Update the UI to reflect the ID change efficiently
-                    self.jobs_group.update_job_id(
-                        project_name, old_job_id, str(new_job_id), job_row)
-
-                # Show success message
-                show_success_toast(
-                    self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
-
-            else:
-                show_warning_toast(
-                    self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
-
-        except Exception as e:
-            show_error_toast(self, "Submission Error",
-                             f"An error occurred during job submission: {str(e)}")
-            import traceback
-            traceback.print_exc()
 
     def delete_job(self, project_name, job_id):
         """Delete job - SIMPLIFIED VERSION with efficient UI update"""

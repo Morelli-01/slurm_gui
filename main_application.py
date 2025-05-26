@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 from modules.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-
+from modules.project_store import ProjectStore
 # Get the script directory to construct relative paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -208,190 +208,206 @@ class SlurmJobManagerApp(QMainWindow):
         self.icon_size_small = get_dpi_aware_size(16)
         self.icon_size_medium = get_dpi_aware_size(24)
         self.icon_size_large = get_dpi_aware_size(32)
+    # In main_application.py - Replace the set_connection_status method and add helper methods
+
     def set_connection_status(self, connected: bool, connecting=False):
-            """Enhanced connection status handling"""
-            previous_status = getattr(self, 'connection_status_', None)
+        """Enhanced connection status handling with proper project store recovery"""
+        previous_status = getattr(self, 'connection_status_', None)
 
-            # Check if we were previously disconnected and now reconnected
-            if previous_status == False and connected and hasattr(self, "jobs_panel"):
-                print("Connection restored - completely recreating jobs panel")
-                # 1. Get the current index of the jobs panel
-                jobs_panel_index = self.stacked_widget.indexOf(self.jobs_panel)
+        # Check if we were previously disconnected and now reconnected
+        if previous_status == False and connected:
+            print("Connection restored - reinitializing project store and jobs panel")
+            self._handle_connection_recovery()
 
-                # 2. Remove the old jobs panel from the stacked widget
-                if jobs_panel_index != -1:
-                    self.stacked_widget.removeWidget(self.jobs_panel)
-                    self.jobs_panel.deleteLater() # Mark for deletion
+        self.connection_status_ = True if connected else False
 
-                # 3. Recreate the jobs panel
-                self.create_jobs_panel() # This will create a new JobsPanel instance
-                # The new panel will be added at the end, so its index will be the current count - 1
-                # If the jobs panel was at index 0, we need to insert it back there
-                # Assuming jobs panel is always the first one (index 0)
-                self.stacked_widget.insertWidget(0, self.jobs_panel)
+        # Use pre-calculated icon size
+        icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
 
+        if connecting:
+            loading_gif_path = os.path.join(
+                script_dir, "src_static", "loading.gif")
+            loading_movie = QMovie(loading_gif_path)
+            loading_movie.setScaledSize(icon_size)
+            loading_movie.start()
+            self.connection_status.setMovie(loading_movie)
+            self.connection_status.setText("")
+            self.connection_status.setToolTip("Connecting...")
+            self.connection_status.setStyleSheet("""
+                QPushButton#statusButton {
+                    background-color: #9e9e9e;
+                    color: white;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    padding: 6px 12px;
+                }
+            """)
+            return
 
-                # 4. Ensure the UI is updated and data is refreshed
-                # The new jobs_panel's __init__ and start methods will handle initial loading
-                # self._setup_job_monitoring() # Re-establish signals for the new panel
+        # Restore text after movie is done or connection status changes
+        self.connection_status.setMovie(None)
+        self.connection_status.setText(" Connection status...")
 
-                # Set the current index back to the jobs panel if it was active
-                # This is important if the user was on the jobs tab when connection was lost
-                if self.stacked_widget.currentIndex() == jobs_panel_index:
-                    self.stacked_widget.setCurrentIndex(0) # Assuming jobs panel is always at index 0
+        if connected:
+            self.connection_status.setToolTip("Connected")
+            good_connection_icon_path = os.path.join(
+                script_dir, "src_static", "good_connection.png")
+            self.connection_status.setPixmap(
+                QIcon(good_connection_icon_path).pixmap(icon_size))
+            self.connection_status.setStyleSheet("""
+                QPushButton#statusButton {
+                    background-color: #4caf50;
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    padding: 8px 16px;
+                    border: 2px solid #4caf50;
+                }
+                QPushButton#statusButton:hover {
+                    background-color: #66bb6a;
+                    border: 2px solid #ffffff;
+                }
+            """)
+        else:
+            self.connection_status.setToolTip("Disconnected")
+            bad_connection_icon_path = os.path.join(
+                script_dir, "src_static", "bad_connection.png")
+            self.connection_status.setPixmap(
+                QIcon(bad_connection_icon_path).pixmap(icon_size))
+            self.connection_status.setStyleSheet("""
+                QPushButton#statusButton {
+                    background-color: #f44336;
+                    color: white;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    padding: 8px 16px;
+                    border: 2px solid #f44336;
+                }
+                QPushButton#statusButton:hover {
+                    background-color: #ef5350;
+                    border: 2px solid #ffffff;
+                }
+            """)
 
-            self.connection_status_ = True if connected else False
-
-            # Use pre-calculated icon size
-            icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
-
-            if connecting:
-                loading_gif_path = os.path.join(
-                    script_dir, "src_static", "loading.gif")
-                loading_movie = QMovie(loading_gif_path)
-                loading_movie.setScaledSize(icon_size)
-                loading_movie.start()
-                self.connection_status.setMovie(loading_movie)
-                self.connection_status.setText("")
-                self.connection_status.setToolTip("Connecting...")
-                self.connection_status.setStyleSheet("""
-                    QPushButton#statusButton {
-                        background-color: #9e9e9e;
-                        color: white;
-                        border-radius: 5px;
-                        font-weight: bold;
-                        padding: 6px 12px;
-                    }
-                """)
-                return
-
-            # Restore text after movie is done or connection status changes
-            self.connection_status.setMovie(None)
-            self.connection_status.setText(" Connection status...")
-
-            if connected:
-                self.connection_status.setToolTip("Connected")
-                good_connection_icon_path = os.path.join(
-                    script_dir, "src_static", "good_connection.png")
-                self.connection_status.setPixmap(
-                    QIcon(good_connection_icon_path).pixmap(icon_size))
-                self.connection_status.setStyleSheet("""
-                    QPushButton#statusButton {
-                        background-color: #4caf50;
-                        color: white;
-                        border-radius: 8px;
-                        font-weight: bold;
-                        padding: 8px 16px;
-                        border: 2px solid #4caf50;
-                    }
-                    QPushButton#statusButton:hover {
-                        background-color: #66bb6a;
-                        border: 2px solid #ffffff;
-                    }
-                """)
+    def _handle_connection_recovery(self):
+        """Handle complete recovery when connection is restored"""
+        try:
+            # Step 1: Reinitialize the project store
+            print("Reinitializing project store...")
+            if hasattr(self, 'jobs_panel'):
+                # Stop existing job monitoring if any
+                if self.jobs_panel.project_storer:
+                    self.jobs_panel.project_storer.stop_job_monitoring()
+                    
+                # Create new project store with restored connection
+                self.jobs_panel.project_storer = ProjectStore(self.slurm_connection)
+                self.jobs_panel._connect_project_store_signals()
+                print("Project store reinitialized successfully")
+                
+                # Step 2: Reload projects and jobs
+                print("Reloading projects...")
+                self._reload_projects_after_reconnection()
+                
             else:
-                self.connection_status.setToolTip("Disconnected")
-                bad_connection_icon_path = os.path.join(
-                    script_dir, "src_static", "bad_connection.png")
-                self.connection_status.setPixmap(
-                    QIcon(bad_connection_icon_path).pixmap(icon_size))
-                self.connection_status.setStyleSheet("""
-                    QPushButton#statusButton {
-                        background-color: #f44336;
-                        color: white;
-                        border-radius: 8px;
-                        font-weight: bold;
-                        padding: 8px 16px;
-                        border: 2px solid #f44336;
-                    }
-                    QPushButton#statusButton:hover {
-                        background-color: #ef5350;
-                        border: 2px solid #ffffff;
-                    }
-                """)
-    # def set_connection_status(self, connected: bool, connecting=False):
-    #     """Enhanced connection status handling"""
-    #     previous_status = getattr(self, 'connection_status_', None)
+                print("No jobs panel found - this shouldn't happen")
+                
+        except Exception as e:
+            print(f"Error during connection recovery: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Show error to user
+            show_error_toast(self, "Recovery Error", 
+                            f"Failed to restore project data after reconnection: {str(e)}")
 
-    #     if hasattr(self, "connection_status_") and self.connection_status_ == False and connected and hasattr(self, "jobs_panel"):
-    #         self.jobs_panel.setup_project_storer()
-    #         self._setup_job_monitoring()
+    def _reload_projects_after_reconnection(self):
+        """Reload all projects and their jobs after connection recovery"""
+        try:
+            if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
+                return
+                
+            # Get all projects from the restored project store
+            project_names = self.jobs_panel.project_storer.all_projects()
+            print(f"Found {len(project_names)} projects to reload")
+            
+            # Clear existing project widgets
+            self._clear_existing_projects()
+            
+            # Reload each project
+            for project_name in project_names:
+                print(f"Reloading project: {project_name}")
+                
+                # Add project widget back to UI
+                self.jobs_panel.project_group.add_new_project(project_name)
+                
+                # Get project data
+                project = self.jobs_panel.project_storer.get(project_name)
+                if project and project.jobs:
+                    # Convert jobs to table rows
+                    job_rows = [job.to_table_row() for job in project.jobs]
+                    
+                    # Update jobs UI
+                    self.jobs_panel.jobs_group.update_jobs(project_name, job_rows)
+                    
+                    # Update project status counts
+                    if project_name in self.jobs_panel.project_group.projects_children:
+                        project_widget = self.jobs_panel.project_group.projects_children[project_name]
+                        if hasattr(project_widget, 'update_status_counts'):
+                            job_stats = project.get_job_stats()
+                            project_widget.update_status_counts(job_stats)
+            
+            # Select the first project if available
+            if project_names:
+                first_project = project_names[0]
+                self.jobs_panel.project_group.handle_project_selection(first_project)
+                self.jobs_panel.on_project_selected(first_project)
+                self.jobs_panel.jobs_group.show_project(first_project)
+                print(f"Selected project: {first_project}")
+                
+            print("Project reload completed successfully")
+            show_success_toast(self, "Connection Restored", 
+                            f"")
+            
+        except Exception as e:
+            print(f"Error reloading projects: {e}")
+            import traceback
+            traceback.print_exc()
+            show_error_toast(self, "Reload Error", 
+                            f"Failed to reload projects: {str(e)}")
 
-    #         # Reload all projects and jobs when connection is restored
-    #         if previous_status == False:  # Was disconnected, now connected
-    #             print("Connection restored - reloading projects and jobs")
-    #             self.jobs_panel.reload_after_reconnection()
-
-    #     self.connection_status_ = True if connected else False
-
-    #     # Use pre-calculated icon size
-    #     icon_size = QSize(self.icon_size_medium, self.icon_size_medium)
-
-    #     if connecting:
-    #         loading_gif_path = os.path.join(
-    #             script_dir, "src_static", "loading.gif")
-    #         loading_movie = QMovie(loading_gif_path)
-    #         loading_movie.setScaledSize(icon_size)
-    #         loading_movie.start()
-    #         self.connection_status.setMovie(loading_movie)
-    #         self.connection_status.setText("")
-    #         self.connection_status.setToolTip("Connecting...")
-    #         self.connection_status.setStyleSheet("""
-    #             QPushButton#statusButton {
-    #                 background-color: #9e9e9e;
-    #                 color: white;
-    #                 border-radius: 5px;
-    #                 font-weight: bold;
-    #                 padding: 6px 12px;
-    #             }
-    #         """)
-    #         return
-
-    #     # Restore text after movie is done or connection status changes
-    #     self.connection_status.setMovie(None)
-    #     self.connection_status.setText(" Connection status...")
-
-    #     if connected:
-    #         self.connection_status.setToolTip("Connected")
-    #         good_connection_icon_path = os.path.join(
-    #             script_dir, "src_static", "good_connection.png")
-    #         self.connection_status.setPixmap(
-    #             QIcon(good_connection_icon_path).pixmap(icon_size))
-    #         self.connection_status.setStyleSheet("""
-    #             QPushButton#statusButton {
-    #                 background-color: #4caf50;
-    #                 color: white;
-    #                 border-radius: 8px;
-    #                 font-weight: bold;
-    #                 padding: 8px 16px;
-    #                 border: 2px solid #4caf50;
-    #             }
-    #             QPushButton#statusButton:hover {
-    #                 background-color: #66bb6a;
-    #                 border: 2px solid #ffffff;
-    #             }
-    #         """)
-    #     else:
-    #         self.connection_status.setToolTip("Disconnected")
-    #         bad_connection_icon_path = os.path.join(
-    #             script_dir, "src_static", "bad_connection.png")
-    #         self.connection_status.setPixmap(
-    #             QIcon(bad_connection_icon_path).pixmap(icon_size))
-    #         self.connection_status.setStyleSheet("""
-    #             QPushButton#statusButton {
-    #                 background-color: #f44336;
-    #                 color: white;
-    #                 border-radius: 8px;
-    #                 font-weight: bold;
-    #                 padding: 8px 16px;
-    #                 border: 2px solid #f44336;
-    #             }
-    #             QPushButton#statusButton:hover {
-    #                 background-color: #ef5350;
-    #                 border: 2px solid #ffffff;
-    #             }
-    #         """)
-
+    def _clear_existing_projects(self):
+        """Clear existing project widgets from the UI"""
+        try:
+            if not hasattr(self, 'jobs_panel'):
+                return
+                
+            # Clear project group widgets
+            project_group = self.jobs_panel.project_group
+            
+            # Remove all project widgets from the scroll area
+            for project_name in list(project_group.projects_children.keys()):
+                project_widget = project_group.projects_children[project_name]
+                project_group.scroll_content_layout.removeWidget(project_widget)
+                project_widget.hide()
+                project_widget.deleteLater()
+                
+            # Clear the projects dictionary
+            project_group.projects_children.clear()
+            project_group.project_counter = 0
+            project_group._selected_project_widget = None
+            
+            # Clear jobs group
+            for project_name in list(self.jobs_panel.jobs_group._indices.keys()):
+                self.jobs_panel.jobs_group.remove_project(project_name)
+                
+            print("Cleared existing project widgets")
+            
+        except Exception as e:
+            print(f"Error clearing existing projects: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    
     def setup_refresh_timer(self):
         """Sets up the timer for automatic data refreshing."""
         self.refresh_timer = QTimer(self)
@@ -634,14 +650,71 @@ class SlurmJobManagerApp(QMainWindow):
             self.job_queue_widget.filter_table_by_negative_keywords(
                 STUDENTS_JOBS_KEYWORD)
 
+
     def update_connection_setting(self):
+        """Enhanced connection update with proper project store reinitialization"""
         print("Updating connection settings...")
+        
+        # Save settings first
         self.save_settings()
+        
+        # Show connecting status
         self.set_connection_status(None, connecting=True)
-        thread = threading.Thread(
-            target=self.slurm_connection.update_credentials_and_reconnect)
+        
+        # Run connection update in a separate thread to avoid blocking UI
+        def connection_update_worker():
+            try:
+                # Update credentials and reconnect
+                self.slurm_connection.update_credentials_and_reconnect()
+                
+                # Check if connection was successful
+                if self.slurm_connection.check_connection():
+                    print("Connection update successful")
+                    
+                    # Use QTimer to safely update UI from main thread
+                    QTimer.singleShot(0, lambda: self._finalize_connection_update(True))
+                else:
+                    print("Connection update failed")
+                    QTimer.singleShot(0, lambda: self._finalize_connection_update(False))
+                    
+            except Exception as e:
+                print(f"Error during connection update: {e}")
+                QTimer.singleShot(0, lambda: self._finalize_connection_update(False, str(e)))
+        
+        # Start the worker thread
+        thread = threading.Thread(target=connection_update_worker)
+        thread.daemon = True
         thread.start()
 
+    def _finalize_connection_update(self, success, error_message=None):
+        """Finalize the connection update on the main thread"""
+        if success:
+            # Update connection status
+            self.set_connection_status(True)
+            
+            # Reinitialize project store if we have a jobs panel
+            if hasattr(self, 'jobs_panel'):
+                try:
+                    self.jobs_panel.setup_project_storer()
+                    show_success_toast(self, "Connection Updated", 
+                                    "SLURM connection updated successfully!")
+                except Exception as e:
+                    print(f"Error setting up project store: {e}")
+                    show_error_toast(self, "Setup Error", 
+                                f"Connection established but failed to setup projects: {str(e)}")
+            else:
+                show_success_toast(self, "Connection Updated", 
+                                "SLURM connection updated successfully!")
+        else:
+            # Update connection status to disconnected
+            self.set_connection_status(False)
+            
+            error_msg = "Failed to update SLURM connection."
+            if error_message:
+                error_msg += f" Error: {error_message}"
+                
+            show_error_toast(self, "Connection Failed", error_msg)
+            
     def refresh_cluster_jobs_queue(self, queue_jobs=None):
         """Refreshes the cluster status widgets (demo)."""
         print("Refreshing cluster status...")
@@ -729,6 +802,7 @@ class SlurmJobManagerApp(QMainWindow):
             "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
             "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
         }
+
 
         # Apply notification settings to the settings panel
         if hasattr(self, 'settings_panel'):
