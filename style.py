@@ -224,13 +224,13 @@ class AppStyles:
         }}
         QSpinBox::up-arrow, QDoubleSpinBox::up-arrow, QTimeEdit::up-arrow {{
             background-color: transparent;
-            image: url({os.path.join(script_dir, "src_static", "up_arrow.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'up_arrow.svg').replace('\\', '/')});
             width: 10px;
             height: 10px;
         }}
         QSpinBox::down-arrow, QDoubleSpinBox::down-arrow, QTimeEdit::down-arrow {{
             background-color: transparent;
-            image: url({os.path.join(script_dir, "src_static", "down_arrow.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'down_arrow.svg').replace('\\', '/')});
             width: 10px;
             height: 10px;
         }}
@@ -327,7 +327,7 @@ class AppStyles:
         QComboBox::down-arrow {{
             width: 14px;
             height: 14px;
-            image: url({os.path.join(script_dir, "src_static", "down_arrow.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'down_arrow.svg').replace('\\', '/')});
         }}
         QComboBox QAbstractItemView {{
             background-color: {colors['bg_alt']};
@@ -359,7 +359,7 @@ class AppStyles:
         QCheckBox::indicator:checked {{
             background-color: {COLOR_GREEN};
             border: 1px solid {COLOR_GREEN};
-            image: url({os.path.join(script_dir, "src_static", "check.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'check.svg').replace('\\', '/')});
         }}
         """
 
@@ -399,13 +399,13 @@ class AppStyles:
             background-color: {COLOR_RED};
             border: 2px solid {COLOR_RED};
             border-radius: 3px;
-            image: url({os.path.join(script_dir, "src_static", "err.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'err.svg').replace('\\', '/')});
         }}
         QGroupBox::indicator:checked {{
             background-color: #0ab836;
             border: 2px solid #0ab836;
             border-radius: 3px;
-            image: url({os.path.join(script_dir, "src_static", "checkmark.svg").replace('\\', '/')});
+            image: url({os.path.join(script_dir, 'src_static', 'checkmark.svg').replace('\\', '/')});
         }}
         """
 
