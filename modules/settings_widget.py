@@ -77,16 +77,6 @@ class SettingsWidget(QWidget):
         notifications_layout = QFormLayout(notifications_group)
         notifications_layout.setSpacing(15)
         
-        # Desktop notifications checkbox
-        self.desktop_notify_check = QCheckBox("Enable Desktop Notifications")
-        self.desktop_notify_check.setChecked(True)
-        notifications_layout.addRow("", self.desktop_notify_check)
-        
-        # Sound notifications checkbox
-        self.sound_notify_check = QCheckBox("Play Sound on Job Completion/Failure")
-        self.sound_notify_check.setChecked(False)
-        notifications_layout.addRow("", self.sound_notify_check)
-        
         # Discord webhook URL field
         self.discord_webhook_check = QCheckBox("Enable Discord Notifications")
         self.discord_webhook_check.setChecked(False)
@@ -173,16 +163,12 @@ class SettingsWidget(QWidget):
     def get_notification_settings(self):
         """Get current notification settings as a dictionary"""
         return {
-            "desktop_notifications": self.desktop_notify_check.isChecked(),
-            "sound_notifications": self.sound_notify_check.isChecked(),
             "discord_enabled": self.discord_webhook_check.isChecked(),
             "discord_webhook_url": self.discord_webhook_url.text().strip()
         }
         
     def set_notification_settings(self, settings):
         """Set notification settings from a dictionary"""
-        self.desktop_notify_check.setChecked(settings.get("desktop_notifications", True))
-        self.sound_notify_check.setChecked(settings.get("sound_notifications", False))
         self.discord_webhook_check.setChecked(settings.get("discord_enabled", False))
         self.discord_webhook_url.setText(settings.get("discord_webhook_url", ""))
         

@@ -479,7 +479,6 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        # self.settings_panel.theme_combo.currentTextChanged.connect(self.change_theme)
         self.settings_panel.save_appearance_btn.clicked.connect(self.save_appearence_settings)
         self.settings_panel.connection_settings_btn.clicked.connect(self.update_connection_setting)
         self.settings_panel.save_button.clicked.connect(self.save_settings)
@@ -519,7 +518,6 @@ class SlurmJobManagerApp(QMainWindow):
     def save_appearence_settings(self):
         print("--- Saving Appearence Settings ---")
         self.settings.beginGroup("AppearenceSettings")
-        self.settings.setValue("theme", self.settings_panel.theme_combo.currentText())
         for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
             self.settings.setValue(obj.objectName(), bool(obj.checkState().value))
         self.settings.endGroup()
@@ -541,8 +539,6 @@ class SlurmJobManagerApp(QMainWindow):
         # Save notification settings (including Discord webhook)
         self.settings.beginGroup("NotificationSettings")
         notification_settings = self.settings_panel.get_notification_settings()
-        self.settings.setValue("desktop_notifications", notification_settings["desktop_notifications"])
-        self.settings.setValue("sound_notifications", notification_settings["sound_notifications"])
         self.settings.setValue("discord_enabled", notification_settings["discord_enabled"])
         self.settings.setValue("discord_webhook_url", notification_settings["discord_webhook_url"])
         self.settings.endGroup()
@@ -585,8 +581,6 @@ class SlurmJobManagerApp(QMainWindow):
         # Load notification settings (including Discord webhook)
         self.settings.beginGroup("NotificationSettings")
         notification_settings = {
-            "desktop_notifications": self.settings.value("desktop_notifications", True, type=bool),
-            "sound_notifications": self.settings.value("sound_notifications", False, type=bool),
             "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
             "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
         }

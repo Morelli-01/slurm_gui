@@ -1512,9 +1512,6 @@ class JobsPanel(QWidget):
     def _show_immediate_job_toast(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Show immediate toast notifications with minimal processing"""
         
-        # Quick settings check - use cached value if possible
-        if not self._should_show_desktop_notifications():
-            return
         
         # Get job name quickly (with fallback)
         job_name = self._get_job_name_fast(project_name, job_id)
@@ -1564,21 +1561,6 @@ class JobsPanel(QWidget):
                 config['message'], 
                 config['duration']
             ))
-    
-    def _should_show_desktop_notifications(self):
-        """Quick check for desktop notifications setting with caching"""
-        # Cache the setting to avoid repeated lookups
-        if not hasattr(self, '_desktop_notifications_cache'):
-            try:
-                if hasattr(self, 'parent') and hasattr(self.parent(), 'settings_panel'):
-                    settings = self.parent().settings_panel.get_notification_settings()
-                    self._desktop_notifications_cache = settings.get("desktop_notifications", True)
-                else:
-                    self._desktop_notifications_cache = True
-            except:
-                self._desktop_notifications_cache = True
-        
-        return self._desktop_notifications_cache
 
     def _get_job_name_fast(self, project_name: str, job_id: str):
         """Get job name with minimal overhead and fallback"""
@@ -1594,8 +1576,3 @@ class JobsPanel(QWidget):
         
         # Fast fallback - just use job ID
         return f"Job {job_id}"
-
-    def _clear_notification_cache(self):
-        """Clear notification settings cache when settings are updated"""
-        if hasattr(self, '_desktop_notifications_cache'):
-            delattr(self, '_desktop_notifications_cache')
