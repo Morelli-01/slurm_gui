@@ -1,5 +1,6 @@
 
 
+from pathlib import Path
 from modules.defaults import *
 from modules.remote_directory_panel import RemoteDirectoryDialog
 # Assuming these modules/files exist in your project structure
@@ -10,78 +11,80 @@ from modules.toast_notify import show_error_toast, show_info_toast, show_success
 
 COLOR_BLUE = "#06b0d6"
 
+
 class CheckableComboBox(QComboBox):
     # Define the signal at the class level
     selection_changed = pyqtSignal()
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setEditable(True)
         self.lineEdit().setReadOnly(True)
         self.setPlaceholderText("Select constraints...")
-        
+
         # Set minimum width to ensure text is visible
         self.setMinimumWidth(250)
-        
+
         # Create and set model
         self.model = QStandardItemModel()
         self.setModel(self.model)
-        
+
         # Create and set view with better spacing
         self.view = QListView()
         # self.view.setSpacing(4)  # Add spacing between items for better visibility
         self.setView(self.view)
-        
+
         # Make dropdown wider
         self.view.setMinimumWidth(300)
-        
+
         # Connect signals
         self.model.itemChanged.connect(self._update_selected_text)
-        
+
         # Install event filter to handle mouse clicks
         self.view.viewport().installEventFilter(self)
-    
+
     def showPopup(self):
         """Make sure popup is wide enough to show text"""
         super().showPopup()
         # Make popup at least as wide as combobox
         popup_width = max(self.width(), 300)
         self.view.setFixedWidth(popup_width)
-    
+
     def eventFilter(self, watched, event):
         """Handle checkbox click events"""
         if watched == self.view.viewport() and event.type() == QEvent.Type.MouseButtonRelease:
             index = self.view.indexAt(event.pos())
             if index.isValid():
                 item = self.model.itemFromIndex(index)
-                
+
                 # Toggle checkbox state
                 if item.checkState() == Qt.CheckState.Checked:
                     item.setCheckState(Qt.CheckState.Unchecked)
                 else:
                     item.setCheckState(Qt.CheckState.Checked)
-                
+
                 # Prevent popup from closing
                 return True
-        
+
         return super().eventFilter(watched, event)
-    
+
     def hidePopup(self):
         """Keep popup open when clicking inside it"""
         if self.view.underMouse():
             return
         super().hidePopup()
-    
+
     def add_item(self, text, user_data=None):
         """Add a new checkable item"""
         item = QStandardItem(text)
         # Make sure checkboxes are visible and enabled
-        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable |
+                      Qt.ItemFlag.ItemIsEnabled)
         item.setCheckState(Qt.CheckState.Unchecked)
         if user_data is not None:
             item.setData(user_data, Qt.ItemDataRole.UserRole)
         self.model.appendRow(item)
-    
+
     def get_checked_items(self):
         """Return all checked item texts"""
         checked_items = []
@@ -90,7 +93,7 @@ class CheckableComboBox(QComboBox):
             if item.checkState() == Qt.CheckState.Checked:
                 checked_items.append(item.text())
         return checked_items
-    
+
     def _update_selected_text(self, item=None):
         """Update the displayed text in the combobox"""
         selected_texts = self.get_checked_items()
@@ -100,10 +103,11 @@ class CheckableComboBox(QComboBox):
             # Display up to 30 characters, then ellipsis
             text = ", ".join(selected_texts)
             if len(text) > 30:
-                self.lineEdit().setText(f"{len(selected_texts)} items selected")
+                self.lineEdit().setText(
+                    f"{len(selected_texts)} items selected")
             else:
                 self.lineEdit().setText(text)
-        
+
         # Emit signal about selection change
         self.selection_changed.emit()
 
@@ -112,10 +116,12 @@ class CheckableComboBox(QComboBox):
 class NewJobDialog(QDialog):
     def __init__(self, selected_project, slurm_connection=None, parent=None):
         super().__init__(parent)
+
         self.setWindowTitle(f"New Job for Project: {selected_project}")
         self.setMinimumSize(800, 600)
         self.selected_project = selected_project
         self.slurm_connection = slurm_connection
+        self.discord_webhook_available = self._check_discord_webhook_availability()
 
         # Prefetchable data
         self.partitions = ["Loading..."] if slurm_connection else [
@@ -187,6 +193,11 @@ class NewJobDialog(QDialog):
         self.job_dependencies_tab = QWidget()
         self.tabs.addTab(self.job_dependencies_tab, "Dependencies")
         self._setup_job_dependencies_tab()  # Call the new setup method
+
+        if self.discord_webhook_available:
+            self.notifications_tab = QWidget()
+            self.tabs.addTab(self.notifications_tab, "Notifications")
+            self._setup_notifications_tab()
 
         # Buttons at the bottom
         button_layout = QHBoxLayout()
@@ -713,7 +724,8 @@ class NewJobDialog(QDialog):
         self.delete_dependency_group = QGroupBox("Manage Added Dependencies")
         delete_dep_layout = QVBoxLayout(self.delete_dependency_group)
         delete_dep_layout.setSpacing(10)
-        delete_dep_layout.setContentsMargins(10, 20, 10, 10) # Add some padding
+        delete_dep_layout.setContentsMargins(
+            10, 20, 10, 10)  # Add some padding
 
         # Job ID input for dependencies (now a QComboBox) - MOVED HERE
         self.dep_id_widget = QWidget()
@@ -736,7 +748,8 @@ class NewJobDialog(QDialog):
         dep_id_layout.addWidget(self.dep_id_display_combo)
         dep_id_layout.addWidget(self.singleton_label)
 
-        delete_dep_layout.addWidget(self.dep_id_widget) # Add the dep_id_widget to this new group box
+        # Add the dep_id_widget to this new group box
+        delete_dep_layout.addWidget(self.dep_id_widget)
 
         # Add a button to remove selected dependency
         self.remove_dependency_button = QPushButton(
@@ -746,11 +759,11 @@ class NewJobDialog(QDialog):
             QIcon(os.path.join(script_dir, "src_static", "delete.svg")))
         self.remove_dependency_button.clicked.connect(
             self._remove_selected_dependency)
-        delete_dep_layout.addWidget(self.remove_dependency_button, alignment=Qt.AlignmentFlag.AlignCenter)
-
+        delete_dep_layout.addWidget(
+            self.remove_dependency_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.dependency_group)
-        layout.addWidget(self.delete_dependency_group) # Add the new group box
+        layout.addWidget(self.delete_dependency_group)  # Add the new group box
         layout.addStretch()  # Push everything to the top
 
         # Initial update for dependency inputs
@@ -1079,13 +1092,46 @@ class NewJobDialog(QDialog):
             result["dependency"] = "singleton"
         elif dep_ids_str:
             result["dependency"] = f"{dep_type}:{dep_ids_str}"
+        
+        # CRITICAL FIX: Discord notification settings
+        print(f"[DEBUG] Checking Discord settings - webhook available: {self.discord_webhook_available}")
+        if self.discord_webhook_available and hasattr(self, 'discord_notifications_check'):
+            print(f"[DEBUG] Discord checkbox checked: {self.discord_notifications_check.isChecked()}")
+            
+            discord_settings = {
+                "enabled": self.discord_notifications_check.isChecked(),
+                "notify_start": False,
+                "notify_complete": False, 
+                "notify_failed": False,
+                "notify_queued": False,
+                "message_prefix": "",
+                "notification_level": 0
+            }
+            
+            # Only get detailed settings if main checkbox is enabled
+            if self.discord_notifications_check.isChecked():
+                discord_settings.update({
+                    "notify_start": self.notify_job_start.isChecked() if hasattr(self, 'notify_job_start') else True,
+                    "notify_complete": self.notify_job_complete.isChecked() if hasattr(self, 'notify_job_complete') else True,
+                    "notify_failed": self.notify_job_failed.isChecked() if hasattr(self, 'notify_job_failed') else True,
+                    "notify_queued": self.notify_job_queued.isChecked() if hasattr(self, 'notify_job_queued') else False,
+                    "message_prefix": self.custom_message_prefix.text().strip() if hasattr(self, 'custom_message_prefix') else "",
+                    "notification_level": 0  # Since we removed the dropdown, default to essential
+                })
+            
+            result["discord_notifications"] = discord_settings
+            print(f"[DEBUG] Discord settings added to result: {discord_settings}")
+        else:
+            print("[DEBUG] Discord not available or checkbox not found")
 
+        print(f"[DEBUG] Final job details keys: {list(result.keys())}")
         return result
 
     def _browse_working_dir(self):
         """Open a dialog to select working directory from the SLURM cluster."""
         if not self.slurm_connection or not self.slurm_connection.check_connection():
-            show_warning_toast(self, "SLURM Connection Error", "Not connected to SLURM. Cannot browse remote directories.")
+            show_warning_toast(self, "SLURM Connection Error",
+                               "Not connected to SLURM. Cannot browse remote directories.")
             return
 
         initial_path = self.working_dir_edit.text()
@@ -1094,35 +1140,175 @@ class NewJobDialog(QDialog):
             if self.slurm_connection.remote_home and self.slurm_connection.remote_path_exists(self.slurm_connection.remote_home):
                 initial_path = self.slurm_connection.remote_home
             else:
-                initial_path = "/" # Fallback to root if home is not accessible
+                initial_path = "/"  # Fallback to root if home is not accessible
 
-        dialog = RemoteDirectoryDialog(self.slurm_connection, initial_path=initial_path, parent=self)
+        dialog = RemoteDirectoryDialog(
+            self.slurm_connection, initial_path=initial_path, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected_directory = dialog.get_selected_directory()
             if selected_directory:
                 self.working_dir_edit.setText(selected_directory)
                 self._update_preview()  # Update preview after changing working directory
 
+    def _check_discord_webhook_availability(self):
+        """Check if Discord webhook is configured and available"""
+        try:
+            settings = QSettings(
+                str(Path("./configs/settings.ini")), QSettings.Format.IniFormat)
+            settings.beginGroup("NotificationSettings")
+
+            discord_enabled = settings.value(
+                "discord_enabled", False, type=bool)
+            discord_webhook_url = settings.value(
+                "discord_webhook_url", "", type=str)
+
+            settings.endGroup()
+
+            # Return True if Discord is enabled AND webhook URL is not empty
+            return discord_enabled and bool(discord_webhook_url.strip())
+
+        except Exception as e:
+            print(f"Error checking Discord webhook availability: {e}")
+            return False
+
+    def _setup_notifications_tab(self):
+        """Set up minimal notifications tab for Discord job notifications"""
+        layout = QVBoxLayout(self.notifications_tab)
+        layout.setSpacing(25)
+        layout.setContentsMargins(40, 40, 40, 40)
+
+        # Simple title
+        title_label = QLabel("Discord Notifications")
+        title_label.setFont(QFont("Inter", 16, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {COLOR_DARK_FG}; margin-bottom: 10px;")
+        layout.addWidget(title_label)
+
+        # Main enable checkbox
+        self.discord_notifications_check = QCheckBox("Enable notifications for this job")
+        self.discord_notifications_check.setChecked(True)
+        self.discord_notifications_check.setFont(QFont("Inter", 13))
+        self.discord_notifications_check.setStyleSheet(f"""
+            QCheckBox {{
+                color: {COLOR_DARK_FG};
+                spacing: 8px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 2px solid {COLOR_DARK_BORDER};
+                border-radius: 3px;
+                background-color: {COLOR_DARK_BG_ALT};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {COLOR_GREEN};
+                border: 2px solid {COLOR_GREEN};
+            }}
+        """)
+        self.discord_notifications_check.stateChanged.connect(self._toggle_discord_options)
+        layout.addWidget(self.discord_notifications_check)
+
+        # Notification options (indented)
+        self.discord_options_widget = QWidget()
+        options_layout = QVBoxLayout(self.discord_options_widget)
+        options_layout.setContentsMargins(25, 15, 0, 0)
+        options_layout.setSpacing(12)
+
+        # Simple checkboxes
+        notification_options = [
+            ("notify_job_start", "Job starts", True),
+            ("notify_job_complete", "Job completes", True),
+            ("notify_job_failed", "Job fails", True),
+            ("notify_job_queued", "Job queued", False)
+        ]
+
+        for attr_name, label, default in notification_options:
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(default)
+            checkbox.setFont(QFont("Inter", 11))
+            checkbox.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {COLOR_DARK_FG};
+                    spacing: 6px;
+                }}
+                QCheckBox::indicator {{
+                    width: 14px;
+                    height: 14px;
+                    border: 1px solid {COLOR_DARK_BORDER};
+                    border-radius: 2px;
+                    background-color: {COLOR_DARK_BG_ALT};
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {COLOR_GREEN};
+                    border: 1px solid {COLOR_GREEN};
+                }}
+            """)
+            setattr(self, attr_name, checkbox)
+            options_layout.addWidget(checkbox)
+
+        layout.addWidget(self.discord_options_widget)
+
+        # Message prefix (simple)
+        prefix_layout = QHBoxLayout()
+        prefix_layout.setSpacing(10)
+        
+        prefix_label = QLabel("Prefix:")
+        prefix_label.setFont(QFont("Inter", 11))
+        prefix_label.setStyleSheet(f"color: {COLOR_DARK_FG};")
+        
+        self.custom_message_prefix = QLineEdit()
+        self.custom_message_prefix.setPlaceholderText("Optional")
+        self.custom_message_prefix.setText(f"[{self.selected_project}]")
+        self.custom_message_prefix.setMaximumWidth(200)
+        self.custom_message_prefix.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {COLOR_DARK_BG_ALT};
+                border: 1px solid {COLOR_DARK_BORDER};
+                border-radius: 4px;
+                padding: 6px 8px;
+                font-size: 11px;
+                color: {COLOR_DARK_FG};
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {COLOR_BLUE};
+            }}
+        """)
+        
+        prefix_layout.addWidget(prefix_label)
+        prefix_layout.addWidget(self.custom_message_prefix)
+        prefix_layout.addStretch()
+        
+        layout.addLayout(prefix_layout)
+        layout.addStretch()
+
+    def _toggle_discord_options(self, state):
+        """Enable/disable Discord notification options"""
+        enabled = state == Qt.CheckState.Checked.value or state == 2
+        self.discord_options_widget.setEnabled(enabled)
+        
+        # Simple opacity change for disabled state
+        opacity = "1.0" if enabled else "0.4"
+        self.discord_options_widget.setStyleSheet(f"QWidget {{ opacity: {opacity}; }}")
+
 class ModifyJobDialog(NewJobDialog):
     """
     Dialog for modifying existing job parameters.
     Inherits from NewJobDialog and pre-fills fields with existing job data.
     """
-    
+
     def __init__(self, job, project_name, slurm_connection=None, parent=None):
         self.job = job
         self.project_name = project_name
-        
+
         # Call parent constructor but override the window title
         super().__init__(project_name, slurm_connection, parent)
-        
+
         # Update window title and header
         self.setWindowTitle(f"Modify Job: {job.name}")
         self._update_header_for_modify()
-        
+
         # Pre-fill all fields with existing job data
         self._populate_fields_from_job()
-        
+
     def _update_header_for_modify(self):
         """Update the dialog header to reflect modify mode"""
         # Find and update the header label
@@ -1134,30 +1320,32 @@ class ModifyJobDialog(NewJobDialog):
                     widget = layout.itemAt(j).widget()
                     if isinstance(widget, QLabel) and "New Job for Project" in widget.text():
                         widget.setText(f"Modify Job: {self.job.name}")
-                        widget.setStyleSheet(f"color: {COLOR_ORANGE}; font-size: 14px; font-weight: bold;")
+                        widget.setStyleSheet(
+                            f"color: {COLOR_ORANGE}; font-size: 14px; font-weight: bold;")
                         break
-                        
+
         # Update the create button text and icon
         self.create_button.setText("Save Changes")
-        self.create_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
-        
+        self.create_button.setIcon(
+            QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
+
     def _populate_fields_from_job(self):
         """Pre-fill all dialog fields with data from the existing job"""
-        
+
         # Essential tab fields
         if self.job.name:
             self.job_name_edit.setText(self.job.name)
-            
+
         if self.job.partition:
             index = self.partition_combo.findText(self.job.partition)
             if index >= 0:
                 self.partition_combo.setCurrentIndex(index)
-                
+
         if self.job.account:
             index = self.account_combo.findText(self.job.account)
             if index >= 0:
                 self.account_combo.setCurrentIndex(index)
-                
+
         if self.job.time_limit:
             try:
                 # Parse time limit string (HH:MM:SS format)
@@ -1168,13 +1356,13 @@ class ModifyJobDialog(NewJobDialog):
                     self.time_limit_edit.setTime(time)
             except (ValueError, AttributeError):
                 pass
-                
+
         if self.job.nodes:
             self.nodes_spin.setValue(self.job.nodes)
-            
+
         if self.job.cpus:
             self.cpu_per_task_spin.setValue(self.job.cpus)
-            
+
         # Parse memory
         if self.job.memory:
             try:
@@ -1189,11 +1377,12 @@ class ModifyJobDialog(NewJobDialog):
                     self.memory_unit_combo.setCurrentText("MB")
             except (ValueError, AttributeError):
                 pass
-        
+
         # Advanced tab fields
         if self.job.constraints:
             # Handle constraints - need to check items in the CheckableComboBox
-            constraints_str = self.job.constraints.strip('"') if self.job.constraints else ""
+            constraints_str = self.job.constraints.strip(
+                '"') if self.job.constraints else ""
             if constraints_str:
                 constraints = constraints_str.split('|')
                 for i in range(self.constraint_combo.model.rowCount()):
@@ -1201,7 +1390,7 @@ class ModifyJobDialog(NewJobDialog):
                     if item and item.text() in constraints:
                         item.setCheckState(Qt.CheckState.Checked)
                 self.constraint_combo._update_selected_text()
-            
+
         if self.job.qos:
             index = self.qos_combo.findText(self.job.qos)
             if index >= 0:
@@ -1211,12 +1400,12 @@ class ModifyJobDialog(NewJobDialog):
                 none_index = self.qos_combo.findText("None")
                 if none_index >= 0:
                     self.qos_combo.setCurrentIndex(none_index)
-                    
+
         # GPU settings
         if self.job.gres and "gpu" in self.job.gres.lower():
             self.gpu_check.setChecked(True)
             self._toggle_gpu_selection(True)
-            
+
             try:
                 # Parse GPU specification (e.g., "gpu:rtx5000:2" or "gpu:2")
                 gpu_parts = self.job.gres.split(':')
@@ -1233,24 +1422,24 @@ class ModifyJobDialog(NewJobDialog):
                     self.gpu_count_spin.setValue(gpu_count)
             except (ValueError, IndexError, AttributeError):
                 pass
-                
+
         if self.job.output_file:
             self.output_file_edit.setText(self.job.output_file)
-            
+
         if self.job.error_file:
             self.error_file_edit.setText(self.job.error_file)
-            
+
         if self.job.working_dir:
             self.working_dir_edit.setText(self.job.working_dir)
-            
+
         # Command tab
         if self.job.command:
             self.command_text.setPlainText(self.job.command)
-            
+
         # Job Array tab
         if self.job.array_spec:
             self.array_group.setChecked(True)
-            
+
             # Parse array specification
             array_spec = self.job.array_spec
             if '-' in array_spec and ':' in array_spec:
@@ -1277,38 +1466,39 @@ class ModifyJobDialog(NewJobDialog):
                 # Assume it's a list format
                 self.array_format_combo.setCurrentIndex(1)  # List
                 self.array_list_edit.setText(array_spec)
-                
+
             self._update_array_inputs(self.array_format_combo.currentIndex())
-            
+
             # Set max concurrent jobs if specified
             if self.job.array_max_jobs:
                 self.max_jobs_check.setChecked(True)
                 self.max_jobs_spin.setValue(self.job.array_max_jobs)
                 self._toggle_max_jobs(True)
-                
+
         # Dependencies tab
         if self.job.dependency:
             dep_parts = self.job.dependency.split(':')
             if len(dep_parts) >= 1:
                 dep_type = dep_parts[0]
-                
+
                 # Find matching dependency type in combo
                 for i in range(self.dep_type_combo.count()):
                     item_text = self.dep_type_combo.itemText(i)
                     if item_text.startswith(dep_type):
                         self.dep_type_combo.setCurrentIndex(i)
                         break
-                        
+
                 # Add job IDs if not singleton
                 if dep_type != "singleton" and len(dep_parts) > 1:
-                    job_ids = dep_parts[1].split(',') if len(dep_parts) > 1 else []
+                    job_ids = dep_parts[1].split(
+                        ',') if len(dep_parts) > 1 else []
                     for job_id in job_ids:
                         if job_id.strip():
                             self.dep_id_display_combo.addItem(job_id.strip())
-                            
+
         # Update the preview after populating all fields
         self._update_preview()
-        
+
     def get_job_details(self):
         """
         Override to return modified job details.
@@ -1316,9 +1506,9 @@ class ModifyJobDialog(NewJobDialog):
         """
         # Get the base job details from parent class
         details = super().get_job_details()
-        
+
         # Add any additional information needed for modification
         details["original_job_id"] = self.job.id
         details["is_modification"] = True
-        
+
         return details
