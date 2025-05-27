@@ -8,9 +8,11 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union, Any
 from modules.new_job_dp import NewJobDialog
 import paramiko
-from PyQt6.QtCore import QObject
+from PyQt6.QtCore import QObject, QSettings
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
+from pathlib import Path
+from utils import settings_path
 # Constants
 JOB_CODES = {
     "CD": "COMPLETED",
@@ -340,7 +342,8 @@ class SlurmConnection:
     def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                    constraint: Optional[str] = None, qos: Optional[str] = None,
                    gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
-                   output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", memory: str = "1G", cpus: int = 1) -> Optional[str]:
+                   output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", 
+                   memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Submit a job to the SLURM scheduler.
 
@@ -365,8 +368,10 @@ class SlurmConnection:
         # Create SLURM script content
         script_content = self._create_job_script(
             job_name, partition, time_limit, command, account,
-            constraint, qos, gres, nodes, ntasks, output_file, error_file, memory, cpus
+            constraint, qos, gres, nodes, ntasks, output_file, error_file, memory, cpus,
+            discord_settings  # Pass Discord settings to script creation
         )
+    
 
         # Save script locally
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as f:
@@ -423,16 +428,11 @@ class SlurmConnection:
             return f"{self.remote_home}/{path}"
 
     def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
-                           constraint: Optional[str], qos: Optional[str], gres: Optional[str],
-                           nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int) -> str:
+                        constraint: Optional[str], qos: Optional[str], gres: Optional[str],
+                        nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int,
+                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
         """
-        Create the content of a SLURM job script.
-
-        Args:
-            Same as submit_job method
-
-        Returns:
-            str: Content of SLURM job script
+        Create the content of a SLURM job script with optional Discord notifications.
         """
         
         # Normalize output and error file paths
@@ -450,11 +450,10 @@ class SlurmConnection:
             f"#SBATCH --error={normalized_error}",
             f"#SBATCH --mem={memory}",
             f"#SBATCH --cpus-per-task={cpus}",
-
         ]
 
         # Add optional parameters
-        if "None" not in constraint:
+        if "None" not in str(constraint):
             script_lines.append(f"#SBATCH --constraint={constraint}")
         if qos:
             script_lines.append(f"#SBATCH --qos={qos}")
@@ -463,10 +462,113 @@ class SlurmConnection:
         if gres:
             script_lines.append(f"#SBATCH --gres={gres}")
 
-        script_lines.append("")  # Blank line
+        # Add Discord webhook setup if enabled
+        if discord_settings and discord_settings.get("enabled", False):
+            webhook_url = self._get_discord_webhook_url()
+            if webhook_url:
+                script_lines.extend([
+                    "",
+                    "# Discord notification setup",
+                    f'export RUN_NAME="{job_name}"',
+                    f'DISCORD_WEBHOOK_URL="{webhook_url}"',
+                    "",
+                    "# Helper functions for Discord notifications",
+                    "function send_discord_notification {",
+                    "  local message=\"$1\"",
+                    "  encoded_message=$(python3 -c \"import json,sys; print(json.dumps(sys.argv[1]))\" \"$message\")",
+                    "  payload=\"{\\\"content\\\": $encoded_message}\"",
+                    "  curl -H \"Content-Type: application/json\" -X POST -d \"$payload\" \"$DISCORD_WEBHOOK_URL\" 2>/dev/null",
+                    "}",
+                    "",
+                    "function send_discord_embed {",
+                    "  embed_payload=$(python3 <<'EOF'",
+                    "import json, os",
+                    "job_id = os.environ.get(\"SLURM_JOB_ID\", \"Unknown\")",
+                    "node = os.environ.get(\"SLURM_NODELIST\", \"Unknown\")",
+                    "job_state = os.environ.get(\"SLURM_JOB_STATE\", \"Unknown\")",
+                    "job_name = os.environ.get(\"SLURM_JOB_NAME\", \"Unknown\")",
+                    "run_name = os.environ.get(\"RUN_NAME\", \"Unknown\")",
+                    "",
+                    "embed_color = 3066993 if job_state == \"COMPLETED\" else 15158332",
+                    "embed = {",
+                    "    \"embeds\": [{",
+                    "        \"title\": \"SLURM Job Finished\",",
+                    f"        \"description\": f\"Job **{{job_id}}** ({{run_name}}) on node **{{node}}** finished with state **{{job_state}}**.\",",
+                    "        \"color\": embed_color,",
+                    "        \"fields\": [",
+                    "            {\"name\": \"Job Name\", \"value\": run_name, \"inline\": True},",
+                    "            {\"name\": \"Job ID\", \"value\": job_id, \"inline\": True},",
+                    "            {\"name\": \"Node(s)\", \"value\": node, \"inline\": True}",
+                    "        ],",
+                    "        \"footer\": {\"text\": \"SlurmAIO Job Monitor\"}",
+                    "    }]",
+                    "}",
+                    "print(json.dumps(embed))",
+                    "EOF",
+                    ")",
+                    "  curl -H \"Content-Type: application/json\" -X POST -d \"$embed_payload\" \"$DISCORD_WEBHOOK_URL\" 2>/dev/null",
+                    "}",
+                    "",
+                ])
+                
+                # Add notification settings based on user preferences
+                notify_start = discord_settings.get("notify_start", True)
+                notify_complete = discord_settings.get("notify_complete", True)
+                message_prefix = discord_settings.get("message_prefix", f"[{job_name}]")
+                
+                if notify_start:
+                    script_lines.extend([
+                        f"# Job start notification",
+                        f"send_discord_notification \"🏃 **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) started on node $SLURM_NODELIST\"",
+                        ""
+                    ])
+
+        script_lines.append("# Job command")
         script_lines.append(command)
+        
+        # Add job completion notification if Discord is enabled
+        if discord_settings and discord_settings.get("enabled", False) and webhook_url:
+            notify_complete = discord_settings.get("notify_complete", True)
+            if notify_complete:
+                script_lines.extend([
+                    "",
+                    "# Capture exit code",
+                    "JOB_EXIT_CODE=$?",
+                    "",
+                    "# Job completion notification",
+                    "if [ $JOB_EXIT_CODE -eq 0 ]; then",
+                    f"    send_discord_notification \"✅ **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) completed successfully!\"",
+                    "else",
+                    f"    send_discord_notification \"❌ **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) failed with exit code $JOB_EXIT_CODE\"",
+                    "fi",
+                    "",
+                    "# Send detailed embed notification",
+                    "export SLURM_JOB_STATE=$(if [ $JOB_EXIT_CODE -eq 0 ]; then echo \"COMPLETED\"; else echo \"FAILED\"; fi)",
+                    "send_discord_embed",
+                    "",
+                    "exit $JOB_EXIT_CODE"
+                ])
 
         return "\n".join(script_lines)
+
+    def _get_discord_webhook_url(self) -> Optional[str]:
+        """Get Discord webhook URL from settings"""
+        try:
+
+            settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+            settings.beginGroup("NotificationSettings")
+            
+            enabled = settings.value("discord_enabled", False, type=bool)
+            webhook_url = settings.value("discord_webhook_url", "", type=str)
+            
+            settings.endGroup()
+            
+            if enabled and webhook_url:
+                return webhook_url
+            return None
+        except Exception as e:
+            print(f"Error getting Discord webhook URL: {e}")
+            return None
 
     @require_connection
     def get_job_logs(self, job_id: str, preserve_progress_bars: bool = False) -> Tuple[str, str]:

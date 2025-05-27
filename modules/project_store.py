@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
 from typing import Any, Dict, List, Optional, Tuple, Union
-from modules.discord_manager import discord_manager
 
-import requests, json
+import requests
+import json
 
 
 # Forward import for type checking – real instance is passed at runtime
@@ -377,7 +377,7 @@ class ProjectStore:
     """Thread‑safe singleton that mirrors a remote *settings.ini* file."""
     _instance: "ProjectStore | None" = None
     _lock = RLock()
-    
+
     def __new__(cls, slurm: SlurmConnection, remote_path: Optional[str] = None):
 
         with cls._lock:
@@ -415,7 +415,6 @@ class ProjectStore:
         self._projects: Dict[str, Project] = self._read_from_settings()
         self.job_monitor = None
         self._start_job_monitoring()
-        self.discord_settings = self._load_discord_settings()
 
     # .................................................................
     def _download_remote(self) -> None:
@@ -652,7 +651,7 @@ class ProjectStore:
             raise RuntimeError(f"Job creation failed: {e}")
 
     def submit_job(self, project: str, job_id: str) -> Optional[str]:
-        """Submit an existing job to SLURM"""
+        """Submit an existing job to SLURM with Discord notifications in script"""
         if not self.slurm or not self.slurm.check_connection():
             raise ConnectionError("Not connected to SLURM")
 
@@ -675,6 +674,9 @@ class ProjectStore:
             if not submission_details:
                 raise ValueError(f"Job {job_id} has no submission details")
 
+            # Extract Discord settings from job info
+            discord_settings = job.info.get("discord_notifications", {})
+
             # Get job parameters
             job_name = job.name
             partition = job.partition
@@ -690,7 +692,8 @@ class ProjectStore:
             error_file = job.error_file
             memory = job.memory
             cpus = job.cpus
-            # Submit job using SlurmConnection
+
+            # Submit job using SlurmConnection with Discord settings
             new_job_id = self.slurm.submit_job(
                 job_name=job_name,
                 partition=partition,
@@ -704,7 +707,8 @@ class ProjectStore:
                 output_file=output_file,
                 error_file=error_file,
                 memory=memory,
-                cpus=cpus
+                cpus=cpus,
+                discord_settings=discord_settings  # Pass Discord settings
             )
 
             if new_job_id:
@@ -729,6 +733,7 @@ class ProjectStore:
             import traceback
             traceback.print_exc()
             raise RuntimeError(f"Job submission failed: {e}")
+
     # ------------------------------------------------------------------
     # Convenience / debugging helpers
     # ------------------------------------------------------------------
@@ -776,9 +781,10 @@ class ProjectStore:
             print("Stopped job status monitoring")
 
     def _on_job_status_updated(self, project_name: str, job_id: str, new_status: str):
-        """Enhanced job status update handler with reliable Discord notifications"""
-        print(f"[JOB_UPDATE] Processing status update: {project_name}/{job_id} -> {new_status}")
-        
+        """Simplified job status update handler without Discord notifications"""
+        print(
+            f"[JOB_UPDATE] Processing status update: {project_name}/{job_id} -> {new_status}")
+
         project = self.get(project_name)
         if not project:
             print(f"[JOB_UPDATE] Project not found: {project_name}")
@@ -792,7 +798,7 @@ class ProjectStore:
         old_status = job.status
         print(f"[JOB_UPDATE] Status change: {old_status} -> {new_status}")
 
-        # Update the job status FIRST
+        # Update the job status
         job.status = new_status
 
         # Update timing based on new status
@@ -802,23 +808,18 @@ class ProjectStore:
         elif new_status in ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"] and not job.end_time:
             job.end_time = now
 
-        # Send Discord notification BEFORE saving (to avoid timing issues)
-        try:
-            self._send_discord_notification(project_name, job, old_status, new_status)
-        except Exception as e:
-            print(f"[DISCORD] Error sending notification: {e}")
-
         # Save changes to storage
         self._write_to_settings()
 
         # Emit UI update signals
-        self.signals.job_status_changed.emit(project_name, job_id, old_status, new_status)
+        self.signals.job_status_changed.emit(
+            project_name, job_id, old_status, new_status)
         self.signals.job_updated.emit(project_name, job_id)
 
         # Update project statistics
         stats = project.get_job_stats()
         self.signals.project_stats_changed.emit(project_name, stats)
-        
+
     def _on_job_details_updated(self, project_name: str, job_id: str, job_details: dict):
         """Handle detailed job updates from monitor"""
         self.signals.job_updated.emit(project_name, job_id)
@@ -871,7 +872,6 @@ class ProjectStore:
 
         return active_jobs
 
-
     def _update_job_from_sacct(self, job: Job, slurm_data: Dict[str, Any]):
         """Update job object with data from sacct"""
         # Update timing information
@@ -920,172 +920,3 @@ class ProjectStore:
     def __del__(self):
         """Cleanup when store is destroyed"""
         self.stop_job_monitoring()
-
-    def _load_discord_settings(self) -> Dict[str, Any]:
-        """Load Discord webhook settings from configuration"""
-        try:
-            settings = QSettings(str(Path("./configs/settings.ini")), QSettings.Format.IniFormat)
-            settings.beginGroup("NotificationSettings")
-            
-            discord_config = {
-                "enabled": settings.value("discord_enabled", False, type=bool),
-                "webhook_url": settings.value("discord_webhook_url", "", type=str)
-            }
-            
-            settings.endGroup()
-            return discord_config
-            
-        except Exception as e:
-            print(f"Error loading Discord settings: {e}")
-            return {"enabled": False, "webhook_url": ""}
-            
-
-    def _send_discord_notification(self, project_name: str, job: 'Job', old_status: str, new_status: str):
-        """Send Discord notification for job status changes with debugging"""
-        try:
-            # Load Discord settings dynamically
-            discord_settings = self._load_discord_settings()
-
-            # Check if Discord is globally enabled
-            if not discord_settings.get("enabled", False):
-                return
-            
-            webhook_url = discord_settings.get("webhook_url", "")
-            if not webhook_url:
-                return
-            
-            # Check if job has Discord notifications enabled
-            job_discord_settings = job.info.get("discord_notifications", {})
-
-            if not job_discord_settings.get("enabled", False):
-                return
-            
-            # Check if we should notify for this status change
-            should_notify = self._should_send_notification(job_discord_settings, old_status, new_status)
-
-            if not should_notify:
-                return
-            
-            # Create notification payload
-            payload = self._create_discord_payload(project_name, job, old_status, new_status, job_discord_settings)
-
-            # Send notification
-            self._send_discord_webhook(webhook_url, payload)
-
-        except Exception as e:
-            print(f"[DISCORD ERROR] Error sending Discord notification: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def _should_send_notification(self, discord_settings: Dict[str, Any], old_status: str, new_status: str) -> bool:
-        """Determine if a Discord notification should be sent with debugging"""
-
-        # Map status changes to notification settings
-        notification_map = {
-            "RUNNING": discord_settings.get("notify_start", True),
-            "COMPLETED": discord_settings.get("notify_complete", True),
-            "FAILED": discord_settings.get("notify_failed", True),
-            "CANCELLED": discord_settings.get("notify_failed", True),
-            "TIMEOUT": discord_settings.get("notify_failed", True),
-            "PENDING": discord_settings.get("notify_queued", False),
-        }
-        
-
-        # Check notification level
-        notification_level = discord_settings.get("notification_level", 0)
-
-        if notification_level == 0:  # Essential only
-            essential_statuses = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"]
-            if new_status not in essential_statuses:
-                return False
-        elif notification_level == 1:  # Standard
-            standard_statuses = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "PENDING"]
-            if new_status not in standard_statuses:
-                return False
-        # Level 2 (Verbose) sends all notifications
-        
-        result = notification_map.get(new_status, False)
-        return result
-
-    def _create_discord_payload(self, project_name: str, job: 'Job', old_status: str, new_status: str, discord_settings: Dict[str, Any]) -> Dict[str, Any]:
-        """Create Discord webhook payload"""
-        prefix = discord_settings.get("message_prefix", "")
-        title = f"{prefix} Job Status Update" if prefix else "Job Status Update"
-        
-        status_colors = {
-            "RUNNING": 0x3498db, "COMPLETED": 0x2ecc71, "FAILED": 0xe74c3c,
-            "CANCELLED": 0xf39c12, "TIMEOUT": 0xe67e22, "PENDING": 0x9b59b6,
-        }
-        color = status_colors.get(new_status, 0x95a5a6)
-        
-        status_emojis = {
-            "RUNNING": "🏃", "COMPLETED": "✅", "FAILED": "❌",
-            "CANCELLED": "🛑", "TIMEOUT": "⏰", "PENDING": "⏳",
-        }
-        emoji = status_emojis.get(new_status, "📋")
-        
-        status_desc = f"{old_status} → **{new_status}**" if old_status != new_status else f"**{new_status}**"
-        runtime_str = job.get_runtime_str() if hasattr(job, 'get_runtime_str') else "—"
-        
-        embed_fields = [
-            {"name": "Job Name", "value": job.name, "inline": True},
-            {"name": "Project", "value": project_name, "inline": True},
-            {"name": "Status", "value": status_desc, "inline": True},
-            {"name": "Runtime", "value": runtime_str, "inline": True},
-        ]
-        
-        if job.nodelist and job.nodelist.strip():
-            embed_fields.append({"name": "Node(s)", "value": job.nodelist, "inline": True})
-        
-        resources = []
-        if job.cpus and job.cpus > 0:
-            resources.append(f"CPUs: {job.cpus}")
-        if job.gpus and job.gpus > 0:
-            resources.append(f"GPUs: {job.gpus}")
-        if job.memory:
-            resources.append(f"Memory: {job.memory}")
-        
-        if resources:
-            embed_fields.append({"name": "Resources", "value": " | ".join(resources), "inline": False})
-        
-        return {
-            "content": f"{emoji} **{title}**",
-            "embeds": [{
-                "title": f"Job {job.id}",
-                "color": color,
-                "fields": embed_fields,
-                "timestamp": datetime.now().isoformat(),
-                "footer": {"text": "SlurmAIO Job Monitor"}
-            }]
-        }
-    
-    def _send_discord_notification(self, project_name: str, job: 'Job', old_status: str, new_status: str):
-        """Enhanced Discord notification sender"""
-        try:
-            # Get job-specific Discord settings
-            job_discord_settings = job.info.get("discord_notifications", {})
-            
-            print(f"[DISCORD] Processing notification for job {job.id}: {old_status} -> {new_status}")
-            print(f"[DISCORD] Job settings: {job_discord_settings}")
-            
-            # Use the Discord manager to send notification
-            
-            success = discord_manager.send_notification(
-                project_name=project_name,
-                job=job,
-                old_status=old_status,
-                new_status=new_status,
-                job_settings=job_discord_settings
-            )
-            
-            if success:
-                print(f"[DISCORD] Notification sent for job {job.id}")
-            else:
-                print(f"[DISCORD] Failed to send notification for job {job.id}")
-                
-        except Exception as e:
-            print(f"[DISCORD] Error in notification handler: {e}")
-            import traceback
-            traceback.print_exc()
-
-
