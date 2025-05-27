@@ -517,16 +517,6 @@ class ProjectGroup(QGroupBox):
         if self.project_counter == 1:
             self.handle_project_selection(project_name)
 
-    def add_project_widget(self, project_widget):
-        """Method to programmatically add project widgets"""
-        # Add at the top
-        self.scroll_content_layout.insertWidget(0, project_widget)
-        self.scroll_area.verticalScrollBar().setValue(0)
-        """Method to programmatically add project widgets"""
-        self.scroll_content_layout.addWidget(project_widget)
-        self.scroll_content_layout.insertWidget(0, project_widget)
-        self.scroll_area.verticalScrollBar().setValue(0)
-
     def handle_project_selection(self, project_name):
         """Handles the selection of a project widget."""
         # Deselect the previously selected widget
@@ -625,36 +615,6 @@ class StatusBlock(QWidget):
 
         layout.addWidget(icon_section)
         layout.addWidget(count_section)
-        self.setLayout(layout)
-
-
-class StatusBar(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QHBoxLayout()
-        layout.setSpacing(10)
-        # Removed padding to align better in the header
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Define blocks: (icon_color, count_color, icon_path, count)
-        # Using placeholder paths for icons as they are local to your system
-        blocks = [
-            ("#2DCB89", "#1F8A5D", os.path.join(script_dir, "src_static",
-             "ok.svg"), 0, "Completed"),  # Green - Placeholder path
-            ("#DA5B5B", "#992F2F", os.path.join(script_dir, "src_static",
-             "err.svg"), 0, "Crashed"),    # Red - Placeholder path
-            ("#8570DB", "#5C4C9D", os.path.join(script_dir, "src_static",
-             "pending.svg"), 0, "Pending"),   # Purple - Placeholder path
-            ("#6DB8E8", "#345D7E", os.path.join(script_dir, "src_static",
-             "loading_2.gif"), 0, "Running jobs"),  # Blue - Placeholder path
-        ]
-
-        for icon_color, count_color, icon_path, count, tooltip in blocks:
-            layout.addWidget(StatusBlock(
-                icon_color, count_color, icon_path, count, tooltip))
-
-        # layout.addStretch(1) # Add stretch if you want the blocks to stay on the left
-
         self.setLayout(layout)
 
 
@@ -980,39 +940,6 @@ class JobsPanel(QWidget):
                                   self.height() - self.new_jobs_button.height() - 20)
         super().resizeEvent(event)
 
-    def _update_job_in_table(self, project_name: str, job_id: str):
-        """Update a specific job row in the jobs table"""
-        if not self.project_storer:
-            return
-
-        project = self.project_storer.get(project_name)
-        if not project:
-            return
-
-        job = project.get_job(job_id)
-        if not job:
-            return
-
-        # Check if this project's table exists
-        if project_name not in self.jobs_group._indices:
-            return
-
-        # Get the table widget for this project
-        table = self.jobs_group._stack.widget(
-            self.jobs_group._indices[project_name])
-        if not table:
-            return
-
-        # Find the row with this job ID
-        for row in range(table.rowCount()):
-            item = table.item(row, 0)  # Job ID column
-            if item and item.text() == str(job_id):
-                # Update the job row
-                job_row = job.to_table_row()
-                self._update_table_row(
-                    table, row, job_row, project_name, job_id)
-                break
-
     def _update_table_row(self, table, row, job_data, project_name, job_id):
         """Update a specific table row with new job data"""
         actions_col = table.columnCount() - 1
@@ -1033,26 +960,6 @@ class JobsPanel(QWidget):
         action_widget = self.jobs_group._create_actions_widget(
             project_name, job_id, job_status)
         table.setCellWidget(row, actions_col, action_widget)
-
-    def _show_job_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
-        """Show notifications for important status changes"""
-        important_changes = {
-            'COMPLETED': ('Job Completed', f'Job {job_id} in {project_name} has completed successfully!'),
-            'FAILED': ('Job Failed', f'Job {job_id} in {project_name} has failed.'),
-            'RUNNING': ('Job Started', f'Job {job_id} in {project_name} is now running.'),
-            'CANCELLED': ('Job Cancelled', f'Job {job_id} in {project_name} was cancelled.'),
-            'TIMEOUT': ('Job Timeout', f'Job {job_id} in {project_name} has timed out.')
-        }
-
-        if new_status in important_changes:
-            title, message = important_changes[new_status]
-
-            # Show system notification (optional)
-            self._show_system_notification(title, message)
-
-            # Show status bar message (brief)
-            if hasattr(self.parent(), 'statusBar'):
-                self.parent().statusBar().showMessage(message, 5000)  # 5 seconds
 
     def _show_system_notification(self, title: str, message: str):
         """Show system desktop notification"""
@@ -1499,37 +1406,6 @@ class JobsPanel(QWidget):
 
         # Update submission details for later use
         job.info["submission_details"] = details
-
-    def start_project_loading(self):
-        """
-        Load and display all projects from the project storer - SIMPLIFIED VERSION.
-        """
-        if not hasattr(self.parent, 'project_storer') or self.parent.project_storer is None:
-            print("Project storer not initialized")
-            return
-
-        try:
-            # Get all projects from the store
-            projects_keys = self.parent.project_storer.all_projects()
-
-            # Add project widgets to UI and load their jobs
-            for proj_name in projects_keys:
-                # Add project widget
-                self.add_new_project(proj_name)
-
-                # Get the project from the store
-                project = self.parent.project_storer.get(proj_name)
-                if project and project.jobs:
-                    # Convert jobs to rows for display
-                    job_rows = [job.to_table_row() for job in project.jobs]
-
-                    # Update jobs UI efficiently - this will use the new efficient update system
-                    self.parent.jobs_group.update_jobs(proj_name, job_rows)
-
-        except Exception as e:
-            print(f"Error loading projects: {e}")
-            import traceback
-            traceback.print_exc()
 
     def _show_immediate_job_toast(self, project_name: str, job_id: str, old_status: str, new_status: str):
         """Show immediate toast notifications with minimal processing"""

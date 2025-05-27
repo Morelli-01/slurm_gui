@@ -360,60 +360,6 @@ class JobQueueWidget(QGroupBox):
 
             self.queue_table.setRowHidden(table_row_idx, not row_should_be_visible)
 
-    def filter_negative_table_by_list(self, filter_list: list):
-        """
-        Filters table rows. Shows a row if any string from filter_list is found
-        in ANY field (visible or not) of the corresponding job's data.
-        """
-        if not isinstance(filter_list, list):
-            processed_filter_list = []
-        else:
-            # Convert all filter strings to lowercase and remove empty/None items
-            processed_filter_list = [str(f).lower() for f in filter_list if f and str(f).strip()]
-
-        self.jobs_filter_list = processed_filter_list  # Store for potential re-application
-        self.jobs_filter_text = ""  # Clear text filter when list filter is used
-
-        if not self.current_jobs_data or self.queue_table.columnCount() == 0:
-            for r_idx in range(self.queue_table.rowCount()):
-                self.queue_table.setRowHidden(r_idx, True)
-            return
-
-        for table_row_idx in range(self.queue_table.rowCount()):
-            first_item_in_row = self.queue_table.item(table_row_idx, 0)
-
-            if not first_item_in_row:
-                self.queue_table.setRowHidden(table_row_idx, True)
-                continue
-
-            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
-
-            if original_job_idx is None or \
-               not (0 <= original_job_idx < len(self.current_jobs_data)):
-                self.queue_table.setRowHidden(table_row_idx, True)
-                continue
-
-            job_data_dict = self.current_jobs_data[original_job_idx]
-
-            row_should_be_visible = False
-            if not processed_filter_list:  # If filter list is empty, all rows are visible
-                row_should_be_visible = True
-            else:
-                # Iterate through ALL fields of the job_data_dict
-                for field_key in JOB_QUEUE_FIELDS:
-                    field_value_obj = job_data_dict.get(field_key)
-                    if field_value_obj is not None:
-                        field_value_str_lower = str(field_value_obj).lower()
-                        # Check if any string in the processed_filter_list is a substring
-                        for filter_item_lower in processed_filter_list:
-                            if filter_item_lower in field_value_str_lower:
-                                row_should_be_visible = True
-                                break  # Match found for this filter item
-                    if row_should_be_visible:
-                        break  # Match found for this job_data field
-
-            self.queue_table.setRowHidden(table_row_idx, not row_should_be_visible)
-
     def filter_table_by_negative_keywords(self, negative_keyword_list: list):
         """
         Filters table rows. Hides a row if any string from negative_keyword_list

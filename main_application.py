@@ -59,18 +59,6 @@ def get_scaled_dimensions(screen=None):
     return width, height, min_width, min_height
 
 
-def show_message(parent, title, text, icon="Information"):
-    """Displays a toast notification."""
-
-    if "Critical" in str(icon) or "Error" in str(icon):
-        show_error_toast(parent, title, text)
-    elif "Warning" in str(icon):
-        show_warning_toast(parent, title, text)
-    else:
-        show_info_toast(parent, title, text)
-
-# --- New Connection Setup Dialog ---
-
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -789,33 +777,6 @@ class SlurmJobManagerApp(QMainWindow):
         self.settings.endGroup()
 
         print("--- Settings Loaded ---")
-
-    def _setup_job_monitoring(self):
-        """Set up job status monitoring after UI initialization"""
-        if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
-            self.jobs_panel.project_storer.signals.job_status_changed.connect(
-                self._on_global_job_status_change)
-            self.jobs_panel.project_storer.signals.project_stats_changed.connect(
-                self._on_project_stats_updated)
-
-    def _on_global_job_status_change(self, project_name: str, job_id: str, old_status: str, new_status: str):
-        """Handle global job status changes for main window notifications"""
-        message = f"Job {job_id} in {project_name}: {old_status} → {new_status}"
-        if hasattr(self, 'statusBar'):
-            self.statusBar().showMessage(message, 5000)
-        self._update_window_title()
-
-    def _on_jobs_batch_updated(self, updated_projects: dict):
-        """Handle batch job updates"""
-        total_updates = sum(len(jobs) for jobs in updated_projects.values())
-        if total_updates > 0:
-            message = f"Updated {total_updates} jobs across {len(updated_projects)} projects"
-            if hasattr(self, 'statusBar'):
-                self.statusBar().showMessage(message, 3000)
-
-    def _on_project_stats_updated(self, project_name: str, stats: dict):
-        """Handle project statistics updates"""
-        self._update_window_title()
 
     def _update_window_title(self):
         """Update window title to show active jobs count"""

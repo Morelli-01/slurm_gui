@@ -526,21 +526,13 @@ class ProjectStore:
         self._projects.pop(name)
         self._write_to_settings()
 
-    def rename_project(self, old: str, new: str) -> None:
-        """Rename a project"""
-        if old not in self._projects or new in self._projects:
-            return
-        self._projects[new] = self._projects.pop(old)
-        self._projects[new].name = new
-        self._write_to_settings()
-
+    # ------------------------------------------------------------------
+    # Public API (job level)
+    # ------------------------------------------------------------------
     def get(self, name: str) -> Optional[Project]:
         """Get a project by name"""
         return self._projects.get(name)
 
-    # ------------------------------------------------------------------
-    # Public API (job level)
-    # ------------------------------------------------------------------
     def add_job(self, project: str, job: Job) -> None:
         """Add a job to a project (creates project if it doesn't exist)"""
         self._projects.setdefault(project, Project(project)).add_job(job)
@@ -560,64 +552,6 @@ class ProjectStore:
             return
         pj.remove_job(job_id)
         self._write_to_settings()
-
-    def update_jobs_from_squeue(self, squeue_data: List[Dict[str, Any]]) -> None:
-        """
-        Update job information from squeue data.
-        Preserves NOT_SUBMITTED jobs - their status should not change when refreshing from SLURM.
-        """
-        # Group jobs by user
-        user_jobs = {}
-        for job_dict in squeue_data:
-            user = job_dict.get("User", "")
-            if user:
-                user_jobs.setdefault(user, []).append(job_dict)
-
-        # Only process jobs for the current user
-        if self.slurm and self.slurm.remote_user:
-            user_jobs_data = user_jobs.get(self.slurm.remote_user, [])
-
-            # Track which jobs were updated
-            updated_job_ids = set()
-
-            # Update existing jobs
-            for project_name, project in self._projects.items():
-                for job in project.jobs:
-                    # Skip NOT_SUBMITTED jobs - we don't want to update their status from SLURM
-                    if job.status == "NOT_SUBMITTED":
-                        continue
-
-                    for squeue_job in user_jobs_data:
-                        if str(job.id) == str(squeue_job.get("Job ID", "")):
-                            # Update job status
-                            job.status = squeue_job.get("Status", job.status)
-
-                            # Update time used if available
-                            if "Time Used" in squeue_job and isinstance(squeue_job["Time Used"], list) and len(squeue_job["Time Used"]) > 1:
-                                job.time_used = squeue_job["Time Used"][1]
-
-                            # Update nodelist
-                            job.nodelist = squeue_job.get(
-                                "Nodelist", job.nodelist)
-
-                            # Update reason (useful for pending jobs)
-                            job.reason = squeue_job.get("Reason", job.reason)
-
-                            # Mark as updated
-                            updated_job_ids.add(str(job.id))
-                            break
-
-            # Add any new jobs that aren't assigned to a project yet
-            for squeue_job in user_jobs_data:
-                job_id = str(squeue_job.get("Job ID", ""))
-                if job_id and job_id not in updated_job_ids:
-                    # Try to determine the project based on job name or other attributes
-                    # For now, assign to "Unassigned" project
-                    job = Job.from_slurm_dict(squeue_job)
-                    self.add_job("Unassigned", job)
-
-            # Save changes
-            self._write_to_settings()
 
     def add_new_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
         """Create a new job and add it to the project (without submitting to SLURM)"""
@@ -683,10 +617,7 @@ class ProjectStore:
                 memory=memory or "",
             )
             if "discord_notifications" in job_details:
-                print(f"[DEBUG] Storing Discord settings for job: {job_details['discord_notifications']}")
                 job.info["discord_notifications"] = job_details["discord_notifications"]
-            else:
-                print("[DEBUG] No Discord settings found in job details")
             # Parse GPU count from gres if available
             if gres and "gpu:" in gres:
                 try:
@@ -940,66 +871,6 @@ class ProjectStore:
 
         return active_jobs
 
-    def get_jobs_needing_update(self) -> Dict[str, List[str]]:
-        """Get jobs grouped by project that need status updates"""
-        jobs_by_project = {}
-        active_statuses = {'PENDING', 'RUNNING',
-                           'COMPLETING', 'SUSPENDED', 'PREEMPTED'}
-
-        for project_name, project in self._projects.items():
-            project_jobs = []
-            for job in project.jobs:
-                if job.status in active_statuses and job.status != 'NOT_SUBMITTED':
-                    project_jobs.append(str(job.id))
-
-            if project_jobs:
-                jobs_by_project[project_name] = project_jobs
-
-        return jobs_by_project
-
-    def bulk_update_jobs_from_sacct(self, job_details: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
-        """
-        Bulk update jobs from sacct command results
-
-        Returns:
-            Dict mapping project names to lists of updated job IDs
-        """
-        updated_projects = {}
-
-        for project_name, project in self._projects.items():
-            updated_jobs = []
-
-            for job in project.jobs:
-                job_id = str(job.id)
-
-                if job_id in job_details:
-                    slurm_job = job_details[job_id]
-                    old_status = job.status
-                    new_status = slurm_job.get('State', old_status)
-
-                    # Update job if status changed
-                    if old_status != new_status:
-                        job.status = new_status
-                        updated_jobs.append(job_id)
-
-                        # Update additional details
-                        self._update_job_from_sacct(job, slurm_job)
-
-                        # Emit individual update signal using signals object
-                        self.signals.job_status_changed.emit(
-                            project_name, job_id, old_status, new_status)
-
-            if updated_jobs:
-                updated_projects[project_name] = updated_jobs
-
-                # Update project statistics
-                stats = project.get_job_stats()
-                self.signals.project_stats_changed.emit(project_name, stats)
-
-        if updated_projects:
-            self._write_to_settings()
-
-        return updated_projects
 
     def _update_job_from_sacct(self, job: Job, slurm_data: Dict[str, Any]):
         """Update job object with data from sacct"""
@@ -1071,49 +942,36 @@ class ProjectStore:
 
     def _send_discord_notification(self, project_name: str, job: 'Job', old_status: str, new_status: str):
         """Send Discord notification for job status changes with debugging"""
-        print(f"[DISCORD DEBUG] Starting notification check for {job.id}")
-        
         try:
             # Load Discord settings dynamically
             discord_settings = self._load_discord_settings()
-            print(f"[DISCORD DEBUG] Discord settings loaded: enabled={discord_settings.get('enabled')}, webhook_exists={bool(discord_settings.get('webhook_url'))}")
-            
+
             # Check if Discord is globally enabled
             if not discord_settings.get("enabled", False):
-                print("[DISCORD DEBUG] Discord globally disabled - skipping")
                 return
             
             webhook_url = discord_settings.get("webhook_url", "")
             if not webhook_url:
-                print("[DISCORD DEBUG] No webhook URL configured - skipping")
                 return
             
             # Check if job has Discord notifications enabled
             job_discord_settings = job.info.get("discord_notifications", {})
-            print(f"[DISCORD DEBUG] Job notification settings: {job_discord_settings}")
-            
+
             if not job_discord_settings.get("enabled", False):
-                print("[DISCORD DEBUG] Job notifications disabled - skipping")
                 return
             
             # Check if we should notify for this status change
             should_notify = self._should_send_notification(job_discord_settings, old_status, new_status)
-            print(f"[DISCORD DEBUG] Should notify for {old_status}->{new_status}: {should_notify}")
-            
+
             if not should_notify:
-                print("[DISCORD DEBUG] Notification filtered out by settings")
                 return
             
             # Create notification payload
-            print("[DISCORD DEBUG] Creating notification payload...")
             payload = self._create_discord_payload(project_name, job, old_status, new_status, job_discord_settings)
-            print(f"[DISCORD DEBUG] Payload created: {json.dumps(payload, indent=2)}")
-            
+
             # Send notification
-            print(f"[DISCORD DEBUG] Sending to webhook: {webhook_url[:50]}...")
             self._send_discord_webhook(webhook_url, payload)
-            print("[DISCORD DEBUG] Notification sent successfully")
-            
+
         except Exception as e:
             print(f"[DISCORD ERROR] Error sending Discord notification: {e}")
             import traceback
@@ -1121,8 +979,7 @@ class ProjectStore:
 
     def _should_send_notification(self, discord_settings: Dict[str, Any], old_status: str, new_status: str) -> bool:
         """Determine if a Discord notification should be sent with debugging"""
-        print(f"[DISCORD DEBUG] Checking notification rules for {old_status} -> {new_status}")
-        
+
         # Map status changes to notification settings
         notification_map = {
             "RUNNING": discord_settings.get("notify_start", True),
@@ -1133,26 +990,21 @@ class ProjectStore:
             "PENDING": discord_settings.get("notify_queued", False),
         }
         
-        print(f"[DISCORD DEBUG] Notification map for {new_status}: {notification_map.get(new_status, False)}")
-        
+
         # Check notification level
         notification_level = discord_settings.get("notification_level", 0)
-        print(f"[DISCORD DEBUG] Notification level: {notification_level}")
-        
+
         if notification_level == 0:  # Essential only
             essential_statuses = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"]
             if new_status not in essential_statuses:
-                print(f"[DISCORD DEBUG] Status {new_status} not in essential list")
                 return False
         elif notification_level == 1:  # Standard
             standard_statuses = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "PENDING"]
             if new_status not in standard_statuses:
-                print(f"[DISCORD DEBUG] Status {new_status} not in standard list")
                 return False
         # Level 2 (Verbose) sends all notifications
         
         result = notification_map.get(new_status, False)
-        print(f"[DISCORD DEBUG] Final decision: {result}")
         return result
 
     def _create_discord_payload(self, project_name: str, job: 'Job', old_status: str, new_status: str, discord_settings: Dict[str, Any]) -> Dict[str, Any]:

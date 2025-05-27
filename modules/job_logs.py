@@ -615,7 +615,6 @@ class JobLogsDialog(QDialog):
         self.error_text.setText(f"Error: {message}")
         show_warning_toast(self, "Error", message)
 
-    
     def closeEvent(self, event):
         """Handle dialog close event"""
         # Stop the continuous fetcher thread

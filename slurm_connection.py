@@ -821,35 +821,6 @@ class SlurmConnection:
             self.connected_status = False
             print("SSH connection closed.")
 
-    @require_connection
-    def get_job_details_sacct(self, job_ids: List[Union[str, int]]) -> Dict[str, Dict[str, Any]]:
-        """
-        Get detailed job information using sacct command
-
-        Args:
-            job_ids: List of job IDs to query
-
-        Returns:
-            Dict mapping job_id to job details dictionary
-        """
-        if not job_ids:
-            return {}
-
-        job_ids_str = ','.join(str(jid) for jid in job_ids)
-
-        cmd = f"sacct -j {job_ids_str} --format=JobID,JobName,State,ExitCode,Start,End,Elapsed,AllocCPUS,ReqMem,MaxRSS,NodeList,Reason --parsable2 --noheader"
-
-        try:
-            stdout, stderr = self.run_command(cmd)
-
-            if stderr:
-                print(f"Warning in sacct command: {stderr}")
-
-            return self._parse_sacct_output(stdout)
-
-        except Exception as e:
-            print(f"Error fetching job details with sacct: {e}")
-            return {}
 
     def _parse_sacct_output(self, output: str) -> Dict[str, Dict[str, Any]]:
         """Parse sacct command output into job details dictionary"""
