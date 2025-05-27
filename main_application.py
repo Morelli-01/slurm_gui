@@ -14,8 +14,7 @@ from modules.project_store import ProjectStore
 import platform
 import subprocess
 # Get the script directory to construct relative paths
-script_dir = os.path.dirname(os.path.abspath(__file__))
-
+from utils import script_dir, except_utility_path, plink_utility_path
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
 # Base dimensions as percentages of screen size
@@ -439,7 +438,7 @@ class SlurmJobManagerApp(QMainWindow):
         """Switches the visible panel in the QStackedWidget."""
         self.stacked_widget.setCurrentIndex(index)
         self.update_nav_styles(clicked_button)
-        
+
     def create_navigation_bar(self):
         """Creates the top navigation bar with logo, buttons, and search."""
         nav_widget = QWidget()
@@ -536,7 +535,7 @@ class SlurmJobManagerApp(QMainWindow):
 
     def _create_expect_script(self, host, username, password):
         """Create an expect script for automatic password authentication"""
-        script_content = f'''#!/usr/bin/expect -f
+        script_content = f'''#!{except_utility_path} -f
 set timeout 30
 spawn ssh {username}@{host}
 expect {{
@@ -589,7 +588,7 @@ Write-Host ""
 
 # Use plink if available (PuTTY) for better password handling
 if (Get-Command plink -ErrorAction SilentlyContinue) {{
-    plink -ssh {username}@{host} -pw "{password}"
+    {plink_utility_path} -ssh {username}@{host} -pw "{password}"
 }} else {{
     # Fallback to regular SSH (user will need to enter password manually)
     ssh {username}@{host}
@@ -642,34 +641,34 @@ Read-Host
         """Open terminal on macOS with automatic authentication"""
         try:
             # Check if expect is available
-            try:
-                subprocess.run(["which", "expect"], check=True, capture_output=True)
-                has_expect = True
-            except subprocess.CalledProcessError:
-                has_expect = False
+            # try:
+            #     subprocess.run(["which", "expect"], check=True, capture_output=True)
+            #     has_expect = True
+            # except subprocess.CalledProcessError:
+            #     has_expect = False
             
-            if has_expect:
+            # if has_expect:
                 # Use expect for automatic password entry
-                script_path = self._create_expect_script(host, username, password)
-                applescript = f'''
-                tell application "Terminal"
-                    activate
-                    do script "{script_path}"
-                end tell
-                '''
-                subprocess.Popen(["osascript", "-e", applescript])
-                
-                # Clean up script after delay
-                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-            else:
-                # Install expect suggestion or fallback
-                applescript = f'''
-                tell application "Terminal"
-                    activate
-                    do script "echo 'Installing expect for automatic authentication...' && brew install expect 2>/dev/null || (echo 'Please install expect: brew install expect' && echo 'For now, connecting with manual password entry:') && ssh {username}@{host}"
-                end tell
-                '''
-                subprocess.Popen(["osascript", "-e", applescript])
+            script_path = self._create_expect_script(host, username, password)
+            applescript = f'''
+            tell application "Terminal"
+                activate
+                do script "{script_path}"
+            end tell
+            '''
+            subprocess.Popen(["osascript", "-e", applescript])
+            
+            # Clean up script after delay
+            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            # else:
+            #     # Install expect suggestion or fallback
+            #     applescript = f'''
+            #     tell application "Terminal"
+            #         activate
+            #         do script "echo 'Installing expect for automatic authentication...' && brew install expect 2>/dev/null || (echo 'Please install expect: brew install expect' && echo 'For now, connecting with manual password entry:') && ssh {username}@{host}"
+            #     end tell
+            #     '''
+            #     subprocess.Popen(["osascript", "-e", applescript])
             
             show_success_toast(self, "Terminal Opened", 
                              f"Terminal opened for {username}@{host}")
