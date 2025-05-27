@@ -31,12 +31,7 @@ def sort_nodes_data(nodes_data: list[dict]):
             return int(mem_str[:-1])  # Remove 'M' and convert to int
         return int(mem_str)  # Just in case there's no 'M'
 
-    # Sort first by 'Partitions', then by the numeric value of 'total_mem'
-
     return sorted(nodes_data, key=lambda x: (x['Partitions'], extract_mem_value(x)), reverse=True)
-
-# --- Tab Widgets ---
-
 
 class NodeStatusTab(QWidget):
     """Widget for displaying node status visualization."""
@@ -313,71 +308,15 @@ class NodeStatusTab(QWidget):
         # Adjust column stretches
         self.node_status_grid_layout.setColumnStretch(0, 0)  # Node name column
 
-        # Stretch for block columns (up to max_gpu_count, assuming 8 blocks per row max)
-        # We need enough columns for max_gpu_count blocks, potentially spread over multiple rows
-        # A simpler approach is to set stretch for a reasonable number of columns after the name
-        # Let's assume we might need up to 8 columns for blocks in a row
         for i in range(1, 1 + 8):  # Adjust range if you expect more blocks per row
             self.node_status_grid_layout.setColumnStretch(i, 0)
 
-        # Set stretch for the column after the blocks to push everything to the left
-        # The column index will depend on the maximum number of blocks in a single row (which is 8 in this layout)
         self.node_status_grid_layout.setColumnStretch(1 + 8, 1)
 
         if nodes_data:  # Only add stretch if there's data
-            # The row stretch should be applied to the row *after* the last node's content,
-            # considering the potential extra rows for blocks.
-            # Calculate the maximum row index used by content
             max_row_used = len(nodes_data) + row_offset  # Simple approximation, might need refinement
             self.node_status_grid_layout.setRowStretch(max_row_used, 1)
 
-    def set_theme(self, stylesheet):
-        """Sets the theme for this tab."""
-        self.theme_stylesheet = stylesheet
-        self.setStyleSheet(stylesheet)
-        # Re-create status key section to apply new theme colors to blocks
-        # Clear existing status key layout items
-        while self.status_key_layout.count():
-            item = self.status_key_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():  # Handle nested layouts if any
-                while item.layout().count():
-                    nested_item = item.layout().takeAt(0)
-                    if nested_item.widget():
-                        nested_item.widget().deleteLater()
-
-        # Create and add the new status key section
-        new_status_key_layout = self.create_status_key_section()
-        for i in range(new_status_key_layout.count()):
-            self.status_key_layout.addLayout(new_status_key_layout.takeAt(0).layout())
-
-        # Re-apply stylesheet to existing widgets in the grid layout
-        for i in range(self.node_status_grid_layout.count()):
-            item = self.node_status_grid_layout.itemAt(i)
-            widget = item.widget()
-            if widget and widget.objectName() == "coloredBlock":
-                widget.setStyleSheet(self.theme_stylesheet)
-            elif isinstance(widget, QLabel):  # Update label colors
-                # Reapply the label stylesheet based on object name or type
-                if widget.objectName() == "sectionTitle":
-                    widget.setStyleSheet(
-                        f"font-size: 14pt; font-weight: bold; margin-bottom: 8px; color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-                else:  # Node name labels
-                    widget.setStyleSheet(
-                        f"color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-            elif isinstance(widget, QWidget) and widget.layout() and isinstance(widget.layout(), QHBoxLayout):
-                # Update separator line color
-                for j in range(widget.layout().count()):
-                    sub_item = widget.layout().itemAt(j)
-                    if isinstance(sub_item.widget(), QFrame):
-                        line_color = COLOR_DARK_BORDER if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_BORDER
-                        separator_style = f"border: none; border-top: 1px dotted {line_color};"
-                        sub_item.widget().setStyleSheet(separator_style)
-                    elif isinstance(sub_item.widget(), QLabel):  # Partition label
-                        label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
-                        sub_item.widget().setStyleSheet(f"color: {label_color};")
-        
     def _show_connection_error(self):
         """Show connection error message"""
         # FIX: Pre-calculate complex expressions outside f-string
@@ -409,17 +348,6 @@ class CpuUsageTab(QWidget):
         section_title = QLabel("CPU Usage per Node")
         section_title.setObjectName("sectionTitle")
         title_legend_layout.addWidget(section_title)
-
-        # Add a vertical separator (optional, can be removed if not desired for this tab)
-        # vertical_separator = QFrame()
-        # vertical_separator.setObjectName("verticalSeparator")
-        # vertical_separator.setFrameShape(QFrame.Shape.VLine)
-        # vertical_separator.setFrameShadow(QFrame.Shadow.Sunken)
-        # title_legend_layout.addWidget(vertical_separator)
-
-        # Add legend for progress bar colors (optional)
-        # self.legend_layout = self.create_legend()
-        # title_legend_layout.addLayout(self.legend_layout)
 
         title_legend_layout.addStretch()
 
@@ -508,47 +436,13 @@ class CpuUsageTab(QWidget):
 
             self.usage_grid_layout.addWidget(name_label, row_index + row_offset, 0)
             self.usage_grid_layout.addWidget(progress_bar, row_index + row_offset, 1)
-            # Optional: Add a label for the exact percentage or values if not in progress bar format
-            # usage_label = QLabel(f"{alloc_cpu} / {total_cpu} ({cpu_usage_percent:.1f}%)")
-            # self.usage_grid_layout.addWidget(usage_label, row_index + row_offset, 2)
 
         self.usage_grid_layout.setColumnStretch(0, 0)  # Node name
         self.usage_grid_layout.setColumnStretch(1, 1)  # Progress bar (take remaining space)
-        # self.usage_grid_layout.setColumnStretch(2, 0) # Usage text if added
 
         if nodes_data:
             max_row_used = len(nodes_data) + row_offset
             self.usage_grid_layout.setRowStretch(max_row_used, 1)
-
-    def set_theme(self, stylesheet):
-        """Sets the theme for this tab."""
-        self.theme_stylesheet = stylesheet
-        self.setStyleSheet(stylesheet)
-        # Update title color
-        title_label = self.findChild(QLabel, "sectionTitle")
-        if title_label:
-            title_label.setStyleSheet(
-                f"color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-
-        # Re-apply stylesheet to existing progress bars and labels in the grid
-        for i in range(self.usage_grid_layout.count()):
-            item = self.usage_grid_layout.itemAt(i)
-            widget = item.widget()
-            if isinstance(widget, QProgressBar):
-                widget.setStyleSheet(self.theme_stylesheet)
-            elif isinstance(widget, QLabel) and widget.objectName() != "sectionTitle":
-                widget.setStyleSheet(
-                    f"color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-            elif isinstance(widget, QWidget) and widget.layout() and isinstance(widget.layout(), QHBoxLayout):  # Separator
-                for j in range(widget.layout().count()):
-                    sub_item = widget.layout().itemAt(j)
-                    if isinstance(sub_item.widget(), QFrame):
-                        line_color = COLOR_DARK_BORDER if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_BORDER
-                        separator_style = f"border: none; border-top: 1px dotted {line_color};"
-                        sub_item.widget().setStyleSheet(separator_style)
-                    elif isinstance(sub_item.widget(), QLabel):  # Partition label
-                        label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
-                        sub_item.widget().setStyleSheet(f"color: {label_color};")
 
     def _show_connection_error(self):
         """Show connection error message"""
@@ -691,34 +585,6 @@ class RamUsageTab(QWidget):
             max_row_used = len(nodes_data) + row_offset
             self.usage_grid_layout.setRowStretch(max_row_used, 1)
 
-    def set_theme(self, stylesheet):
-        """Sets the theme for this tab."""
-        self.theme_stylesheet = stylesheet
-        self.setStyleSheet(stylesheet)
-        title_label = self.findChild(QLabel, "sectionTitle")
-        if title_label:
-            title_label.setStyleSheet(
-                f"color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-
-        for i in range(self.usage_grid_layout.count()):
-            item = self.usage_grid_layout.itemAt(i)
-            widget = item.widget()
-            if isinstance(widget, QProgressBar):
-                widget.setStyleSheet(self.theme_stylesheet)
-            elif isinstance(widget, QLabel) and widget.objectName() != "sectionTitle":
-                widget.setStyleSheet(
-                    f"color: {COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG};")
-            elif isinstance(widget, QWidget) and widget.layout() and isinstance(widget.layout(), QHBoxLayout):  # Separator
-                for j in range(widget.layout().count()):
-                    sub_item = widget.layout().itemAt(j)
-                    if isinstance(sub_item.widget(), QFrame):
-                        line_color = COLOR_DARK_BORDER if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_BORDER
-                        separator_style = f"border: none; border-top: 1px dotted {line_color};"
-                        sub_item.widget().setStyleSheet(separator_style)
-                    elif isinstance(sub_item.widget(), QLabel):  # Partition label
-                        label_color = COLOR_DARK_FG if stylesheet == get_dark_theme_stylesheet() else COLOR_LIGHT_FG
-                        sub_item.widget().setStyleSheet(f"color: {label_color};")
-    
     def _show_connection_error(self):
         """Show connection error message"""
         # Clear existing content
@@ -778,14 +644,6 @@ class ClusterStatusWidget(QWidget):
         else:
             self.sc_ = slurm_connection
 
-        # Setup timer for periodic updates
-        # self.timer = QTimer(self)
-        # self.timer.timeout.connect(self.fetch_and_update)
-        # self.timer.start(REFRESH_INTERVAL_MS)
-
-        # # Perform initial fetch and update
-        # self.fetch_and_update()
-
     def update_status(self, nodes_data, jobs_data):
         """Fetches data from Slurm and updates all tabs."""
 
@@ -795,20 +653,3 @@ class ClusterStatusWidget(QWidget):
         self.cpu_usage_tab.update_content(nodes_data, jobs_data)
         self.ram_usage_tab.update_content(nodes_data, jobs_data)
 
-    def switch_theme(self, theme_key):
-        """Switches the application theme."""
-        if theme_key in self.themes:
-            self.current_theme = theme_key
-            stylesheet = self.themes[self.current_theme]
-            self.setStyleSheet(stylesheet)
-            self.tab_widget.setStyleSheet(stylesheet)  # Apply theme to the tab widget
-
-            # Update theme in each tab widget
-            self.node_status_tab.set_theme(stylesheet)
-            self.cpu_usage_tab.set_theme(stylesheet)
-            self.ram_usage_tab.set_theme(stylesheet)
-
-            # Trigger a data update to re-render content with the new theme
-            # This might be necessary if the visualization logic in the tabs
-            # depends on the theme (e.g., for drawing charts).
-            # self.fetch_and_update() # Uncomment if needed

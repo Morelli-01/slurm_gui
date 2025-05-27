@@ -441,28 +441,6 @@ class SlurmJobManagerApp(QMainWindow):
         self.cluster_status_overview_widget.update_status(
             nodes_data, queue_jobs)
 
-    # --- Theme Handling ---
-    def change_theme(self, theme_name):
-        """Applies the selected theme stylesheet."""
-        if theme_name in [THEME_DARK, THEME_LIGHT]:
-            self.current_theme = theme_name
-            self.apply_theme()
-
-            # Update cluster status widget theme
-            self.cluster_status_overview_widget.switch_theme(theme_name)
-
-            # Update separator color
-            separator_color = COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER
-            for i in range(self.main_layout.count()):
-                widget = self.main_layout.itemAt(i).widget()
-                if isinstance(widget, QFrame) and widget.frameShape() == QFrame.Shape.HLine:
-                    widget.setStyleSheet(
-                        f"background-color: {separator_color};")
-                    break
-            self.update_nav_styles()
-        else:
-            print(f"Error: Theme '{theme_name}' not found.")
-
     # --- Navigation Bar ---
     def create_navigation_bar(self):
         """Creates the top navigation bar with logo, buttons, and search."""
