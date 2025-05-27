@@ -439,7 +439,7 @@ class SlurmJobManagerApp(QMainWindow):
         """Switches the visible panel in the QStackedWidget."""
         self.stacked_widget.setCurrentIndex(index)
         self.update_nav_styles(clicked_button)
-    
+        
     def create_navigation_bar(self):
         """Creates the top navigation bar with logo, buttons, and search."""
         nav_widget = QWidget()
@@ -508,6 +508,10 @@ class SlurmJobManagerApp(QMainWindow):
             return
         
         try:
+            import platform
+            import subprocess
+            import tempfile
+            import os
             
             # Get connection details
             host = self.slurm_connection.host
@@ -565,6 +569,74 @@ expect {{
         # Make script executable
         os.chmod(script_path, 0o755)
         return script_path
+
+    def _create_powershell_script(self, host, username, password):
+        """Create a PowerShell script for SSH with password authentication"""
+        script_content = f'''
+# PowerShell SSH connection script
+$Host.UI.RawUI.WindowTitle = "SSH - {host}"
+
+# Check if ssh is available
+if (!(Get-Command ssh -ErrorAction SilentlyContinue)) {{
+    Write-Host "SSH client not found. Please install OpenSSH client." -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit
+}}
+
+Write-Host "Connecting to {username}@{host}..." -ForegroundColor Green
+Write-Host "Password will be requested by SSH client." -ForegroundColor Yellow
+Write-Host ""
+
+# Use plink if available (PuTTY) for better password handling
+if (Get-Command plink -ErrorAction SilentlyContinue) {{
+    plink -ssh {username}@{host} -pw "{password}"
+}} else {{
+    # Fallback to regular SSH (user will need to enter password manually)
+    ssh {username}@{host}
+}}
+
+Write-Host ""
+Write-Host "Connection closed. Press Enter to exit..." -ForegroundColor Yellow
+Read-Host
+'''
+        
+        # Create temporary PowerShell script
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False) as f:
+            f.write(script_content)
+            script_path = f.name
+        
+        return script_path
+
+    def _open_windows_terminal(self, host, username, password):
+        """Open terminal on Windows with automatic authentication"""
+        try:
+            # Create PowerShell script
+            script_path = self._create_powershell_script(host, username, password)
+            
+            try:
+                # Try Windows Terminal first
+                cmd = [
+                    "wt.exe", "new-tab", "--title", f"SSH - {host}",
+                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
+                ]
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                show_success_toast(self, "Terminal Opened", 
+                                 f"SSH terminal opened for {username}@{host}")
+            except FileNotFoundError:
+                # Fallback to PowerShell directly
+                cmd = [
+                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
+                ]
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                show_success_toast(self, "Terminal Opened", 
+                                 f"PowerShell SSH session opened for {username}@{host}")
+            
+            # Clean up script after delay
+            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            
+        except Exception as e:
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open Windows terminal: {str(e)}")
 
     def _open_macos_terminal(self, host, username, password):
         """Open terminal on macOS with automatic authentication"""
@@ -700,286 +772,7 @@ expect {{
         # Style the terminal button separately (it's not a nav button)
         if hasattr(self, 'terminal_button'):
             self.terminal_button.style().unpolish(self.terminal_button)
-            self.terminal_button.style().polish(self.terminal_button)
-
-
-    def _open_windows_terminal(self, host, username, password):
-        """Open terminal on Windows with improved SSH methods"""
-        try:
-            # Method 1: Try Windows Terminal with OpenSSH (most modern approach)
-            if self._try_windows_terminal_openssh(host, username, password):
-                return
-            
-            # Method 2: Try PowerShell with OpenSSH client
-            if self._try_powershell_openssh(host, username, password):
-                return
-            
-            # Method 3: Create batch file with SSH command (fallback)
-            if self._try_batch_file_ssh(host, username, password):
-                return
-            
-            # Method 4: Final fallback - cmd with SSH
-            self._try_cmd_ssh(host, username, password)
-            
-        except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                        f"Failed to open Windows terminal: {str(e)}")
-
-    def _try_windows_terminal_openssh(self, host, username, password):
-        """Try Windows Terminal with built-in OpenSSH"""
-        try:
-            # Create a PowerShell script that handles SSH with password
-            script_content = f'''
-    # Windows Terminal SSH Connection Script
-    $Host.UI.RawUI.WindowTitle = "SSH - {username}@{host}"
-
-    Write-Host "🚀 Connecting to {username}@{host}..." -ForegroundColor Green
-    Write-Host "💡 Tip: Use Ctrl+Shift+T to open new tabs" -ForegroundColor Yellow
-    Write-Host ""
-
-    # Check if OpenSSH client is available
-    try {{
-        $sshVersion = ssh -V 2>&1
-        Write-Host "✅ OpenSSH found: $sshVersion" -ForegroundColor Green
-    }} catch {{
-        Write-Host "❌ OpenSSH client not found. Please install it via Windows Features." -ForegroundColor Red
-        Write-Host "   Go to: Settings > Apps > Optional Features > Add Feature > OpenSSH Client" -ForegroundColor Yellow
-        Write-Host ""
-        Read-Host "Press Enter to continue anyway (you'll need to enter password manually)"
-    }}
-
-    Write-Host ""
-    Write-Host "Youll be prompted for your password by SSH..." -ForegroundColor Cyan
-    Write-Host ""
-
-    # Use sshpass if available (unlikely on Windows), otherwise manual password entry
-    try {{
-        # Try to connect with SSH
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL {username}@{host}
-    }} catch {{
-        Write-Host "❌ SSH connection failed" -ForegroundColor Red
-        Write-Host "Possible issues:" -ForegroundColor Yellow
-        Write-Host "- Network connectivity" -ForegroundColor Yellow
-        Write-Host "- Incorrect credentials" -ForegroundColor Yellow
-        Write-Host "- SSH service not running on remote host" -ForegroundColor Yellow
-    }}
-
-    Write-Host ""
-    Write-Host "Connection closed. Press Enter to exit..." -ForegroundColor Yellow
-    Read-Host
-    '''
-            
-            # Save script to temp file
-            script_path = self._create_temp_script(script_content, '.ps1')
-            
-            try:
-                # Try Windows Terminal first (best experience)
-                cmd = [
-                    "wt.exe", 
-                    "new-tab", 
-                    "--title", f"SSH - {username}@{host}",
-                    "powershell.exe", 
-                    "-ExecutionPolicy", "Bypass", 
-                    "-NoExit",
-                    "-File", script_path
-                ]
-                
-                process = subprocess.Popen(
-                    cmd, 
-                    creationflags=subprocess.CREATE_NEW_CONSOLE,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                
-                show_success_toast(self, "Terminal Opened", 
-                                f"Windows Terminal opened for {username}@{host}")
-                
-                # Clean up script after delay
-                QTimer.singleShot(15000, lambda: self._cleanup_temp_file(script_path))
-                return True
-                
-            except FileNotFoundError:
-                # Windows Terminal not available
-                self._cleanup_temp_file(script_path)
-                return False
-                
-        except Exception as e:
-            print(f"Windows Terminal method failed: {e}")
-            return False
-
-    def _try_powershell_openssh(self, host, username, password):
-        """Try PowerShell with OpenSSH client"""
-        try:
-            script_content = f'''
-    # PowerShell SSH Connection
-    $Host.UI.RawUI.WindowTitle = "SSH - {username}@{host}"
-
-    Write-Host "🔗 Establishing SSH connection..." -ForegroundColor Green
-    Write-Host "Host: {host}" -ForegroundColor Cyan
-    Write-Host "User: {username}" -ForegroundColor Cyan
-    Write-Host ""
-
-    # Test SSH availability
-    if (Get-Command ssh -ErrorAction SilentlyContinue) {{
-        Write-Host "✅ OpenSSH client found" -ForegroundColor Green
-        
-        # Connect with SSH
-        Write-Host "🔐 Connecting (you may be prompted for password)..." -ForegroundColor Yellow
-        Write-Host ""
-        
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL {username}@{host}
-        
-    }} else {{
-        Write-Host "❌ OpenSSH client not found!" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "To install OpenSSH client:" -ForegroundColor Yellow
-        Write-Host "1. Open Settings > Apps > Optional Features" -ForegroundColor White
-        Write-Host "2. Click 'Add an optional feature'" -ForegroundColor White
-        Write-Host "3. Search for 'OpenSSH Client' and install it" -ForegroundColor White
-        Write-Host ""
-        Write-Host "Alternative: Use WSL (Windows Subsystem for Linux)" -ForegroundColor Yellow
-    }}
-
-    Write-Host ""
-    Write-Host "Session ended. Press Enter to close..." -ForegroundColor Gray
-    Read-Host
-    '''
-            
-            script_path = self._create_temp_script(script_content, '.ps1')
-            
-            try:
-                cmd = [
-                    "powershell.exe",
-                    "-ExecutionPolicy", "Bypass",
-                    "-NoExit",
-                    "-File", script_path
-                ]
-                
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
-                
-                show_success_toast(self, "Terminal Opened", 
-                                f"PowerShell SSH session opened for {username}@{host}")
-                
-                # Clean up script after delay
-                QTimer.singleShot(15000, lambda: self._cleanup_temp_file(script_path))
-                return True
-                
-            except Exception as e:
-                self._cleanup_temp_file(script_path)
-                print(f"PowerShell method failed: {e}")
-                return False
-                
-        except Exception as e:
-            print(f"PowerShell SSH method failed: {e}")
-            return False
-
-    def _try_batch_file_ssh(self, host, username, password):
-        """Create a batch file for SSH connection"""
-        try:
-            batch_content = f'''@echo off
-    title SSH - {username}@{host}
-    echo.
-    echo ==========================================
-    echo   SlurmAIO SSH Connection
-    echo ==========================================
-    echo.
-    echo Connecting to: {username}@{host}
-    echo.
-    echo Checking for SSH client...
-
-    where ssh >nul 2>nul
-    if %ERRORLEVEL% NEQ 0 (
-        echo ERROR: SSH client not found!
-        echo.
-        echo To install OpenSSH client:
-        echo 1. Open Settings ^> Apps ^> Optional Features
-        echo 2. Click "Add an optional feature"
-        echo 3. Search for "OpenSSH Client" and install it
-        echo.
-        echo Alternatively, you can use WSL or install Git Bash
-        echo.
-        pause
-        exit /b 1
-    )
-
-    echo SSH client found! Connecting...
-    echo.
-    echo Note: You will be prompted for your password
-    echo.
-
-    REM Connect with SSH, disable host key checking for convenience
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL {username}@{host}
-
-    echo.
-    echo Connection closed.
-    echo.
-    pause
-    '''
-            
-            # Create temporary batch file
-            batch_path = self._create_temp_script(batch_content, '.bat')
-            
-            try:
-                subprocess.Popen(
-                    [batch_path],
-                    creationflags=subprocess.CREATE_NEW_CONSOLE
-                )
-                
-                show_success_toast(self, "Terminal Opened", 
-                                f"Command prompt SSH session opened for {username}@{host}")
-                
-                # Clean up batch file after delay
-                QTimer.singleShot(20000, lambda: self._cleanup_temp_file(batch_path))
-                return True
-                
-            except Exception as e:
-                self._cleanup_temp_file(batch_path)
-                print(f"Batch file method failed: {e}")
-                return False
-                
-        except Exception as e:
-            print(f"Batch file SSH method failed: {e}")
-            return False
-
-    def _try_cmd_ssh(self, host, username, password):
-        """Final fallback - simple cmd with SSH"""
-        try:
-            cmd_command = f'cmd /k "title SSH - {username}@{host} && echo Connecting to {username}@{host}... && ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL {username}@{host}"'
-            
-            subprocess.Popen(
-                cmd_command,
-                shell=True,
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
-            
-            show_success_toast(self, "Terminal Opened", 
-                            f"Command prompt opened for {username}@{host}")
-            
-        except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                        f"All terminal methods failed. Last error: {str(e)}")
-
-    def _create_temp_script(self, content, extension):
-        """Create a temporary script file"""
-        import tempfile
-        
-        with tempfile.NamedTemporaryFile(
-            mode='w', 
-            suffix=extension, 
-            delete=False,
-            encoding='utf-8'
-        ) as f:
-            f.write(content)
-            return f.name
-
-    def _create_powershell_script(self, host, username, password):
-        """DEPRECATED: Use _try_powershell_openssh instead"""
-        # This method is now deprecated in favor of the new approach
-        return self._try_powershell_openssh(host, username, password)
-        
+            self.terminal_button.style().polish(self.terminal_button)    
     # --- Panel Creation Methods ---
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
