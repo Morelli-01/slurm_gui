@@ -749,7 +749,7 @@ expect {{
     }}
 
     Write-Host ""
-    Write-Host "🔐 You'll be prompted for your password by SSH..." -ForegroundColor Cyan
+    Write-Host "Youll be prompted for your password by SSH..." -ForegroundColor Cyan
     Write-Host ""
 
     # Use sshpass if available (unlikely on Windows), otherwise manual password entry
