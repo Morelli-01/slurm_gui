@@ -12,7 +12,7 @@ from PyQt6.QtCore import QObject, QSettings
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
-from utils import settings_path
+from utils import settings_path, script_dir
 # Constants
 JOB_CODES = {
     "CD": "COMPLETED",
@@ -427,130 +427,6 @@ class SlurmConnection:
             # Relative path - prepend home directory
             return f"{self.remote_home}/{path}"
 
-    def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
-                        constraint: Optional[str], qos: Optional[str], gres: Optional[str],
-                        nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int,
-                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Create the content of a SLURM job script with optional Discord notifications.
-        """
-        
-        # Normalize output and error file paths
-        normalized_output = self._normalize_path(output_file)
-        normalized_error = self._normalize_path(error_file)
-        
-        script_lines = [
-            "#!/bin/bash",
-            f"#SBATCH --job-name=\"{job_name}\"",
-            f"#SBATCH --partition={partition.replace('*', '')}",
-            f"#SBATCH --time={time_limit}",
-            f"#SBATCH --nodes={nodes}",
-            f"#SBATCH --ntasks={ntasks}",
-            f"#SBATCH --output={normalized_output}",
-            f"#SBATCH --error={normalized_error}",
-            f"#SBATCH --mem={memory}",
-            f"#SBATCH --cpus-per-task={cpus}",
-        ]
-
-        # Add optional parameters
-        if "None" not in str(constraint):
-            script_lines.append(f"#SBATCH --constraint={constraint}")
-        if qos:
-            script_lines.append(f"#SBATCH --qos={qos}")
-        if account:
-            script_lines.append(f"#SBATCH --account={account}")
-        if gres:
-            script_lines.append(f"#SBATCH --gres={gres}")
-
-        # Add Discord webhook setup if enabled
-        if discord_settings and discord_settings.get("enabled", False):
-            webhook_url = self._get_discord_webhook_url()
-            if webhook_url:
-                script_lines.extend([
-                    "",
-                    "# Discord notification setup",
-                    f'export RUN_NAME="{job_name}"',
-                    f'DISCORD_WEBHOOK_URL="{webhook_url}"',
-                    "",
-                    "# Helper functions for Discord notifications",
-                    "function send_discord_notification {",
-                    "  local message=\"$1\"",
-                    "  encoded_message=$(python3 -c \"import json,sys; print(json.dumps(sys.argv[1]))\" \"$message\")",
-                    "  payload=\"{\\\"content\\\": $encoded_message}\"",
-                    "  curl -H \"Content-Type: application/json\" -X POST -d \"$payload\" \"$DISCORD_WEBHOOK_URL\" 2>/dev/null",
-                    "}",
-                    "",
-                    "function send_discord_embed {",
-                    "  embed_payload=$(python3 <<'EOF'",
-                    "import json, os",
-                    "job_id = os.environ.get(\"SLURM_JOB_ID\", \"Unknown\")",
-                    "node = os.environ.get(\"SLURM_NODELIST\", \"Unknown\")",
-                    "job_state = os.environ.get(\"SLURM_JOB_STATE\", \"Unknown\")",
-                    "job_name = os.environ.get(\"SLURM_JOB_NAME\", \"Unknown\")",
-                    "run_name = os.environ.get(\"RUN_NAME\", \"Unknown\")",
-                    "",
-                    "embed_color = 3066993 if job_state == \"COMPLETED\" else 15158332",
-                    "embed = {",
-                    "    \"embeds\": [{",
-                    "        \"title\": \"SLURM Job Finished\",",
-                    f"        \"description\": f\"Job **{{job_id}}** ({{run_name}}) on node **{{node}}** finished with state **{{job_state}}**.\",",
-                    "        \"color\": embed_color,",
-                    "        \"fields\": [",
-                    "            {\"name\": \"Job Name\", \"value\": run_name, \"inline\": True},",
-                    "            {\"name\": \"Job ID\", \"value\": job_id, \"inline\": True},",
-                    "            {\"name\": \"Node(s)\", \"value\": node, \"inline\": True}",
-                    "        ],",
-                    "        \"footer\": {\"text\": \"SlurmAIO Job Monitor\"}",
-                    "    }]",
-                    "}",
-                    "print(json.dumps(embed))",
-                    "EOF",
-                    ")",
-                    "  curl -H \"Content-Type: application/json\" -X POST -d \"$embed_payload\" \"$DISCORD_WEBHOOK_URL\" 2>/dev/null",
-                    "}",
-                    "",
-                ])
-                
-                # Add notification settings based on user preferences
-                notify_start = discord_settings.get("notify_start", True)
-                notify_complete = discord_settings.get("notify_complete", True)
-                message_prefix = discord_settings.get("message_prefix", f"[{job_name}]")
-                
-                if notify_start:
-                    script_lines.extend([
-                        f"# Job start notification",
-                        f"send_discord_notification \"🏃 **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) started on node $SLURM_NODELIST\"",
-                        ""
-                    ])
-
-        script_lines.append("# Job command")
-        script_lines.append(command)
-        
-        # Add job completion notification if Discord is enabled
-        if discord_settings and discord_settings.get("enabled", False) and webhook_url:
-            notify_complete = discord_settings.get("notify_complete", True)
-            if notify_complete:
-                script_lines.extend([
-                    "",
-                    "# Capture exit code",
-                    "JOB_EXIT_CODE=$?",
-                    "",
-                    "# Job completion notification",
-                    "if [ $JOB_EXIT_CODE -eq 0 ]; then",
-                    f"    send_discord_notification \"✅ **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) completed successfully!\"",
-                    "else",
-                    f"    send_discord_notification \"❌ **{message_prefix}** Job $SLURM_JOB_ID ({job_name}) failed with exit code $JOB_EXIT_CODE\"",
-                    "fi",
-                    "",
-                    "# Send detailed embed notification",
-                    "export SLURM_JOB_STATE=$(if [ $JOB_EXIT_CODE -eq 0 ]; then echo \"COMPLETED\"; else echo \"FAILED\"; fi)",
-                    "send_discord_embed",
-                    "",
-                    "exit $JOB_EXIT_CODE"
-                ])
-
-        return "\n".join(script_lines)
-
     def _get_discord_webhook_url(self) -> Optional[str]:
         """Get Discord webhook URL from settings"""
         try:
@@ -923,7 +799,6 @@ class SlurmConnection:
             self.connected_status = False
             print("SSH connection closed.")
 
-
     def _parse_sacct_output(self, output: str) -> Dict[str, Dict[str, Any]]:
         """Parse sacct command output into job details dictionary"""
         job_details = {}
@@ -963,9 +838,337 @@ class SlurmConnection:
 
         return job_details
 
-# Add this to slurm_connection.py
+    def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
+                        constraint: Optional[str], qos: Optional[str], gres: Optional[str],
+                        nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int,
+                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Create the content of a SLURM job script with enhanced Discord notifications.
+        """
+        
+        # Normalize output and error file paths
+        normalized_output = self._normalize_path(output_file)
+        normalized_error = self._normalize_path(error_file)
+        
+        script_lines = [
+            "#!/bin/bash",
+            f"#SBATCH --job-name=\"{job_name}\"",
+            f"#SBATCH --partition={partition.replace('*', '')}",
+            f"#SBATCH --time={time_limit}",
+            f"#SBATCH --nodes={nodes}",
+            f"#SBATCH --ntasks={ntasks}",
+            f"#SBATCH --output={normalized_output}",
+            f"#SBATCH --error={normalized_error}",
+            f"#SBATCH --mem={memory}",
+            f"#SBATCH --cpus-per-task={cpus}",
+        ]
 
+        # Add optional parameters
+        if "None" not in str(constraint):
+            script_lines.append(f"#SBATCH --constraint={constraint}")
+        if qos:
+            script_lines.append(f"#SBATCH --qos={qos}")
+        if account:
+            script_lines.append(f"#SBATCH --account={account}")
+        if gres:
+            script_lines.append(f"#SBATCH --gres={gres}")
 
+        # Add enhanced Discord webhook setup if enabled
+        if discord_settings and discord_settings.get("enabled", False):
+            webhook_url = self._get_discord_webhook_url()
+            if webhook_url:
+                script_lines.extend([
+                    "",
+                    "# =============================================================================",
+                    "# Enhanced Discord Notification System for SLURM Jobs",
+                    "# =============================================================================",
+                    "",
+                    f'export JOB_NAME="{job_name}"',
+                    f'export PARTITION="{partition}"',
+                    f'export TIME_LIMIT="{time_limit}"',
+                    f'export REQUESTED_MEMORY="{memory}"',
+                    f'export REQUESTED_CPUS="{cpus}"',
+                    f'export REQUESTED_NODES="{nodes}"',
+                    f'DISCORD_WEBHOOK_URL="{webhook_url}"',
+                    "",
+                    "# Get system info for richer notifications",
+                    "export START_TIME=$(date '+%Y-%m-%d %H:%M:%S')",
+                    "export HOSTNAME=$(hostname)",
+                    "",
+                    "# Enhanced Discord notification functions",
+                    "function send_enhanced_discord_notification {",
+                    "    local title=\"$1\"",
+                    "    local description=\"$2\"",
+                    "    local color=\"$3\"",
+                    "    local thumbnail_url=\"$4\"",
+                    "    local footer_text=\"$5\"",
+                    "    ",
+                    "    # Get current timestamp in ISO format",
+                    "    local timestamp=$(date -u +\"%Y-%m-%dT%H:%M:%S.000Z\")",
+                    "    ",
+                    "    # Export parameters as environment variables for Python script",
+                    "    export DISCORD_TITLE=\"$title\"",
+                    "    export DISCORD_DESCRIPTION=\"$description\"",
+                    "    export DISCORD_COLOR=\"$color\"",
+                    "    export DISCORD_THUMBNAIL=\"$thumbnail_url\"",
+                    "    export DISCORD_FOOTER=\"$footer_text\"",
+                    "    export DISCORD_TIMESTAMP=\"$timestamp\"",
+                    "    ",
+                    "    # Build the enhanced embed payload",
+                    "    local embed_payload=$(python3 <<'EOF'",
+                    "import json, os",
+                    "",
+                    "# Get parameters from environment variables",
+                    "title = os.environ.get(\"DISCORD_TITLE\", \"SLURM Job Update\")",
+                    "description = os.environ.get(\"DISCORD_DESCRIPTION\", \"\")",
+                    "color = int(os.environ.get(\"DISCORD_COLOR\", \"3447003\"))",
+                    "thumbnail_url = os.environ.get(\"DISCORD_THUMBNAIL\", \"\")",
+                    "footer_text = os.environ.get(\"DISCORD_FOOTER\", \"SlurmAIO Job Monitor\")",
+                    "timestamp = os.environ.get(\"DISCORD_TIMESTAMP\", \"\")",
+                    "",
+                    "# Get environment variables",
+                    "job_id = os.environ.get(\"SLURM_JOB_ID\", \"Unknown\")",
+                    "job_name = os.environ.get(\"JOB_NAME\", \"Unknown\")",
+                    "node = os.environ.get(\"SLURM_NODELIST\", \"Unknown\")",
+                    "partition = os.environ.get(\"PARTITION\", \"Unknown\")",
+                    "time_limit = os.environ.get(\"TIME_LIMIT\", \"Unknown\")",
+                    "memory = os.environ.get(\"REQUESTED_MEMORY\", \"Unknown\")",
+                    "cpus = os.environ.get(\"REQUESTED_CPUS\", \"Unknown\")",
+                    "nodes = os.environ.get(\"REQUESTED_NODES\", \"Unknown\")",
+                    "hostname = os.environ.get(\"HOSTNAME\", \"Unknown\")",
+                    "start_time = os.environ.get(\"START_TIME\", \"Unknown\")",
+                    "account = os.environ.get(\"SLURM_JOB_ACCOUNT\", \"Unknown\")",
+                    "",
+                    "# Build rich embed with base64 icon fallback",
+                    "embed = {",
+                    "    \"username\": \"SlurmAIO\",",
+                    "    \"embeds\": [{",
+                    "        \"title\": title,",
+                    "        \"description\": description,",
+                    "        \"color\": color,",
+                    "        \"timestamp\": timestamp,",
+                    "        \"fields\": [",
+                    "            {",
+                    "                \"name\": \"🎯 Job Details\",",
+                    "                \"value\": f\"**ID:** `{job_id}`\\n**Name:** `{job_name}`\\n**Partition:** `{partition}`\",",
+                    "                \"inline\": True",
+                    "            },",
+                    "            {",
+                    "                \"name\": \"💻 Resources\",",
+                    "                \"value\": f\"**CPUs:** {cpus}\\n**Memory:** {memory}\\n**Nodes:** {nodes}\",",
+                    "                \"inline\": True",
+                    "            },",
+                    "            {",
+                    "                \"name\": \"📍 Location\",",
+                    "                \"value\": f\"**Cluster:** `{hostname}`\\n**Node(s):** `{node}`\\n**Account:** `{account}`\",",
+                    "                \"inline\": True",
+                    "            },",
+                    "            {",
+                    "                \"name\": \"⏱️ Timing\",",
+                    "                \"value\": f\"**Time Limit:** {time_limit}\\n**Started:** {start_time}\",",
+                    "                \"inline\": False",
+                    "            }",
+                    "        ],",
+                    "        \"footer\": {",
+                    "            \"text\": footer_text + \" • SlurmAIO\",",
+                    "            \"icon_url\": \"https://cdn-icons-png.flaticon.com/512/2103/2103633.png\"",
+                    "        },",
+                    "        \"author\": {",
+                    "            \"name\": \"SlurmAIO\",",
+                    "            \"icon_url\": \"https://cdn-icons-png.flaticon.com/512/9131/9131529.png\"",
+                    "        }",
+                    "    }]",
+                    "}",
+                    "",
+                    "# Add thumbnail if provided",
+                    "if thumbnail_url:",
+                    "    embed[\"embeds\"][0][\"thumbnail\"] = {\"url\": thumbnail_url}",
+                    "",
+                    "print(json.dumps(embed))",
+                    "EOF",
+                    "    )",
+                    "    ",
+                    "    # Send the notification with error checking",
+                    "    local curl_response=$(curl -H \"Content-Type: application/json\" \\",
+                    "         -X POST \\",
+                    "         -d \"$embed_payload\" \\",
+                    "         \"$DISCORD_WEBHOOK_URL\" \\",
+                    "         -w \"%{http_code}\" \\",
+                    "         --silent --show-error 2>&1)",
+                    "    ",
+                    "    if [[ \"$curl_response\" == *\"204\"* ]]; then",
+                    "        echo \"[DISCORD] Notification sent successfully\"",
+                    "    else",
+                    "        echo \"[DISCORD] Error sending notification: $curl_response\"",
+                    "    fi",
+                    "}",
+                    "",
+                    "# Job start notification function",
+                    "function send_job_start_notification {",
+                    "    echo \"[DISCORD] Sending job start notification...\"",
+                    "    export DISCORD_TIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%S.000Z\")",
+                    "    ",
+                    "    local description=\"🚀 **Job Started Successfully!**\n\n\"",
+                    "    ",
+                    "    send_enhanced_discord_notification \\",
+                    "        \"🏃‍♂️ JOB STARTED: $JOB_NAME\" \\",
+                    "        \"$description\" \\",
+                    "        \"3447003\" \\",
+                    "        \"https://cdn-icons-png.flaticon.com/512/2103/2103591.png\" \\",
+                    "        \"Started at $(date '+%H:%M:%S')\"",
+                    "    ",
+                    "    echo \"[DISCORD] Start notification sent successfully\"",
+                    "}",
+                    "",
+                    "# Job completion notification function",
+                    "function send_job_completion_notification {",
+                    "    local exit_code=$1",
+                    "    local end_time=$(date '+%Y-%m-%d %H:%M:%S')",
+                    "    local duration=$((SECONDS))",
+                    "    local duration_formatted=$(printf '%02d:%02d:%02d' $((duration/3600)) $(((duration%3600)/60)) $((duration%60)))",
+                    "    ",
+                    "    export DISCORD_TIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%S.000Z\")",
+                    "    ",
+                    "    if [ $exit_code -eq 0 ]; then",
+                    "        # Success notification",
+                    "        echo \"[DISCORD] Sending SUCCESS notification (exit code: $exit_code)...\"",
+                    "        local description=\"✅ **Job Completed Successfully!**\n\n\"",
+                    "        description+=\"🎉 Your SLURM job **$JOB_NAME** has finished execution without errors!\n\n\"",
+                    "        description+=\"📊 **Final Status:** Completed Successfully\n\"",
+                    "        description+=\"⏱️ **Total Runtime:** $duration_formatted\n\"",
+                    "        description+=\"🏁 **Finished At:** $end_time\n\n\"",
+                    "        description+=\"💡 **Next Step:** Check output logs for detailed results\"",
+                    "        ",
+                    "        send_enhanced_discord_notification \\",
+                    "            \"✅ JOB COMPLETED: $JOB_NAME\" \\",
+                    "            \"$description\" \\",
+                    "            \"5763719\" \\",
+                    "            \"https://cdn-icons-png.flaticon.com/512/190/190411.png\" \\",
+                    "            \"SUCCESS: Completed in $duration_formatted\"",
+                    "        ",
+                    "        echo \"[DISCORD] Success notification sent\"",
+                    "    else",
+                    "        # Failure notification",
+                    "        echo \"[DISCORD] Sending FAILURE notification (exit code: $exit_code)...\"",
+                    "        local description=\"❌ **Job Failed!**\n\n\"",
+                    "        description+=\"💥 Your SLURM job **$JOB_NAME** encountered an error during execution.\n\n\"",
+                    "        description+=\"📊 **Final Status:** Failed\n\"",
+                    "        description+=\"🚨 **Exit Code:** $exit_code\n\"",
+                    "        description+=\"⏱️ **Runtime Before Failure:** $duration_formatted\n\"",
+                    "        description+=\"💔 **Failed At:** $end_time\n\n\"",
+                    "        description+=\"🔍 **Next Step:** Check error logs for troubleshooting\"",
+                    "        ",
+                    "        send_enhanced_discord_notification \\",
+                    "            \"❌ JOB FAILED: $JOB_NAME\" \\",
+                    "            \"$description\" \\",
+                    "            \"15158332\" \\",
+                    "            \"https://cdn-icons-png.flaticon.com/512/564/564619.png\" \\",
+                    "            \"FAILED: Exit code $exit_code after $duration_formatted\"",
+                    "        ",
+                    "        echo \"[DISCORD] Failure notification sent\"",
+                    "    fi",
+                    "}",
+                    "",
+                    "# Job cancellation notification function",
+                    "function send_job_cancelled_notification {",
+                    "    echo \"[DISCORD] Sending CANCELLATION notification...\"",
+                    "    local cancel_time=$(date '+%Y-%m-%d %H:%M:%S')",
+                    "    local duration=$((SECONDS))",
+                    "    local duration_formatted=$(printf '%02d:%02d:%02d' $((duration/3600)) $(((duration%3600)/60)) $((duration%60)))",
+                    "    ",
+                    "    export DISCORD_TIMESTAMP=$(date -u +\"%Y-%m-%dT%H:%M:%S.000Z\")",
+                    "    ",
+                    "    local description=\"🛑 **Job Cancelled**\\n\\n\"",
+                    "    description+=\"⚠️ Your SLURM job **$JOB_NAME** was cancelled before completion.\\n\\n\"",
+                    "    description+=\"📊 **Final Status:** Cancelled\\n\"",
+                    "    description+=\"⏱️ **Runtime Before Cancellation:** $duration_formatted\\n\"",
+                    "    description+=\"🛑 **Cancelled At:** $cancel_time\\n\\n\"",
+                    "    description+=\"🤔 **Possible Reasons:** Time limits, resource constraints, or manual cancellation\"",
+                    "    ",
+                    "    send_enhanced_discord_notification \\",
+                    "        \"🛑 JOB CANCELLED: $JOB_NAME\" \\",
+                    "        \"$description\" \\",
+                    "        \"16776960\" \\",
+                    "        \"https://cdn-icons-png.flaticon.com/512/1828/1828843.png\" \\",
+                    "        \"CANCELLED: After $duration_formatted\"",
+                    "    ",
+                    "    echo \"[DISCORD] Cancellation notification sent\"",
+                    "}",
+                    "",
+                    "# Set up signal handlers for job cancellation",
+                    "trap 'send_job_cancelled_notification; exit 130' INT TERM",
+                    "",
+                ])
+                
+                # Add notification settings based on user preferences
+                notify_start = discord_settings.get("notify_start", True)
+                notify_complete = discord_settings.get("notify_complete", True)
+
+        script_lines.extend([
+            "# =============================================================================",
+            "# Job Execution",
+            "# =============================================================================",
+            "",
+            "# Record start time for duration calculation",
+            "SECONDS=0",
+            "",
+            "echo \"Starting job execution at $(date)\"",
+            "echo \"Job ID: $SLURM_JOB_ID\"",
+            "echo \"Job Name: $JOB_NAME\"",
+            "echo \"Node(s): $SLURM_NODELIST\"",
+            "echo \"Partition: $PARTITION\"",
+            "echo \"\"",
+            "",
+        ])
+        
+        # Add job start notification if Discord is enabled and user wants it
+        if discord_settings and discord_settings.get("enabled", False) and webhook_url:
+            notify_start = discord_settings.get("notify_start", True)
+            if notify_start:
+                script_lines.extend([
+                    "# Send job start notification",
+                    "send_job_start_notification",
+                    "",
+                ])
+
+        script_lines.extend([
+            "# Your job command starts here",
+            "echo \"Executing job command...\"",
+            command,
+            "",
+            "# Capture the exit code immediately after job execution",
+            "JOB_EXIT_CODE=$?",
+            "",
+            "echo \"\"",
+            "echo \"Job finished at $(date)\"",
+            "echo \"Exit code: $JOB_EXIT_CODE\"",
+        ])
+        
+        # Add job completion notification if Discord is enabled
+        if discord_settings and discord_settings.get("enabled", False) and webhook_url:
+            notify_complete = discord_settings.get("notify_complete", True)
+            if notify_complete:
+                script_lines.extend([
+                    "",
+                    "# Send completion notification based on exit code",
+                    "if [ $JOB_EXIT_CODE -eq 0 ]; then",
+                    "    echo \"Job completed successfully, sending success notification...\"",
+                    "else",
+                    "    echo \"Job failed with exit code $JOB_EXIT_CODE, sending failure notification...\"",
+                    "fi",
+                    "send_job_completion_notification $JOB_EXIT_CODE",
+                    "",
+                ])
+
+        script_lines.extend([
+            "# Exit with the original job exit code",
+            "exit $JOB_EXIT_CODE"
+        ])
+
+        return "\n".join(script_lines)
+    
+
+    
 class JobStatusMonitor(QThread):
     """Background thread to monitor job status updates"""
 

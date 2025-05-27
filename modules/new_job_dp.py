@@ -913,6 +913,97 @@ class ModifyJobDialog(NewJobDialog):
         self._update_preview()
 
     def get_job_details(self):
+        job_name = self.job_name_edit.text()
+        partition = self.partition_combo.currentText()
+        account = self.account_combo.currentText()
+        time_limit = self.time_limit_edit.time().toString("HH:mm:ss")
+        nodes = self.nodes_spin.value()
+        cpus_per_task = self.cpu_per_task_spin.value()
+        selected_constraints = self.constraint_combo.get_checked_items()
+        constraint = "|".join(selected_constraints) if selected_constraints else "None"
+        qos = self.qos_combo.currentText()
+        if qos == "None":
+            qos = None
+        gres = None
+        if self.gpu_check.isChecked():
+            gpu_type = self.gpu_type_combo.currentText()
+            gpu_count = self.gpu_count_spin.value()
+            gres = f"gpu:{gpu_count}" if gpu_type == "any" else f"gpu:{gpu_type}:{gpu_count}"
+        output_file = self.output_file_edit.text()
+        error_file = self.error_file_edit.text()
+        working_dir = self.working_dir_edit.text()
+        result = {
+            "job_name": job_name,
+            "partition": partition,
+            "time_limit": time_limit,
+            "command": self.command_text.toPlainText(),
+            "account": account,
+            "constraint": f"\"{constraint}\"",
+            "qos": qos,
+            "gres": gres,
+            "nodes": nodes,
+            "memory": str(self.memory_spin.value()) + self.memory_unit_combo.currentText().replace("B", ""),
+            "cpus_per_task": cpus_per_task,
+            "output_file": output_file,
+            "error_file": error_file,
+            "project": self.selected_project,
+            "working_dir": working_dir
+        }
+        # Job array
+        if self.array_group.isChecked():
+            array_spec = ""
+            if self.array_format_combo.currentIndex() == 0:  # Range
+                start = self.array_start_spin.value()
+                end = self.array_end_spin.value()
+                array_spec = f"{start}-{end}"
+            elif self.array_format_combo.currentIndex() == 1:  # List
+                array_spec = self.array_list_edit.text()
+            elif self.array_format_combo.currentIndex() == 2:  # Range with step
+                start = self.array_start_spin.value()
+                end = self.array_end_spin.value()
+                step = self.array_step_spin.value()
+                array_spec = f"{start}-{end}:{step}"
+            if array_spec:
+                result["array"] = array_spec
+                if self.max_jobs_check.isChecked():
+                    max_jobs = self.max_jobs_spin.value()
+                    result["array_max_jobs"] = max_jobs
+        # Dependencies
+        dep_type = self.dep_type_combo.currentText().split(" - ")[0].strip()
+        dep_ids = [self.dep_id_display_combo.itemText(i) for i in range(self.dep_id_display_combo.count())]
+        dep_ids_str = ":".join(dep_ids)
+        if dep_type == "singleton":
+            result["dependency"] = "singleton"
+        elif dep_ids_str:
+            result["dependency"] = f"{dep_type}:{dep_ids_str}"
+        # Discord notifications
+        discord_settings = self._get_discord_settings_from_config()
+        
+        result["discord_notifications"] = discord_settings
+        return result
+    
+    def _get_discord_settings_from_config(self):
+        """Get Discord settings from application configuration"""
+        try:
+            
+            settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+            settings.beginGroup("NotificationSettings")
+            
+            discord_config = {
+                "enabled": settings.value("discord_enabled", False, type=bool),
+                "notify_start": True,  # Default behaviors
+                "notify_complete": True,
+                "notify_failed": True,
+                "message_prefix": f"[{self.selected_project}]"
+            }
+            
+            settings.endGroup()
+            return discord_config
+            
+        except Exception as e:
+            print(f"Error loading Discord settings: {e}")
+            return {"enabled": False}
+        
         details = super().get_job_details()
         details["original_job_id"] = self.job.id
         details["is_modification"] = True

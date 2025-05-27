@@ -1,8 +1,9 @@
+from pathlib import Path
 from modules import project_store
 from modules.job_logs import JobLogsDialog
 from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 from slurm_connection import SlurmConnection
-from utils import create_separator, script_dir
+from utils import create_separator, script_dir, settings_path
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
@@ -1170,7 +1171,7 @@ class JobsPanel(QWidget):
             traceback.print_exc()
 
     def duplicate_job(self, project_name, job_id):
-        """Duplicate an existing job with a new name"""
+        """Duplicate an existing job with a new name - Fixed to carry over Discord settings"""
         if not self.project_storer:
             QMessageBox.warning(
                 self, "Error", "Not connected to project store.")
@@ -1201,7 +1202,7 @@ class JobsPanel(QWidget):
             if not ok or not new_name.strip():
                 return  # User cancelled or entered empty name
 
-            # Create job details from the original job
+            # Create job details from the original job - INCLUDING Discord settings
             job_details = {
                 "job_name": new_name.strip(),
                 "partition": original_job.partition,
@@ -1227,6 +1228,13 @@ class JobsPanel(QWidget):
 
             if original_job.dependency:
                 job_details["dependency"] = original_job.dependency
+
+            # CRITICAL FIX: Copy Discord notification settings from original job
+            if "discord_notifications" in original_job.info:
+                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy()
+            else:
+                # If original job doesn't have Discord settings, get them from current application config
+                job_details["discord_notifications"] = self._get_current_discord_settings()
 
             # Create the duplicated job
             new_job_id = self.project_storer.add_new_job(
@@ -1260,12 +1268,14 @@ class JobsPanel(QWidget):
                 self.jobs_group.add_single_job(project_name, job_row)
 
                 # Update project status display
-                # self.project_group.update_project_status(project_name)
                 if project_name in self.project_group.projects_children:
                     project_widget = self.project_group.projects_children[project_name]
                     if hasattr(project_widget, 'update_status_counts'):
                         job_stats = project.get_job_stats()
                         project_widget.update_status_counts(job_stats)
+                        
+                show_success_toast(self, "Job Duplicated", 
+                                f"Job '{new_name}' duplicated successfully with Discord notifications!")
             else:
                 QMessageBox.warning(
                     self,
@@ -1324,6 +1334,11 @@ class JobsPanel(QWidget):
                 modified_details = dialog.get_job_details()
 
                 try:
+                    if "discord_notifications" in job.info and "discord_notifications" not in modified_details:
+                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy()
+                    elif "discord_notifications" not in modified_details:
+                        # Get current Discord settings from application
+                        modified_details["discord_notifications"] = self._get_current_discord_settings()
                     # Update the job in the project store
                     self._update_job_from_details(job, modified_details)
 
@@ -1403,7 +1418,9 @@ class JobsPanel(QWidget):
             job.dependency = details["dependency"]
         else:
             job.dependency = None
-
+        
+        if "discord_notifications" in details:
+            job.info["discord_notifications"] = details["discord_notifications"]
         # Update submission details for later use
         job.info["submission_details"] = details
 
@@ -1474,3 +1491,25 @@ class JobsPanel(QWidget):
         # Fast fallback - just use job ID
         return f"Job {job_id}"
 
+    def _get_current_discord_settings(self):
+        """Get current Discord settings from application configuration"""
+        try:
+            settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+            settings.beginGroup("NotificationSettings")
+            
+            discord_config = {
+                "enabled": settings.value("discord_enabled", False, type=bool),
+                "notify_start": True,  # Default behaviors
+                "notify_complete": True,
+                "notify_failed": True,
+                "message_prefix": f"[{self.current_project}]" if self.current_project else "[Job]"
+            }
+            
+            settings.endGroup()
+            return discord_config
+            
+        except Exception as e:
+            print(f"Error loading Discord settings: {e}")
+            return {"enabled": False}
+        
+        
