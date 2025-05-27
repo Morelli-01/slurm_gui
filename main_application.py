@@ -11,6 +11,8 @@ import shutil
 from modules.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
+import platform
+import subprocess
 # Get the script directory to construct relative paths
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,7 +59,6 @@ def get_scaled_dimensions(screen=None):
     min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
     return width, height, min_width, min_height
-
 
 
 class ConnectionSetupDialog(QDialog):
@@ -286,26 +287,27 @@ class SlurmJobManagerApp(QMainWindow):
                 # Stop existing job monitoring if any
                 if self.jobs_panel.project_storer:
                     self.jobs_panel.project_storer.stop_job_monitoring()
-                    
+
                 # Create new project store with restored connection
-                self.jobs_panel.project_storer = ProjectStore(self.slurm_connection)
+                self.jobs_panel.project_storer = ProjectStore(
+                    self.slurm_connection)
                 self.jobs_panel._connect_project_store_signals()
                 print("Project store reinitialized successfully")
-                
+
                 # Step 2: Reload projects and jobs
                 print("Reloading projects...")
                 self._reload_projects_after_reconnection()
-                
+
             else:
                 print("No jobs panel found - this shouldn't happen")
-                
+
         except Exception as e:
             print(f"Error during connection recovery: {e}")
             import traceback
             traceback.print_exc()
-            
+
             # Show error to user
-            show_error_toast(self, "Recovery Error", 
+            show_error_toast(self, "Recovery Error",
                             f"Failed to restore project data after reconnection: {str(e)}")
 
     def _reload_projects_after_reconnection(self):
@@ -313,54 +315,57 @@ class SlurmJobManagerApp(QMainWindow):
         try:
             if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
                 return
-                
+
             # Get all projects from the restored project store
             project_names = self.jobs_panel.project_storer.all_projects()
             print(f"Found {len(project_names)} projects to reload")
-            
+
             # Clear existing project widgets
             self._clear_existing_projects()
-            
+
             # Reload each project
             for project_name in project_names:
                 print(f"Reloading project: {project_name}")
-                
+
                 # Add project widget back to UI
                 self.jobs_panel.project_group.add_new_project(project_name)
-                
+
                 # Get project data
                 project = self.jobs_panel.project_storer.get(project_name)
                 if project and project.jobs:
                     # Convert jobs to table rows
                     job_rows = [job.to_table_row() for job in project.jobs]
-                    
+
                     # Update jobs UI
-                    self.jobs_panel.jobs_group.update_jobs(project_name, job_rows)
-                    
+                    self.jobs_panel.jobs_group.update_jobs(
+                        project_name, job_rows)
+
                     # Update project status counts
                     if project_name in self.jobs_panel.project_group.projects_children:
-                        project_widget = self.jobs_panel.project_group.projects_children[project_name]
+                        project_widget = self.jobs_panel.project_group.projects_children[
+                            project_name]
                         if hasattr(project_widget, 'update_status_counts'):
                             job_stats = project.get_job_stats()
                             project_widget.update_status_counts(job_stats)
-            
+
             # Select the first project if available
             if project_names:
                 first_project = project_names[0]
-                self.jobs_panel.project_group.handle_project_selection(first_project)
+                self.jobs_panel.project_group.handle_project_selection(
+                    first_project)
                 self.jobs_panel.on_project_selected(first_project)
                 self.jobs_panel.jobs_group.show_project(first_project)
                 print(f"Selected project: {first_project}")
-                
+
             print("Project reload completed successfully")
-            show_success_toast(self, "Connection Restored", 
+            show_success_toast(self, "Connection Restored",
                             f"")
-            
+
         except Exception as e:
             print(f"Error reloading projects: {e}")
             import traceback
             traceback.print_exc()
-            show_error_toast(self, "Reload Error", 
+            show_error_toast(self, "Reload Error",
                             f"Failed to reload projects: {str(e)}")
 
     def _clear_existing_projects(self):
@@ -368,34 +373,34 @@ class SlurmJobManagerApp(QMainWindow):
         try:
             if not hasattr(self, 'jobs_panel'):
                 return
-                
+
             # Clear project group widgets
             project_group = self.jobs_panel.project_group
-            
+
             # Remove all project widgets from the scroll area
             for project_name in list(project_group.projects_children.keys()):
                 project_widget = project_group.projects_children[project_name]
-                project_group.scroll_content_layout.removeWidget(project_widget)
+                project_group.scroll_content_layout.removeWidget(
+                    project_widget)
                 project_widget.hide()
                 project_widget.deleteLater()
-                
+
             # Clear the projects dictionary
             project_group.projects_children.clear()
             project_group.project_counter = 0
             project_group._selected_project_widget = None
-            
+
             # Clear jobs group
             for project_name in list(self.jobs_panel.jobs_group._indices.keys()):
                 self.jobs_panel.jobs_group.remove_project(project_name)
-                
+
             print("Cleared existing project widgets")
-            
+
         except Exception as e:
             print(f"Error clearing existing projects: {e}")
             import traceback
             traceback.print_exc()
-    
-    
+
     def setup_refresh_timer(self):
         """Sets up the timer for automatic data refreshing."""
         self.refresh_timer = QTimer(self)
@@ -430,6 +435,11 @@ class SlurmJobManagerApp(QMainWindow):
             nodes_data, queue_jobs)
 
     # --- Navigation Bar ---
+    def switch_panel(self, index, clicked_button):
+        """Switches the visible panel in the QStackedWidget."""
+        self.stacked_widget.setCurrentIndex(index)
+        self.update_nav_styles(clicked_button)
+    
     def create_navigation_bar(self):
         """Creates the top navigation bar with logo, buttons, and search."""
         nav_widget = QWidget()
@@ -465,6 +475,15 @@ class SlurmJobManagerApp(QMainWindow):
 
         nav_layout.addStretch()
 
+        # Terminal button - NEW
+        self.terminal_button = QPushButton("Terminal")
+        self.terminal_button.setObjectName("terminalButton")
+        self.terminal_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "terminal.svg")))
+        self.terminal_button.setToolTip("Open SSH Terminal")
+        self.terminal_button.clicked.connect(self.open_terminal)
+        nav_layout.addWidget(self.terminal_button)
+
+        # Connection status
         self.connection_status = ClickableLabel(" Connection status...")
         self.connection_status.setObjectName("statusButton")
 
@@ -481,10 +500,252 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.main_layout.addWidget(nav_widget)
 
-    def switch_panel(self, index, clicked_button):
-        """Switches the visible panel in the QStackedWidget."""
-        self.stacked_widget.setCurrentIndex(index)
-        self.update_nav_styles(clicked_button)
+    def open_terminal(self):
+        """Open a terminal with SSH connection to the cluster"""
+        if not self.slurm_connection or not self.slurm_connection.check_connection():
+            show_warning_toast(self, "Connection Required", 
+                             "Please establish a SLURM connection first.")
+            return
+        
+        try:
+            
+            # Get connection details
+            host = self.slurm_connection.host
+            username = self.slurm_connection.user
+            password = self.slurm_connection.password
+            
+            system = platform.system().lower()
+            
+            if system == "windows":
+                self._open_windows_terminal(host, username, password)
+            elif system == "darwin":  # macOS
+                self._open_macos_terminal(host, username, password)
+            elif system == "linux":
+                self._open_linux_terminal(host, username, password)
+            else:
+                show_error_toast(self, "Unsupported Platform", 
+                               f"Terminal opening not supported on {system}")
+                
+        except Exception as e:
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open terminal: {str(e)}")
+
+    def _create_expect_script(self, host, username, password):
+        """Create an expect script for automatic password authentication"""
+        script_content = f'''#!/usr/bin/expect -f
+set timeout 30
+spawn ssh {username}@{host}
+expect {{
+    "password:" {{
+        send "{password}\\r"
+        interact
+    }}
+    "yes/no" {{
+        send "yes\\r"
+        expect "password:"
+        send "{password}\\r"
+        interact
+    }}
+    timeout {{
+        puts "Connection timeout"
+        exit 1
+    }}
+    eof {{
+        puts "Connection failed"
+        exit 1
+    }}
+}}
+'''
+        
+        # Create temporary expect script
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+            f.write(script_content)
+            script_path = f.name
+        
+        # Make script executable
+        os.chmod(script_path, 0o755)
+        return script_path
+
+    def _create_powershell_script(self, host, username, password):
+        """Create a PowerShell script for SSH with password authentication"""
+        script_content = f'''
+# PowerShell SSH connection script
+$Host.UI.RawUI.WindowTitle = "SSH - {host}"
+
+# Check if ssh is available
+if (!(Get-Command ssh -ErrorAction SilentlyContinue)) {{
+    Write-Host "SSH client not found. Please install OpenSSH client." -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit
+}}
+
+Write-Host "Connecting to {username}@{host}..." -ForegroundColor Green
+Write-Host "Password will be requested by SSH client." -ForegroundColor Yellow
+Write-Host ""
+
+# Use plink if available (PuTTY) for better password handling
+if (Get-Command plink -ErrorAction SilentlyContinue) {{
+    plink -ssh {username}@{host} -pw "{password}"
+}} else {{
+    # Fallback to regular SSH (user will need to enter password manually)
+    ssh {username}@{host}
+}}
+
+Write-Host ""
+Write-Host "Connection closed. Press Enter to exit..." -ForegroundColor Yellow
+Read-Host
+'''
+        
+        # Create temporary PowerShell script
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False) as f:
+            f.write(script_content)
+            script_path = f.name
+        
+        return script_path
+
+    def _open_windows_terminal(self, host, username, password):
+        """Open terminal on Windows with automatic authentication"""
+        try:
+            # Create PowerShell script
+            script_path = self._create_powershell_script(host, username, password)
+            
+            try:
+                # Try Windows Terminal first
+                cmd = [
+                    "wt.exe", "new-tab", "--title", f"SSH - {host}",
+                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
+                ]
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                show_success_toast(self, "Terminal Opened", 
+                                 f"SSH terminal opened for {username}@{host}")
+            except FileNotFoundError:
+                # Fallback to PowerShell directly
+                cmd = [
+                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
+                ]
+                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                show_success_toast(self, "Terminal Opened", 
+                                 f"PowerShell SSH session opened for {username}@{host}")
+            
+            # Clean up script after delay
+            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            
+        except Exception as e:
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open Windows terminal: {str(e)}")
+
+    def _open_macos_terminal(self, host, username, password):
+        """Open terminal on macOS with automatic authentication"""
+        try:
+            # Check if expect is available
+            try:
+                subprocess.run(["which", "expect"], check=True, capture_output=True)
+                has_expect = True
+            except subprocess.CalledProcessError:
+                has_expect = False
+            
+            if has_expect:
+                # Use expect for automatic password entry
+                script_path = self._create_expect_script(host, username, password)
+                applescript = f'''
+                tell application "Terminal"
+                    activate
+                    do script "{script_path}"
+                end tell
+                '''
+                subprocess.Popen(["osascript", "-e", applescript])
+                
+                # Clean up script after delay
+                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            else:
+                # Install expect suggestion or fallback
+                applescript = f'''
+                tell application "Terminal"
+                    activate
+                    do script "echo 'Installing expect for automatic authentication...' && brew install expect 2>/dev/null || (echo 'Please install expect: brew install expect' && echo 'For now, connecting with manual password entry:') && ssh {username}@{host}"
+                end tell
+                '''
+                subprocess.Popen(["osascript", "-e", applescript])
+            
+            show_success_toast(self, "Terminal Opened", 
+                             f"Terminal opened for {username}@{host}")
+                             
+        except Exception as e:
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open macOS terminal: {str(e)}")
+
+    def _open_linux_terminal(self, host, username, password):
+        """Open terminal on Linux with automatic authentication"""
+        try:
+            # Check if expect is available
+            try:
+                subprocess.run(["which", "expect"], check=True, capture_output=True)
+                has_expect = True
+            except subprocess.CalledProcessError:
+                has_expect = False
+            
+            if has_expect:
+                # Use expect for automatic password entry
+                script_path = self._create_expect_script(host, username, password)
+                terminal_cmd = None
+                
+                # List of terminal emulators with expect script
+                terminals = [
+                    ["gnome-terminal", "--", "bash", "-c", f"{script_path}; exec bash"],
+                    ["konsole", "-e", "bash", "-c", f"{script_path}; exec bash"],
+                    ["xfce4-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["lxterminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["mate-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["terminator", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["alacritty", "-e", "bash", "-c", f"{script_path}; exec bash"],
+                    ["kitty", "bash", "-c", f"{script_path}; exec bash"],
+                    ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
+                ]
+                
+                for terminal_cmd in terminals:
+                    try:
+                        subprocess.Popen(terminal_cmd)
+                        show_success_toast(self, "Terminal Opened", 
+                                         f"Terminal opened for {username}@{host}")
+                        
+                        # Clean up script after delay
+                        QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+                        return
+                    except FileNotFoundError:
+                        continue
+            else:
+                # Fallback without expect - suggest installation
+                terminals = [
+                    ["gnome-terminal", "--", "bash", "-c", f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
+                    ["konsole", "-e", "bash", "-c", f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
+                    ["xfce4-terminal", "-e", f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""],
+                    ["xterm", "-e", f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""]
+                ]
+                
+                for terminal_cmd in terminals:
+                    try:
+                        subprocess.Popen(terminal_cmd)
+                        show_success_toast(self, "Terminal Opened", 
+                                         f"Terminal opened for {username}@{host}")
+                        return
+                    except FileNotFoundError:
+                        continue
+            
+            # If no terminal emulator found
+            show_error_toast(self, "No Terminal Found", 
+                           "No supported terminal emulator found on this system.")
+                           
+        except Exception as e:
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open Linux terminal: {str(e)}")
+
+    def _cleanup_temp_file(self, file_path):
+        """Clean up temporary script files"""
+        try:
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(f"Warning: Could not clean up temporary file {file_path}: {e}")
 
     def update_nav_styles(self, active_button=None):
         """Updates the visual style of navigation buttons to show the active one."""
@@ -503,6 +764,12 @@ class SlurmJobManagerApp(QMainWindow):
                 btn.setChecked(False)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
+        
+        # Style the terminal button separately (it's not a nav button)
+        if hasattr(self, 'terminal_button'):
+            self.terminal_button.style().unpolish(self.terminal_button)
+            self.terminal_button.style().polish(self.terminal_button)
+
 
     # --- Panel Creation Methods ---
     def create_jobs_panel(self):

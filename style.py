@@ -159,6 +159,31 @@ class AppStyles:
             background-color: #4fa8d8;
             border: 2px solid #4fa8d8;
         }}
+        QPushButton#terminalButton {{
+            background-color: {colors['bg_alt']};
+            color: {colors['fg']};
+            border: 2px solid {colors['border']};
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-weight: 600;
+            font-size: 14px;
+            margin-right: 10px;
+        }}
+        QPushButton#terminalButton:hover {{
+            background-color: {colors['bg_hover']};
+            border: 2px solid {COLOR_GREEN};
+            color: {COLOR_GREEN};
+        }}
+        QPushButton#terminalButton:pressed {{
+            background-color: {colors['bg']};
+            border: 2px solid {COLOR_GREEN};
+        }}
+        QPushButton#terminalButton:disabled {{
+            background-color: {colors['border']};
+            color: #666666;
+            border: 2px solid #444444;
+            opacity: 0.5;
+        }}
         """
     
     @classmethod

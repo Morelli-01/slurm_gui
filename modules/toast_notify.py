@@ -13,11 +13,13 @@ from PyQt6.QtWidgets import (
 from modules.defaults import *
 from utils import script_dir
 
+
 class ToastType(Enum):
     INFO = "info"
     SUCCESS = "success"
     WARNING = "warning"
     ERROR = "error"
+
 
 class ToastManager:
     """Singleton manager for toast notifications"""
@@ -38,7 +40,8 @@ class ToastManager:
     @classmethod
     def show_toast(cls, parent, title, message, toast_type=ToastType.INFO, duration=4000, closable=True):
         manager = cls()
-        toast = ToastWidget(parent, title, message, toast_type, duration, closable)
+        toast = ToastWidget(parent, title, message,
+                            toast_type, duration, closable)
         manager._add_toast(toast)
         return toast
 
@@ -59,22 +62,55 @@ class ToastManager:
     def _position_toasts(self):
         if not self._toasts:
             return
-        parent = self._toasts[0].parent()
-        while parent and not hasattr(parent, 'geometry'):
-            parent = parent.parent()
-        if not parent:
-            return
-        parent_geometry = parent.geometry()
+
+        # Get the first toast to determine the parent
+        first_toast = self._toasts[0]
+        parent = first_toast.parent()
+
+        # Find the main window
+        main_window = parent
+        while main_window and not hasattr(main_window, 'geometry'):
+            main_window = main_window.parent()
+
+        # Check if the main window is minimized or not visible
+        is_window_visible = (main_window and
+                             main_window.isVisible() and
+                             not main_window.isMinimized() and
+                             main_window.windowState() != Qt.WindowState.WindowMinimized)
+
         toast_width = 380
         margin = 20
-        x = parent_geometry.width() - toast_width - margin
-        y = parent_geometry.height() - margin
-        for toast in reversed(self._toasts):
-            toast_height = toast.sizeHint().height()
-            y -= toast_height
-            global_pos = parent.mapToGlobal(QPoint(x, y))
-            toast.move(global_pos)
-            y -= self._spacing
+
+        if is_window_visible and main_window:
+            # Use main window geometry when window is visible
+            parent_geometry = main_window.geometry()
+            x = parent_geometry.width() - toast_width - margin
+            y = parent_geometry.height() - margin
+
+            # Position toasts starting from the bottom-right of the window
+            for toast in reversed(self._toasts):
+                toast_height = toast.sizeHint().height()
+                y -= toast_height
+                global_pos = main_window.mapToGlobal(QPoint(x, y))
+                toast.move(global_pos)
+                y -= self._spacing
+        else:
+            # Use desktop geometry when window is minimized or not visible
+            from PyQt6.QtWidgets import QApplication
+            desktop = QApplication.primaryScreen().availableGeometry()
+
+            # Position at bottom-right of the desktop
+            x = desktop.width() - toast_width - margin
+            y = desktop.height() - margin
+
+            # Position toasts starting from the bottom-right of the desktop
+            for toast in reversed(self._toasts):
+                toast_height = toast.sizeHint().height()
+                y -= toast_height
+                # Use global desktop coordinates directly
+                toast.move(x, y)
+                y -= self._spacing
+
 
 class ToastWidget(QWidget):
     """Individual toast notification widget with modern styling"""
@@ -174,7 +210,8 @@ class ToastWidget(QWidget):
         icon_path = os.path.join(script_dir, "src_static", icon_file)
         if os.path.exists(icon_path):
             pixmap = QPixmap(icon_path)
-            scaled_pixmap = pixmap.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled_pixmap = pixmap.scaled(
+                24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.icon_label.setPixmap(scaled_pixmap)
         else:
             self.icon_label.setText(config["char"])
@@ -286,12 +323,15 @@ class ToastWidget(QWidget):
         self.opacity_animation.setDuration(400)
         self.opacity_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         if hasattr(self, 'progress_frame') and self.duration > 0:
-            self.progress_animation = QPropertyAnimation(self.progress_frame, b"geometry")
+            self.progress_animation = QPropertyAnimation(
+                self.progress_frame, b"geometry")
             self.progress_animation.setDuration(self.duration)
             self.progress_animation.setEasingCurve(QEasingCurve.Type.Linear)
             progress_rect = self.progress_frame.geometry()
-            start_rect = QRect(progress_rect.x(), progress_rect.y(), progress_rect.width(), progress_rect.height())
-            end_rect = QRect(progress_rect.x(), progress_rect.y(), 0, progress_rect.height())
+            start_rect = QRect(progress_rect.x(), progress_rect.y(
+            ), progress_rect.width(), progress_rect.height())
+            end_rect = QRect(progress_rect.x(),
+                             progress_rect.y(), 0, progress_rect.height())
             self.progress_animation.setStartValue(start_rect)
             self.progress_animation.setEndValue(end_rect)
 
@@ -338,17 +378,22 @@ class ToastWidget(QWidget):
             self.hide_toast()
         super().mousePressEvent(event)
 
+
 def show_info_toast(parent, title, message="", duration=4000):
     return ToastManager.show_toast(parent, title, message, ToastType.INFO, duration)
+
 
 def show_success_toast(parent, title, message="", duration=4000):
     return ToastManager.show_toast(parent, title, message, ToastType.SUCCESS, duration)
 
+
 def show_warning_toast(parent, title, message="", duration=5000):
     return ToastManager.show_toast(parent, title, message, ToastType.WARNING, duration)
 
+
 def show_error_toast(parent, title, message="", duration=6000):
     return ToastManager.show_toast(parent, title, message, ToastType.ERROR, duration)
+
 
 def show_critical_toast(parent, title, message="", duration=8000):
     return ToastManager.show_toast(parent, title, message, ToastType.ERROR, duration)
