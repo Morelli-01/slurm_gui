@@ -1599,217 +1599,6 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
 
-    def _open_windows_node_terminal(self, node_name, username, password):
-        """Open terminal on Windows for specific node with chained SSH connection"""
-        try:
-            # Get connection details
-            head_node = self.slurm_connection.host
-
-            # Check if plink is available
-            if not Path(plink_utility_path).exists():
-                self._open_windows_node_terminal_fallback(
-                    node_name, username, password)
-                return
-
-            # Create a batch script for chained SSH connection
-            import tempfile
-            import random
-
-            session_id = random.randint(1000, 9999)
-            batch_content = f'''@echo off
-    title SSH {head_node} -> {node_name}
-    echo.
-    echo ============================================
-    echo  SlurmAIO - Chained SSH Connection
-    echo ============================================
-    echo  Head Node: {head_node}
-    echo  Target Node: {node_name}
-    echo  User: {username}
-    echo ============================================
-    echo.
-    echo Connecting to head node {head_node}...
-    echo.
-
-    REM First connection to head node with plink
-    "{plink_utility_path}" -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; ssh {node_name}"
-
-    echo.
-    echo Connection closed. Press any key to exit...
-    pause >nul
-    '''
-
-            # Create temporary batch file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-                f.write(batch_content)
-                batch_path = f.name
-
-            try:
-                # Try Windows Terminal first
-                wt_cmd = [
-                    "wt.exe", "new-tab",
-                    "--title", f"SSH {head_node} -> {node_name}",
-                    "--", "cmd.exe", "/c", batch_path
-                ]
-                subprocess.Popen(wt_cmd, shell=False)
-
-                show_success_toast(self, "Terminal Opened",
-                                   f"Chained SSH terminal opened: {head_node} -> {node_name}")
-                show_info_toast(self, "Manual Step Required",
-                                "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
-
-            except FileNotFoundError:
-                # Fallback to cmd.exe if Windows Terminal is not found
-                cmd_command = ["cmd.exe", "/c", "start",
-                               "cmd.exe", "/c", batch_path]
-                subprocess.Popen(cmd_command, shell=False)
-
-                show_success_toast(self, "Terminal Opened",
-                                   f"Chained SSH terminal opened: {head_node} -> {node_name}")
-                show_info_toast(self, "Manual Step Required",
-                                "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
-
-            # Clean up batch file after delay
-            QTimer.singleShot(
-                30000, lambda: self._cleanup_temp_file(batch_path))
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open Windows terminal: {str(e)}")
-
-    def _open_windows_node_terminal_fallback(self, node_name, username, password):
-        """Fallback method when plink is not available"""
-        try:
-            import tempfile
-
-            batch_content = f'''@echo off
-    title SSH {self.slurm_connection.host} -> {node_name}
-    echo.
-    echo ============================================
-    echo  SlurmAIO - Chained SSH Connection
-    echo ============================================
-    echo  Head Node: {self.slurm_connection.host}
-    echo  Target Node: {node_name}
-    echo  User: {username}
-    echo ============================================
-    echo.
-    echo Note: For automatic password entry, install PuTTY/plink
-    echo Download from: https://www.putty.org/
-    echo.
-    echo Connecting to head node first...
-    ssh {username}@{self.slurm_connection.host}
-    echo.
-    echo After connecting to head node, run:
-    echo ssh {node_name}
-    echo.
-    echo Connection closed. Press any key to exit...
-    pause >nul
-    '''
-
-            # Create temporary batch file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-                f.write(batch_content)
-                batch_path = f.name
-
-            try:
-                # Try Windows Terminal first
-                wt_cmd = [
-                    "wt.exe", "new-tab",
-                    "--title", f"SSH {self.slurm_connection.host} -> {node_name}",
-                    "--", "cmd.exe", "/c", batch_path
-                ]
-                subprocess.Popen(wt_cmd, shell=False)
-
-            except FileNotFoundError:
-                # Fallback to cmd.exe
-                cmd_command = ["cmd.exe", "/c", "start",
-                               "cmd.exe", "/c", batch_path]
-                subprocess.Popen(cmd_command, shell=False)
-
-            show_info_toast(self, "Terminal Opened",
-                            f"SSH terminal opened. Install PuTTY for automatic password entry.\n\nManual steps:\n1. Enter password for {self.slurm_connection.host}\n2. Run: ssh {node_name}")
-
-            # Clean up batch file after delay
-            QTimer.singleShot(
-                30000, lambda: self._cleanup_temp_file(batch_path))
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open terminal: {str(e)}")
-
-    def _open_windows_node_terminal_powershell_version(self, node_name, username, password):
-        """Alternative PowerShell-based implementation for Windows"""
-        try:
-            import tempfile
-
-            head_node = self.slurm_connection.host
-
-            # Create PowerShell script for chained SSH
-            ps_script_content = f'''
-    # SlurmAIO Chained SSH Connection Script
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host " SlurmAIO - Chained SSH Connection" -ForegroundColor Cyan
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host " Head Node: {head_node}" -ForegroundColor Yellow
-    Write-Host " Target Node: {node_name}" -ForegroundColor Yellow
-    Write-Host " User: {username}" -ForegroundColor Yellow
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host ""
-
-    Write-Host "Connecting to head node {head_node}..." -ForegroundColor Green
-
-    # Check if plink is available
-    $plinkPath = "{plink_utility_path.replace(chr(92), chr(92)+chr(92))}"
-    if (Test-Path $plinkPath) {{
-        Write-Host "Using plink for connection..." -ForegroundColor Green
-        & $plinkPath -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; ssh {node_name}"
-    }} else {{
-        Write-Host "plink not found. Using standard SSH..." -ForegroundColor Yellow
-        Write-Host "Note: You will need to enter passwords manually" -ForegroundColor Yellow
-        Write-Host ""
-        ssh {username}@{head_node}
-    }}
-
-    Write-Host ""
-    Write-Host "Connection closed. Press any key to exit..." -ForegroundColor Gray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    '''
-
-            # Create temporary PowerShell script
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False, encoding='utf-8') as f:
-                f.write(ps_script_content)
-                ps_script_path = f.name
-
-            try:
-                # Try Windows Terminal with PowerShell
-                wt_cmd = [
-                    "wt.exe", "new-tab",
-                    "--title", f"SSH {head_node} -> {node_name}",
-                    "--", "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", ps_script_path
-                ]
-                subprocess.Popen(wt_cmd, shell=False)
-
-                show_success_toast(self, "Terminal Opened",
-                                   f"PowerShell SSH terminal opened: {head_node} -> {node_name}")
-
-            except FileNotFoundError:
-                # Fallback to regular PowerShell window
-                ps_cmd = [
-                    "powershell.exe", "-ExecutionPolicy", "Bypass",
-                    "-WindowStyle", "Normal", "-File", ps_script_path
-                ]
-                subprocess.Popen(ps_cmd, shell=False)
-
-                show_success_toast(self, "Terminal Opened",
-                                   f"PowerShell SSH session opened: {head_node} -> {node_name}")
-
-            # Clean up script file after delay
-            QTimer.singleShot(
-                30000, lambda: self._cleanup_temp_file(ps_script_path))
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open PowerShell terminal: {str(e)}")
-
     def _open_macos_node_terminal(self, node_name, username, password):
         """Open terminal on macOS for specific node with tmux session for chained SSH"""
         try:
@@ -1912,3 +1701,100 @@ class JobsPanel(QWidget):
             print(
                 f"Warning: Could not clean up temporary file {file_path}: {e}")
 
+    def _open_windows_node_terminal(self, node_name, username, password):
+        """Open terminal on Windows for specific node with chained SSH connection - Simplified version"""
+        try:
+            # Get connection details
+            head_node = self.slurm_connection.host
+            
+            # Check if plink is available for automated password entry
+            plink_available = Path(plink_utility_path).exists()
+            
+            if plink_available:
+                # Use plink for automated connection
+                try:
+                    # Try Windows Terminal first with plink
+                    wt_cmd = [
+                        "wt.exe", "new-tab",
+                        "--title", f"SSH {head_node} -> {node_name}",
+                        "--", plink_utility_path,
+                        "-ssh", "-batch",
+                        "-pw", password,
+                        f"{username}@{head_node}",
+                        "-t", f"ssh {node_name}"
+                    ]
+                    subprocess.Popen(wt_cmd, shell=False)
+                    
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH terminal opened: {head_node} -> {node_name}")
+                    return
+                    
+                except FileNotFoundError:
+                    # Fallback to cmd.exe with plink
+                    cmd_command = [
+                        "cmd.exe", "/c", "start", "cmd.exe", "/k",
+                        plink_utility_path, "-ssh", "-batch",
+                        "-pw", password,
+                        f"{username}@{head_node}",
+                        "-t", f"ssh {node_name}"
+                    ]
+                    subprocess.Popen(cmd_command, shell=False)
+                    
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH session opened: {head_node} -> {node_name}")
+                    return
+            
+            # Fallback method without plink (requires manual password entry)
+            self._open_windows_node_terminal_fallback(node_name, username, password)
+            
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open Windows terminal: {str(e)}")
+
+    def _open_windows_node_terminal_fallback(self, node_name, username, password):
+        """Fallback method when plink is not available - requires manual password entry"""
+        try:
+            head_node = self.slurm_connection.host
+            
+            # Create a simple PowerShell command for the connection
+            ps_command = f'ssh {username}@{head_node}'
+            
+            try:
+                # Try Windows Terminal first
+                wt_cmd = [
+                    "wt.exe", "new-tab",
+                    "--title", f"SSH {head_node} -> {node_name}",
+                    "--", "powershell.exe", "-NoExit", "-Command",
+                    f'Write-Host "Connecting to {head_node}..."; '
+                    f'Write-Host "After connecting, run: ssh {node_name}"; '
+                    f'Write-Host ""; {ps_command}'
+                ]
+                subprocess.Popen(wt_cmd, shell=False)
+                
+                show_info_toast(self, "Terminal Opened",
+                                f"SSH terminal opened. Manual steps required:\n"
+                                f"1. Enter password for {head_node}\n"
+                                f"2. Run: ssh {node_name}\n"
+                                f"3. Enter password again for {node_name}")
+                return
+                
+            except FileNotFoundError:
+                # Fallback to cmd.exe
+                cmd_command = [
+                    "cmd.exe", "/c", "start", "cmd.exe", "/k",
+                    "echo", f"Connecting to {head_node}...", "&&",
+                    "echo", f"After connecting, run: ssh {node_name}", "&&",
+                    "echo", "", "&&",
+                    "ssh", f"{username}@{head_node}"
+                ]
+                subprocess.Popen(cmd_command, shell=False)
+                
+                show_info_toast(self, "Terminal Opened",
+                                f"SSH session opened. Manual steps required:\n"
+                                f"1. Enter password for {head_node}\n"
+                                f"2. Run: ssh {node_name}\n"
+                                f"3. Enter password again for {node_name}")
+                
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open terminal: {str(e)}")
