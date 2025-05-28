@@ -5,7 +5,7 @@ from modules import project_store
 from modules.job_logs import JobLogsDialog
 from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 from slurm_connection import SlurmConnection
-from utils import create_separator, script_dir, settings_path
+from utils import create_separator, script_dir, settings_path, except_utility_path, plink_utility_path
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
@@ -1572,13 +1572,13 @@ class JobsPanel(QWidget):
             password = self.slurm_connection.password
             
             system = platform.system().lower()
-
+            print(system)
             if system == "windows":
                 self._open_windows_node_terminal(base_host, username, password, job_id)
             elif system == "darwin":  # macOS
                 self._open_macos_node_terminal(base_host, username, password, job_id)
             elif system == "linux":
-                self._open_linux_node_terminal(base_host, username, password, job_id)
+                self._open_linux_node_terminal(node_name, username, password, job_id)
             else:
                 show_error_toast(self, "Unsupported Platform",
                                 f"Terminal opening not supported on {system}")
@@ -1627,7 +1627,6 @@ class JobsPanel(QWidget):
     def _open_macos_node_terminal(self, node_name, username, password, job_id):
         """Open terminal on macOS for specific node"""
         try:
-            from utils import except_utility_path
             
             # Create expect script for automatic SSH login
             script_content = f'''#!{except_utility_path} -f
@@ -1682,41 +1681,64 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open macOS terminal: {str(e)}")
-
+   
     def _open_linux_node_terminal(self, node_name, username, password, job_id):
-        """Open terminal on Linux for specific node"""
+        """Open terminal on Linux with chained SSH: first to head node, then to compute node"""
         try:
-            from utils import except_utility_path
-            
             # Check if expect is available
             try:
-                subprocess.run(["which", "expect"], check=True, capture_output=True)
+                subprocess.run(["which", except_utility_path], check=True, capture_output=True)
                 has_expect = True
             except subprocess.CalledProcessError:
                 has_expect = False
 
             if has_expect:
-                # Create expect script for automatic SSH login
-                script_content = f'''#!/usr/bin/expect -f
+                # Create expect script for chained SSH connection
+                head_node = self.slurm_connection.host
+                script_content = f'''#!{except_utility_path} -f
     set timeout 30
-    spawn ssh {username}@{node_name}
+
+    # First SSH to head node
+    spawn ssh {username}@{head_node}
     expect {{
         "password:" {{
             send "{password}\\r"
-            interact
+            exp_continue
         }}
         "yes/no" {{
             send "yes\\r"
-            expect "password:"
-            send "{password}\\r"
-            interact
+            exp_continue
+        }}
+        "$ " {{
+            # Now SSH to the compute node
+            send "ssh {node_name}\\r"
+            expect {{
+                "password:" {{
+                    send "{password}\\r"
+                    interact
+                }}
+                "yes/no" {{
+                    send "yes\\r"
+                    expect "password:"
+                    send "{password}\\r"
+                    interact
+                }}
+                "$ " {{
+                    # Already logged in to compute node
+                    interact
+                }}
+                timeout {{
+                    puts "Timeout connecting to compute node {node_name}"
+                    exit 1
+                }}
+            }}
         }}
         timeout {{
-            puts "Connection timeout"
+            puts "Timeout connecting to head node {head_node}"
             exit 1
         }}
         eof {{
-            puts "Connection failed"
+            puts "Connection to head node failed"
             exit 1
         }}
     }}
@@ -1747,27 +1769,22 @@ class JobsPanel(QWidget):
                     try:
                         subprocess.Popen(terminal_cmd)
                         show_success_toast(self, "Terminal Opened",
-                                        f"Terminal opened for node {node_name}")
+                                        f"Chained SSH terminal opened: {head_node} -> {node_name}")
                         
                         # Clean up script after delay
-                        from PyQt6.QtCore import QTimer
                         QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
                         return
                     except FileNotFoundError:
                         continue
-            
-            # If no expect or no terminal found, show error
-            if not has_expect:
-                show_error_toast(self, "Expect Required",
-                            "The 'expect' package is required for automatic SSH login. Install with: sudo apt install expect")
             else:
-                show_error_toast(self, "No Terminal Found",
-                            "No supported terminal emulator found on this system.")
+                # Fallback without expect
+                show_error_toast(self, "Expect Required",
+                            "The 'expect' package is required for chained SSH connections. Install with: sudo apt install expect")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Linux terminal: {str(e)}")
-
+                            f"Failed to open Linux terminal: {str(e)}")  
+    
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:

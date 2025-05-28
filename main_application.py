@@ -655,15 +655,7 @@ expect {{
     def _open_macos_terminal(self, host, username, password):
         """Open terminal on macOS with automatic authentication"""
         try:
-            # Check if expect is available
-            # try:
-            #     subprocess.run(["which", "expect"], check=True, capture_output=True)
-            #     has_expect = True
-            # except subprocess.CalledProcessError:
-            #     has_expect = False
 
-            # if has_expect:
-            # Use expect for automatic password entry
             script_path = self._create_expect_script(host, username, password)
             applescript = f'''
             tell application "Terminal"
@@ -676,15 +668,6 @@ expect {{
             # Clean up script after delay
             QTimer.singleShot(
                 10000, lambda: self._cleanup_temp_file(script_path))
-            # else:
-            #     # Install expect suggestion or fallback
-            #     applescript = f'''
-            #     tell application "Terminal"
-            #         activate
-            #         do script "echo 'Installing expect for automatic authentication...' && brew install expect 2>/dev/null || (echo 'Please install expect: brew install expect' && echo 'For now, connecting with manual password entry:') && ssh {username}@{host}"
-            #     end tell
-            #     '''
-            #     subprocess.Popen(["osascript", "-e", applescript])
 
             show_success_toast(self, "Terminal Opened",
                                f"Terminal opened for {username}@{host}")
@@ -696,22 +679,14 @@ expect {{
     def _open_linux_terminal(self, host, username, password):
         """Open terminal on Linux with automatic authentication"""
         try:
-            # Check if expect is available
-            try:
-                subprocess.run(["which", "expect"],
-                               check=True, capture_output=True)
-                has_expect = True
-            except subprocess.CalledProcessError:
-                has_expect = False
 
-            if has_expect:
                 # Use expect for automatic password entry
-                script_path = self._create_expect_script(
+            script_path = self._create_expect_script(
                     host, username, password)
-                terminal_cmd = None
+            terminal_cmd = None
 
                 # List of terminal emulators with expect script
-                terminals = [
+            terminals = [
                     ["gnome-terminal", "--", "bash", "-c",
                         f"{script_path}; exec bash"],
                     ["konsole", "-e", "bash", "-c",
@@ -730,7 +705,7 @@ expect {{
                     ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
                 ]
 
-                for terminal_cmd in terminals:
+            for terminal_cmd in terminals:
                     try:
                         subprocess.Popen(terminal_cmd)
                         show_success_toast(self, "Terminal Opened",
@@ -742,20 +717,8 @@ expect {{
                         return
                     except FileNotFoundError:
                         continue
-            else:
-                # Fallback without expect - suggest installation
-                terminals = [
-                    ["gnome-terminal", "--", "bash", "-c",
-                        f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
-                    ["konsole", "-e", "bash", "-c",
-                        f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
-                    ["xfce4-terminal", "-e",
-                        f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""],
-                    ["xterm", "-e",
-                        f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""]
-                ]
 
-                for terminal_cmd in terminals:
+            for terminal_cmd in terminals:
                     try:
                         subprocess.Popen(terminal_cmd)
                         show_success_toast(self, "Terminal Opened",
