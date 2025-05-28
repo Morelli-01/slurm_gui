@@ -1588,7 +1588,7 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Terminal Error",
                             f"Failed to open terminal: {str(e)}")
     
-    def _open_windows_node_terminal(self, head_node, username, password, node_name):
+    def _open_windows_node_terminal(self, node_name, username, password):
         """Open an SSH terminal to the node (Windows via plink)."""
         try:
             if not Path(plink_utility_path).exists():
