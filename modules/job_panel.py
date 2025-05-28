@@ -21,7 +21,7 @@ class CustomInputDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("New Project")
-        self.setMinimumSize(400, 180)  # Larger size
+        # self.setMinimumSize(400, 180)  # Larger size
 
         self.setStyleSheet(AppStyles.get_dialog_styles() +
                            AppStyles.get_input_styles() +
@@ -68,7 +68,7 @@ class CustomConfirmDialog(QDialog):
     def __init__(self, parent=None, title="Confirm", message="Are you sure?"):
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumSize(400, 180)  # Larger size
+        # self.setMinimumSize(400, 180)  # Larger size
 
         # Set window background color - same as CustomInputDialog
         self.setStyleSheet(AppStyles.get_dialog_styles() +
@@ -111,7 +111,7 @@ class ProjectWidget(QGroupBox):
         self.parent_group = parent
         self.project_storer = storer
         self._is_selected = False
-
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         # Main layout
         self.layout = QVBoxLayout(self)
         self.layout.setSpacing(8)
@@ -230,6 +230,7 @@ class ProjectWidget(QGroupBox):
             # Store reference to this block for updating
             self.status_blocks[status_key] = mini_block
 
+        status_container.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         return status_container
 
     def create_mini_status_block(self, icon_color, count_color, icon_path, count, tooltip):
@@ -269,7 +270,10 @@ class ProjectWidget(QGroupBox):
 
         # Create smaller blocks
         mini_icon_section = QFrame()
-        mini_icon_section.setFixedSize(24, 26)
+        # print(icon_label.movie().scaledSize())
+        font_metrics = QFontMetrics(icon_label.font())
+        char_width = font_metrics.horizontalAdvance('M')*2  # or font_metrics.width('M') in older PyQt versions
+        mini_icon_section.setFixedSize(char_width,char_width)
         mini_icon_section.setStyleSheet(f"""
             background-color: {icon_color};
             border-top-left-radius: 6px;
@@ -287,7 +291,7 @@ class ProjectWidget(QGroupBox):
         block.count_label = count_label
 
         mini_count_section = QFrame()
-        mini_count_section.setFixedSize(24, 26)
+        mini_count_section.setFixedSize(char_width, char_width)
         mini_count_section.setStyleSheet(f"""
             background-color: {count_color};
             border-top-right-radius: 6px;
@@ -376,7 +380,8 @@ class ProjectGroup(QGroupBox):
 
     def __init__(self, parent=None):
         super().__init__("Project", parent)
-        self.setFixedWidth(350)
+        # self.setFixedWidth(350)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         self.parent = parent
         self.project_counter = 0
         self.scroll_area = QScrollArea()
@@ -652,8 +657,9 @@ class JobsPanel(QWidget):
         self.base_layout.setContentsMargins(10, 0, 10, 10)
         self.base_layout.setSpacing(10)
 
-        self.jobs_group = JobsGroup()
         self.project_group = ProjectGroup(parent=self)
+        self.jobs_group = JobsGroup()
+
 
         # Only start loading projects if project_storer is available
         if self.project_storer is not None:
@@ -662,8 +668,8 @@ class JobsPanel(QWidget):
             # Show a message that connection is needed
             self._show_connection_required_message()
 
-        self.base_layout.addWidget(self.project_group)
-        self.base_layout.addWidget(self.jobs_group)
+        self.base_layout.addWidget(self.project_group, 0)
+        self.base_layout.addWidget(self.jobs_group, 1)
 
         # Set the base layout as the main layout for the JobsPanel
         self.setLayout(self.base_layout)

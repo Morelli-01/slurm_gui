@@ -48,8 +48,8 @@ def get_scaled_dimensions(screen=None):
     min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
     min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
-    width = min_width = 1500
-    height = min_height = 950
+    # width = min_width = 1500
+    # height = min_height = 950
     return width, height, min_width, min_height
 
 
@@ -425,7 +425,7 @@ class SlurmJobManagerApp(QMainWindow):
         # Logo - use device-independent size
         logo_label = QLabel()
         logo_size = 40  # Device-independent pixels
-        logo_label.setFixedSize(logo_size, logo_size)
+        # logo_label.setFixedSize(logo_size, logo_size)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
 
@@ -778,7 +778,10 @@ expect {{
         self.filter_jobs.setClearButtonEnabled(True)
         self.filter_jobs.setPlaceholderText("Filter jobs...")
         # Use device-independent width
-        self.filter_jobs.setFixedWidth(220)
+        font_metrics = QFontMetrics(self.filter_jobs.font())
+        char_width = font_metrics.horizontalAdvance('M')  # or font_metrics.width('M') in older PyQt versions
+        total_width = 20 * char_width
+        self.filter_jobs.setFixedWidth(total_width)
         header_layout.addWidget(self.filter_jobs)
 
         self.filter_jobs.textChanged.connect(

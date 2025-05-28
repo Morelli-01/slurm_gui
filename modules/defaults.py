@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QProgressBar, QToolButton, QSizePolicy, QSplitter, QDialogButtonBox, QMainWindow, QStackedWidget, QGridLayout, QTableWidget,
     QHeaderView, QWidget, QStackedLayout, QTableWidgetItem, QGraphicsDropShadowEffect
 )
-from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem, QBrush, QColor
+from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem, QBrush, QColor, QFontMetrics
 from PyQt6.QtCore import (Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyModel, QObject, QPropertyAnimation,
                           QThread, QTimer, QEvent, QSettings, QStandardPaths, QWaitCondition, QMutex,
                           QPoint, QEasingCurve)

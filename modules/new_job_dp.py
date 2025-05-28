@@ -282,7 +282,10 @@ class NewJobDialog(QDialog):
         self.browse_dir_button = QPushButton("Browse...")
         self.browse_dir_button.setObjectName(BTN_BLUE)
         self.browse_dir_button.clicked.connect(self._browse_working_dir)
-        self.browse_dir_button.setFixedWidth(100)
+        font_metrics = QFontMetrics(self.browse_dir_button.font())
+        char_width = font_metrics.horizontalAdvance('M')  # or font_metrics.width('M') in older PyQt versions
+        total_width = len("Browse...") * char_width
+        self.browse_dir_button.setFixedWidth(total_width)
         self.working_dir_layout.addWidget(self.working_dir_edit)
         self.working_dir_layout.addWidget(self.browse_dir_button)
         layout.addRow(self._create_label("Working Directory:"), working_dir_widget)
