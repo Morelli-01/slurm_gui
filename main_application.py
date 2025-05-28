@@ -20,8 +20,7 @@ from modules.defaults import *
 from PyQt6.QtCore import Qt
 from threading import Thread
 import os
-os.environ["QT_SCALE_FACTOR"] = "1"
-os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+
 
 
 # --- Constants ---
@@ -562,10 +561,8 @@ expect {{
 
                 try:
                     # Try Windows Terminal first
-                    wt_cmd = ["wt.exe", "new-tab",
-                              "--title", f"SSH - {host}"] + cmd
-                    subprocess.Popen(
-                        wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    subprocess.Popen(["powershell.exe", "-NoExit", "-Command",  f"chcp 65001; $env:TERM='xterm-256color';"]+ cmd,
+                                     creationflags=subprocess.CREATE_NEW_CONSOLE)
                     show_success_toast(self, "Terminal Opened",
                                        f"SSH terminal opened for {username}@{host}")
                     return
@@ -1045,8 +1042,7 @@ expect {{
 
 if __name__ == "__main__":
 
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
     app = QApplication(sys.argv)
 
     # Get system-specific configuration directory

@@ -1741,11 +1741,13 @@ class JobsPanel(QWidget):
                 
                 try:
                     # Try Windows Terminal first
+                    
                     wt_cmd = [
-                        "wt.exe", "new-tab",
-                        "--title", f"SSH {head_node} -> {node_name}",
-                        "--", "cmd.exe", "/c", batch_path
-                    ]
+        "wt.exe", "new-tab",
+        "--title", f"SSH {head_node} -> {node_name}",
+        "--", "cmd.exe", "/k",
+        f'chcp 65001 && "{batch_path}"'
+    ]
                     subprocess.Popen(wt_cmd, shell=False)
                     
                     show_success_toast(self, "Terminal Opened",

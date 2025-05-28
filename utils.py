@@ -13,7 +13,6 @@ default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 except_utility_path = os.path.join(script_dir, "src_static", "expect")
 plink_utility_path = os.path.join(script_dir, "src_static", "plink.exe")
 tmux_utility_path = os.path.join(script_dir, "src_static", "tmux")
-tmux_utility_path = subprocess.run(["which", "tmux"], capture_output=True).stdout.decode().replace("\n", "")
 
 
 # Object Names for Styling
