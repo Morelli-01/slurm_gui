@@ -13,6 +13,7 @@ up_arrow_path = os.path.join(script_dir, 'src_static', 'up_arrow.svg').replace('
 check_path = os.path.join(script_dir, 'src_static', 'check.svg').replace('\\', '/')
 err_path = os.path.join(script_dir, 'src_static', 'err.svg').replace('\\', '/')
 checkmark_path = os.path.join(script_dir, 'src_static', 'checkamrk.svg').replace('\\', '/')
+terminal_path = os.path.join(script_dir, 'src_static', 'terminal.svg').replace('\\', '/')
 
 class AppStyles:
     """Central class containing all application styles"""
@@ -184,6 +185,7 @@ class AppStyles:
             border: 2px solid #444444;
             opacity: 0.5;
         }}
+        
         """
     
     @classmethod
@@ -204,7 +206,8 @@ class AppStyles:
         
         /* Base style for all action buttons */
         QPushButton#actionSubmitBtn, QPushButton#actionStopBtn, QPushButton#actionCancelBtn,
-        QPushButton#actionLogsBtn, QPushButton#actionDuplicateBtn, QPushButton#actionModifyBtn {{
+        QPushButton#actionLogsBtn, QPushButton#actionDuplicateBtn, QPushButton#actionModifyBtn,
+        QPushButton#actionTerminalBtn {{
             border: 2px solid transparent;
             border-radius: 10px;
             padding: 0px;
@@ -322,6 +325,24 @@ class AppStyles:
             border-color: #4a5578;
         }}
         QPushButton#actionModifyBtn:disabled {{
+            opacity: 0.4;
+        }}
+        
+        /* Terminal button */
+        QPushButton#actionTerminalBtn {{
+            background-color: #8570DB;
+            background-image: url({script_path}/src_static/terminal.svg);
+            border-color: #8570DB;
+        }}
+        QPushButton#actionTerminalBtn:hover {{
+            background-color: #a855f7;
+            border-color: #ffffff;
+        }}
+        QPushButton#actionTerminalBtn:pressed {{
+            background-color: #6a03ca;
+            border-color: #6a03ca;
+        }}
+        QPushButton#actionTerminalBtn:disabled {{
             opacity: 0.4;
         }}
         """

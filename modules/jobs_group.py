@@ -16,6 +16,7 @@ class JobsGroup(QWidget):
     submitRequested = pyqtSignal(str, object)
     duplicateRequested = pyqtSignal(str, object)
     modifyRequested = pyqtSignal(str, object)
+    terminalRequested = pyqtSignal(str, object)
 
     _ROW_HEIGHT = 50
 
@@ -107,6 +108,12 @@ class JobsGroup(QWidget):
         modify_btn.clicked.connect(functools.partial(
             self.modifyRequested.emit, project, job_id))
 
+        terminal_btn = QPushButton()
+        terminal_btn.setObjectName("actionTerminalBtn")
+        terminal_btn.setToolTip("Open terminal on job node")
+        terminal_btn.clicked.connect(functools.partial(
+            self.terminalRequested.emit, project, job_id))
+        
         # Enable/disable buttons based on job status
         if job_status:
             job_status = job_status.upper()
@@ -117,6 +124,7 @@ class JobsGroup(QWidget):
             logs_btn.setEnabled(True)
             modify_btn.setEnabled(job_status == "NOT_SUBMITTED")
             duplicate_btn.setEnabled(True)
+            terminal_btn.setEnabled(job_status == "RUNNING")
 
         # Add buttons to layout
         layout.addWidget(submit_btn)
@@ -125,7 +133,8 @@ class JobsGroup(QWidget):
         layout.addWidget(logs_btn)
         layout.addWidget(duplicate_btn)
         layout.addWidget(modify_btn)
-
+        layout.addWidget(terminal_btn)
+        
         return container
 
     def add_project(self, project_name: str, headers: List[str] | None = None) -> QTableWidget:
@@ -150,7 +159,7 @@ class JobsGroup(QWidget):
         for i, head in enumerate(headers):
             if head == "Actions":
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
-                table.setColumnWidth(i, 220)  # Reduced width for smaller buttons
+                table.setColumnWidth(i, 240)  # Reduced width for smaller buttons
             elif head in ["CPU", "GPU", "RAM"]:
                 h.setSectionResizeMode(
                     i, QHeaderView.ResizeMode.ResizeToContents)

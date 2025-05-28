@@ -620,7 +620,6 @@ class StatusBlock(QWidget):
 
 
 class JobsPanel(QWidget):
-# In modules/job_panel.py - Replace the JobsPanel.__init__ method
 
     def __init__(self, parent=None, slurm_connection: SlurmConnection = None):
         super().__init__(parent)
@@ -717,6 +716,7 @@ class JobsPanel(QWidget):
         self.jobs_group.logsRequested.connect(self.show_job_logs)
         self.jobs_group.duplicateRequested.connect(self.duplicate_job)
         self.jobs_group.modifyRequested.connect(self.modify_job)
+        self.jobs_group.terminalRequested.connect(self.open_job_terminal)
 
     def _show_connection_required_message(self):
         """Show a message indicating that SLURM connection is required"""
@@ -786,7 +786,6 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Setup Error", 
                             f"Failed to initialize project store: {str(e)}")
 
-    # Also add this method to handle cases where project_storer is None
     def _check_project_storer(self):
         """Check if project_storer is available and show appropriate message"""
         if not self.project_storer:
@@ -795,7 +794,6 @@ class JobsPanel(QWidget):
             return False
         return True
 
-    # Update methods that use project_storer to check if it's available first
     def open_new_job_dialog(self):
         """Opens the dialog to create a new job for the selected project."""
         if not self._check_project_storer():
@@ -926,7 +924,6 @@ class JobsPanel(QWidget):
                             f"An error occurred during job submission: {str(e)}")
             import traceback
             traceback.print_exc()
-    
     
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1511,5 +1508,56 @@ class JobsPanel(QWidget):
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
-        
-        
+            
+    def open_job_terminal(self, project_name, job_id):
+        """Open terminal on the node where the job is running"""
+        if not self._check_project_storer():
+            return
+            
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                show_warning_toast(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status != "RUNNING":
+                show_warning_toast(
+                    self,
+                    "Cannot Open Terminal",
+                    f"Job '{job_id}' is not running. Terminal access is only available for running jobs."
+                )
+                return
+
+            if not job.nodelist or job.nodelist in ["", "None", "(null)"]:
+                show_warning_toast(
+                    self,
+                    "No Node Information",
+                    f"No node information available for job '{job_id}'. The job may not have been allocated to a node yet."
+                )
+                return
+
+            # TODO: Implement terminal opening logic here
+            # For now, just show info about what would happen
+            show_info_toast(
+                self,
+                "Terminal Feature",
+                f"Would open terminal on node: {job.nodelist} for job {job_id}\n(Implementation coming soon)",
+                duration=3000
+            )
+            
+            print(f"Terminal requested for job {job_id} on node(s): {job.nodelist}")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"An error occurred while trying to open terminal: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+            
