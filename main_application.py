@@ -307,7 +307,7 @@ class SlurmJobManagerApp(QMainWindow):
 
             # Show error to user
             show_error_toast(self, "Recovery Error",
-                            f"Failed to restore project data after reconnection: {str(e)}")
+                             f"Failed to restore project data after reconnection: {str(e)}")
 
     def _reload_projects_after_reconnection(self):
         """Reload all projects and their jobs after connection recovery"""
@@ -358,14 +358,14 @@ class SlurmJobManagerApp(QMainWindow):
 
             print("Project reload completed successfully")
             show_success_toast(self, "Connection Restored",
-                            f"")
+                               f"")
 
         except Exception as e:
             print(f"Error reloading projects: {e}")
             import traceback
             traceback.print_exc()
             show_error_toast(self, "Reload Error",
-                            f"Failed to reload projects: {str(e)}")
+                             f"Failed to reload projects: {str(e)}")
 
     def _clear_existing_projects(self):
         """Clear existing project widgets from the UI"""
@@ -477,7 +477,8 @@ class SlurmJobManagerApp(QMainWindow):
         # Terminal button - NEW
         self.terminal_button = QPushButton("Terminal")
         self.terminal_button.setObjectName("terminalButton")
-        self.terminal_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "terminal.svg")))
+        self.terminal_button.setIcon(
+            QIcon(os.path.join(script_dir, "src_static", "terminal.svg")))
         self.terminal_button.setToolTip("Open SSH Terminal")
         self.terminal_button.clicked.connect(self.open_terminal)
         nav_layout.addWidget(self.terminal_button)
@@ -502,23 +503,18 @@ class SlurmJobManagerApp(QMainWindow):
     def open_terminal(self):
         """Open a terminal with SSH connection to the cluster"""
         if not self.slurm_connection or not self.slurm_connection.check_connection():
-            show_warning_toast(self, "Connection Required", 
-                             "Please establish a SLURM connection first.")
+            show_warning_toast(self, "Connection Required",
+                               "Please establish a SLURM connection first.")
             return
-        
+
         try:
-            import platform
-            import subprocess
-            import tempfile
-            import os
-            
             # Get connection details
             host = self.slurm_connection.host
             username = self.slurm_connection.user
             password = self.slurm_connection.password
-            
+
             system = platform.system().lower()
-            
+
             if system == "windows":
                 self._open_windows_terminal(host, username, password)
             elif system == "darwin":  # macOS
@@ -526,12 +522,12 @@ class SlurmJobManagerApp(QMainWindow):
             elif system == "linux":
                 self._open_linux_terminal(host, username, password)
             else:
-                show_error_toast(self, "Unsupported Platform", 
-                               f"Terminal opening not supported on {system}")
-                
+                show_error_toast(self, "Unsupported Platform",
+                                 f"Terminal opening not supported on {system}")
+
         except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                           f"Failed to open terminal: {str(e)}")
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open terminal: {str(e)}")
 
     def _create_expect_script(self, host, username, password):
         """Create an expect script for automatic password authentication"""
@@ -559,83 +555,102 @@ expect {{
     }}
 }}
 '''
-        
+
         # Create temporary expect script
         with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
             f.write(script_content)
             script_path = f.name
-        
+
         # Make script executable
         os.chmod(script_path, 0o755)
         return script_path
 
-    def _create_powershell_script(self, host, username, password):
-        """Create a PowerShell script for SSH with password authentication"""
-        script_content = f'''
-# PowerShell SSH connection script
-$Host.UI.RawUI.WindowTitle = "SSH - {host}"
-
-# Check if ssh is available
-if (!(Get-Command ssh -ErrorAction SilentlyContinue)) {{
-    Write-Host "SSH client not found. Please install OpenSSH client." -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    exit
-}}
-
-Write-Host "Connecting to {username}@{host}..." -ForegroundColor Green
-Write-Host "Password will be requested by SSH client." -ForegroundColor Yellow
-Write-Host ""
-
-# Use plink if available (PuTTY) for better password handling
-if (Get-Command plink -ErrorAction SilentlyContinue) {{
-    {plink_utility_path} -ssh {username}@{host} -pw "{password}"
-}} else {{
-    # Fallback to regular SSH (user will need to enter password manually)
-    ssh {username}@{host}
-}}
-
-Write-Host ""
-Write-Host "Connection closed. Press Enter to exit..." -ForegroundColor Yellow
-Read-Host
-'''
-        
-        # Create temporary PowerShell script
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False) as f:
-            f.write(script_content)
-            script_path = f.name
-        
-        return script_path
-
     def _open_windows_terminal(self, host, username, password):
-        """Open terminal on Windows with automatic authentication"""
+        """Open terminal on Windows using plink for direct password authentication"""
         try:
-            # Create PowerShell script
-            script_path = self._create_powershell_script(host, username, password)
-            
+            # Check if plink is available
+            plink_path = plink_utility_path
+
+            if plink_path:
+                cmd = [
+                    plink_path,
+                    "-ssh",           # Use SSH protocol
+                    # Non-interactive (don't prompt for anything)
+                    "-batch",
+                    "-pw", password,  # Provide password directly
+                    f"{username}@{host}"
+                ]
+
+                try:
+                    # Try Windows Terminal first
+                    wt_cmd = ["wt.exe", "new-tab",
+                              "--title", f"SSH - {host}"] + cmd
+                    subprocess.Popen(
+                        wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    show_success_toast(self, "Terminal Opened",
+                                       f"SSH terminal opened for {username}@{host}")
+                    return
+                except FileNotFoundError:
+                    # Fallback to cmd.exe
+                    cmd_command = ["cmd.exe", "/c",
+                                   "start", "cmd.exe", "/k"] + cmd
+                    subprocess.Popen(cmd_command)
+                    show_success_toast(self, "Terminal Opened",
+                                       f"SSH session opened for {username}@{host}")
+                    return
+            else:
+                # Plink not found - suggest installation or use basic SSH
+                self._open_windows_terminal_fallback(host, username, password)
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open Windows terminal: {str(e)}")
+
+    def _open_windows_terminal_fallback(self, host, username, password):
+        """Fallback method when plink is not available"""
+        try:
+            # Create a simple batch file for SSH connection
+            import tempfile
+
+            batch_content = f'''@echo off
+    title SSH - {host}
+    echo Connecting to {username}@{host}...
+    echo.
+    echo Note: For automatic password entry, install PuTTY/plink
+    echo Download from: https://www.putty.org/
+    echo.
+    ssh {username}@{host}
+    echo.
+    echo Connection closed. Press any key to exit...
+    pause >nul
+    '''
+
+            # Create temporary batch file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
+                f.write(batch_content)
+                batch_path = f.name
+
             try:
                 # Try Windows Terminal first
-                cmd = [
-                    "wt.exe", "new-tab", "--title", f"SSH - {host}",
-                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
-                ]
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-                show_success_toast(self, "Terminal Opened", 
-                                 f"SSH terminal opened for {username}@{host}")
+                wt_cmd = ["wt.exe", "new-tab", "--title",
+                          f"SSH - {host}", "cmd.exe", "/c", batch_path]
+                subprocess.Popen(wt_cmd)
+                show_info_toast(self, "Terminal Opened",
+                                f"SSH terminal opened. Install PuTTY for automatic password entry.")
             except FileNotFoundError:
-                # Fallback to PowerShell directly
-                cmd = [
-                    "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", script_path
-                ]
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-                show_success_toast(self, "Terminal Opened", 
-                                 f"PowerShell SSH session opened for {username}@{host}")
-            
-            # Clean up script after delay
-            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-            
+                # Fallback to cmd.exe
+                subprocess.Popen(
+                    ["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
+                show_info_toast(self, "Terminal Opened",
+                                f"SSH session opened. Install PuTTY for automatic password entry.")
+
+            # Clean up batch file after delay
+            QTimer.singleShot(
+                30000, lambda: self._cleanup_temp_file(batch_path))
+
         except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                           f"Failed to open Windows terminal: {str(e)}")
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open terminal: {str(e)}")
 
     def _open_macos_terminal(self, host, username, password):
         """Open terminal on macOS with automatic authentication"""
@@ -646,9 +661,9 @@ Read-Host
             #     has_expect = True
             # except subprocess.CalledProcessError:
             #     has_expect = False
-            
+
             # if has_expect:
-                # Use expect for automatic password entry
+            # Use expect for automatic password entry
             script_path = self._create_expect_script(host, username, password)
             applescript = f'''
             tell application "Terminal"
@@ -657,9 +672,10 @@ Read-Host
             end tell
             '''
             subprocess.Popen(["osascript", "-e", applescript])
-            
+
             # Clean up script after delay
-            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            QTimer.singleShot(
+                10000, lambda: self._cleanup_temp_file(script_path))
             # else:
             #     # Install expect suggestion or fallback
             #     applescript = f'''
@@ -669,78 +685,92 @@ Read-Host
             #     end tell
             #     '''
             #     subprocess.Popen(["osascript", "-e", applescript])
-            
-            show_success_toast(self, "Terminal Opened", 
-                             f"Terminal opened for {username}@{host}")
-                             
+
+            show_success_toast(self, "Terminal Opened",
+                               f"Terminal opened for {username}@{host}")
+
         except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                           f"Failed to open macOS terminal: {str(e)}")
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open macOS terminal: {str(e)}")
 
     def _open_linux_terminal(self, host, username, password):
         """Open terminal on Linux with automatic authentication"""
         try:
             # Check if expect is available
             try:
-                subprocess.run(["which", "expect"], check=True, capture_output=True)
+                subprocess.run(["which", "expect"],
+                               check=True, capture_output=True)
                 has_expect = True
             except subprocess.CalledProcessError:
                 has_expect = False
-            
+
             if has_expect:
                 # Use expect for automatic password entry
-                script_path = self._create_expect_script(host, username, password)
+                script_path = self._create_expect_script(
+                    host, username, password)
                 terminal_cmd = None
-                
+
                 # List of terminal emulators with expect script
                 terminals = [
-                    ["gnome-terminal", "--", "bash", "-c", f"{script_path}; exec bash"],
-                    ["konsole", "-e", "bash", "-c", f"{script_path}; exec bash"],
-                    ["xfce4-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["lxterminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["mate-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["terminator", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["alacritty", "-e", "bash", "-c", f"{script_path}; exec bash"],
+                    ["gnome-terminal", "--", "bash", "-c",
+                        f"{script_path}; exec bash"],
+                    ["konsole", "-e", "bash", "-c",
+                        f"{script_path}; exec bash"],
+                    ["xfce4-terminal", "-e",
+                        f"bash -c '{script_path}; exec bash'"],
+                    ["lxterminal", "-e",
+                        f"bash -c '{script_path}; exec bash'"],
+                    ["mate-terminal", "-e",
+                        f"bash -c '{script_path}; exec bash'"],
+                    ["terminator", "-e",
+                        f"bash -c '{script_path}; exec bash'"],
+                    ["alacritty", "-e", "bash", "-c",
+                        f"{script_path}; exec bash"],
                     ["kitty", "bash", "-c", f"{script_path}; exec bash"],
                     ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
                 ]
-                
+
                 for terminal_cmd in terminals:
                     try:
                         subprocess.Popen(terminal_cmd)
-                        show_success_toast(self, "Terminal Opened", 
-                                         f"Terminal opened for {username}@{host}")
-                        
+                        show_success_toast(self, "Terminal Opened",
+                                           f"Terminal opened for {username}@{host}")
+
                         # Clean up script after delay
-                        QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+                        QTimer.singleShot(
+                            10000, lambda: self._cleanup_temp_file(script_path))
                         return
                     except FileNotFoundError:
                         continue
             else:
                 # Fallback without expect - suggest installation
                 terminals = [
-                    ["gnome-terminal", "--", "bash", "-c", f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
-                    ["konsole", "-e", "bash", "-c", f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
-                    ["xfce4-terminal", "-e", f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""],
-                    ["xterm", "-e", f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""]
+                    ["gnome-terminal", "--", "bash", "-c",
+                        f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
+                    ["konsole", "-e", "bash", "-c",
+                        f"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash"],
+                    ["xfce4-terminal", "-e",
+                        f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""],
+                    ["xterm", "-e",
+                        f"bash -c \"echo 'For automatic authentication, install expect: sudo apt install expect' && echo 'Connecting to {username}@{host}...' && ssh {username}@{host}; exec bash\""]
                 ]
-                
+
                 for terminal_cmd in terminals:
                     try:
                         subprocess.Popen(terminal_cmd)
-                        show_success_toast(self, "Terminal Opened", 
-                                         f"Terminal opened for {username}@{host}")
+                        show_success_toast(self, "Terminal Opened",
+                                           f"Terminal opened for {username}@{host}")
                         return
                     except FileNotFoundError:
                         continue
-            
+
             # If no terminal emulator found
-            show_error_toast(self, "No Terminal Found", 
-                           "No supported terminal emulator found on this system.")
-                           
+            show_error_toast(self, "No Terminal Found",
+                             "No supported terminal emulator found on this system.")
+
         except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                           f"Failed to open Linux terminal: {str(e)}")
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open Linux terminal: {str(e)}")
 
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
@@ -748,7 +778,8 @@ Read-Host
             if os.path.exists(file_path):
                 os.unlink(file_path)
         except Exception as e:
-            print(f"Warning: Could not clean up temporary file {file_path}: {e}")
+            print(
+                f"Warning: Could not clean up temporary file {file_path}: {e}")
 
     def update_nav_styles(self, active_button=None):
         """Updates the visual style of navigation buttons to show the active one."""
@@ -767,12 +798,13 @@ Read-Host
                 btn.setChecked(False)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-        
+
         # Style the terminal button separately (it's not a nav button)
         if hasattr(self, 'terminal_button'):
             self.terminal_button.style().unpolish(self.terminal_button)
-            self.terminal_button.style().polish(self.terminal_button)    
+            self.terminal_button.style().polish(self.terminal_button)
     # --- Panel Creation Methods ---
+
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
         self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
@@ -884,37 +916,39 @@ Read-Host
             self.job_queue_widget.filter_table_by_negative_keywords(
                 STUDENTS_JOBS_KEYWORD)
 
-
     def update_connection_setting(self):
         """Enhanced connection update with proper project store reinitialization"""
         print("Updating connection settings...")
-        
+
         # Save settings first
         self.save_settings()
-        
+
         # Show connecting status
         self.set_connection_status(None, connecting=True)
-        
+
         # Run connection update in a separate thread to avoid blocking UI
         def connection_update_worker():
             try:
                 # Update credentials and reconnect
                 self.slurm_connection.update_credentials_and_reconnect()
-                
+
                 # Check if connection was successful
                 if self.slurm_connection.check_connection():
                     print("Connection update successful")
-                    
+
                     # Use QTimer to safely update UI from main thread
-                    QTimer.singleShot(0, lambda: self._finalize_connection_update(True))
+                    QTimer.singleShot(
+                        0, lambda: self._finalize_connection_update(True))
                 else:
                     print("Connection update failed")
-                    QTimer.singleShot(0, lambda: self._finalize_connection_update(False))
-                    
+                    QTimer.singleShot(
+                        0, lambda: self._finalize_connection_update(False))
+
             except Exception as e:
                 print(f"Error during connection update: {e}")
-                QTimer.singleShot(0, lambda: self._finalize_connection_update(False, str(e)))
-        
+                QTimer.singleShot(
+                    0, lambda: self._finalize_connection_update(False, str(e)))
+
         # Start the worker thread
         thread = threading.Thread(target=connection_update_worker)
         thread.daemon = True
@@ -925,30 +959,30 @@ Read-Host
         if success:
             # Update connection status
             self.set_connection_status(True)
-            
+
             # Reinitialize project store if we have a jobs panel
             if hasattr(self, 'jobs_panel'):
                 try:
                     self.jobs_panel.setup_project_storer()
-                    show_success_toast(self, "Connection Updated", 
-                                    "SLURM connection updated successfully!")
+                    show_success_toast(self, "Connection Updated",
+                                       "SLURM connection updated successfully!")
                 except Exception as e:
                     print(f"Error setting up project store: {e}")
-                    show_error_toast(self, "Setup Error", 
-                                f"Connection established but failed to setup projects: {str(e)}")
+                    show_error_toast(self, "Setup Error",
+                                     f"Connection established but failed to setup projects: {str(e)}")
             else:
-                show_success_toast(self, "Connection Updated", 
-                                "SLURM connection updated successfully!")
+                show_success_toast(self, "Connection Updated",
+                                   "SLURM connection updated successfully!")
         else:
             # Update connection status to disconnected
             self.set_connection_status(False)
-            
+
             error_msg = "Failed to update SLURM connection."
             if error_message:
                 error_msg += f" Error: {error_message}"
-                
+
             show_error_toast(self, "Connection Failed", error_msg)
-            
+
     def refresh_cluster_jobs_queue(self, queue_jobs=None):
         """Refreshes the cluster status widgets (demo)."""
         print("Refreshing cluster status...")
@@ -1036,7 +1070,6 @@ Read-Host
             "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
             "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
         }
-
 
         # Apply notification settings to the settings panel
         if hasattr(self, 'settings_panel'):
