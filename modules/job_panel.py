@@ -1567,18 +1567,18 @@ class JobsPanel(QWidget):
 
         try:
             # Get connection details from SLURM connection
-            node_name = self.slurm_connection.host
+            base_host = self.slurm_connection.host
             username = self.slurm_connection.user
             password = self.slurm_connection.password
             
             system = platform.system().lower()
 
             if system == "windows":
-                self._open_windows_node_terminal(node_name, username, password, job_id)
+                self._open_windows_node_terminal(base_host, username, password, job_id)
             elif system == "darwin":  # macOS
-                self._open_macos_node_terminal(node_name, username, password, job_id)
+                self._open_macos_node_terminal(base_host, username, password, job_id)
             elif system == "linux":
-                self._open_linux_node_terminal(node_name, username, password, job_id)
+                self._open_linux_node_terminal(base_host, username, password, job_id)
             else:
                 show_error_toast(self, "Unsupported Platform",
                                 f"Terminal opening not supported on {system}")
