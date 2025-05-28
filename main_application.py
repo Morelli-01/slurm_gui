@@ -25,59 +25,37 @@ MIN_WIDTH_PERCENTAGE = 0.4  # Minimum 60% of screen width
 MIN_HEIGHT_PERCENTAGE = 0.4  # Minimum 60% of screen height
 REFRESH_INTERVAL_MS = 5000  # 5 seconds
 
-# Windows DPI fix - must be set before QApplication creation
-if platform.system().lower() == "windows":
-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-    os.environ["QT_SCALE_FACTOR"] = "1"
-    os.environ["QT_SCREEN_SCALE_FACTORS"] = "1"
-
 # --- Helper Functions ---
-
-
 def get_dpi_aware_size(base_size, screen=None):
-    """Calculate DPI-aware size based on screen DPI - Fixed for Windows scaling"""
-    import platform
-
-    if platform.system().lower() == "windows":
-        # On Windows with Qt6, disable manual DPI scaling entirely
-        # Qt6 handles high DPI automatically, manual scaling causes double-scaling
-        return base_size
-    else:
-        # Keep original logic for Linux/macOS
-        if screen is None:
-            screen = QApplication.primaryScreen()
-        logical_dpi = screen.logicalDotsPerInch()
-        dpi_scale = logical_dpi / 96.0
-        return int(base_size * dpi_scale)
-
-
-def get_scaled_dimensions(screen=None):
-    """Get window dimensions scaled to screen size"""
+    """Calculate DPI-aware size based on screen DPI"""
     if screen is None:
         screen = QApplication.primaryScreen()
 
-    if platform.system().lower() == "windows":
-        # On Windows, try to get the actual physical resolution
-        geometry = screen.availableGeometry()
+    # Get the device pixel ratio for high DPI displays
+    dpr = screen.devicePixelRatio()
 
-        # Get the device pixel ratio and compensate for it
-        dpr = screen.devicePixelRatio()
+    # Get logical DPI (typical is 96 on Windows, 72 on macOS)
+    logical_dpi = screen.logicalDotsPerInch()
 
-        # Divide by device pixel ratio to get logical pixels
-        actual_width = int(geometry.width() / dpr)
-        actual_height = int(geometry.height() / dpr)
+    # Calculate scaling factor (96 DPI is considered 100% on most systems)
+    dpi_scale = logical_dpi / 96.0
 
-        width = int(actual_width * SCREEN_WIDTH_PERCENTAGE)
-        height = int(actual_height * SCREEN_HEIGHT_PERCENTAGE)
-        min_width = int(actual_width * MIN_WIDTH_PERCENTAGE)
-        min_height = int(actual_height * MIN_HEIGHT_PERCENTAGE)
-    else:
-        geometry = screen.geometry()
-        width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
-        height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
-        min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
-        min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
+    # Apply both DPI scaling and device pixel ratio
+    return int(base_size * dpi_scale)
+
+
+def get_scaled_dimensions(screen=None):
+    """Get window dimensions scaled to screen size and DPI"""
+    if screen is None:
+        screen = QApplication.primaryScreen()
+
+    geometry = screen.geometry()
+
+    # Calculate dimensions based on screen percentages
+    width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
+    height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
+    min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
+    min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
     return width, height, min_width, min_height
 
@@ -1112,13 +1090,11 @@ expect {{
         self.setStyleSheet(stylesheet)
 
 
-# --- Main Execution ---
+## --- Main Execution ---
 if __name__ == "__main__":
-    # Windows DPI scaling fix for Qt6 - MUST be before QApplication
-    if platform.system().lower() == "windows":
-        # Use Qt6 compatible high DPI policy
-        QApplication.setHighDpiScaleFactorRoundingPolicy(
-            Qt.HighDpiScaleFactorRoundingPolicy.Floor)
+    # Enable High DPI scaling
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
@@ -1193,3 +1169,5 @@ if __name__ == "__main__":
         window = SlurmJobManagerApp()
         window.show()
         sys.exit(app.exec())
+
+
