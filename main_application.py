@@ -26,23 +26,25 @@ REFRESH_INTERVAL_MS = 5000  # 5 seconds
 
 
 # --- Helper Functions ---
+
 def get_dpi_aware_size(base_size, screen=None):
-    """Calculate DPI-aware size based on screen DPI"""
+    """Calculate DPI-aware size based on screen DPI - Fixed for Windows scaling"""
     if screen is None:
         screen = QApplication.primaryScreen()
 
     # Get the device pixel ratio for high DPI displays
     dpr = screen.devicePixelRatio()
-
-    # Get logical DPI (typical is 96 on Windows, 72 on macOS)
-    logical_dpi = screen.logicalDotsPerInch()
-
-    # Calculate scaling factor (96 DPI is considered 100% on most systems)
-    dpi_scale = logical_dpi / 96.0
-
-    # Apply both DPI scaling and device pixel ratio
-    return int(base_size * dpi_scale)
-
+    
+    # On Windows, Qt already handles DPI scaling automatically
+    # We only need to apply additional scaling if DPR > 1.0 and logical DPI != physical DPI
+    if platform.system().lower() == "windows":
+        # On Windows, trust Qt's automatic scaling and only apply minimal adjustment
+        return int(base_size)  # Remove manual DPI scaling for Windows
+    else:
+        # Keep original logic for other platforms
+        logical_dpi = screen.logicalDotsPerInch()
+        dpi_scale = logical_dpi / 96.0
+        return int(base_size * dpi_scale)
 
 def get_scaled_dimensions(screen=None):
     """Get window dimensions scaled to screen size and DPI"""
