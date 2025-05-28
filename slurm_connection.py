@@ -1,4 +1,5 @@
 import configparser
+import platform
 import re
 import sys
 import functools
@@ -374,7 +375,7 @@ class SlurmConnection:
     
 
         # Save script locally
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as f:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh", newline='\n') as f:
             f.write(script_content)
             local_script_path = f.name
 
@@ -1155,7 +1156,13 @@ class SlurmConnection:
             "exit $JOB_EXIT_CODE"
         ])
 
-        return "\n".join(script_lines)
+        script_content = "\n".join(script_lines)
+        
+        # Ensure Unix line endings for cross-platform compatibility
+        if platform.system().lower() == "windows":
+            script_content = script_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        return script_content
     
 
     
