@@ -688,7 +688,7 @@ expect {{
                 # List of terminal emulators with expect script
             terminals = [
                     ["gnome-terminal", "--", "bash", "-c",
-                        f"{script_path}; exec bash"],
+                        f"{script_path}"],
                     ["konsole", "-e", "bash", "-c",
                         f"{script_path}; exec bash"],
                     ["xfce4-terminal", "-e",
