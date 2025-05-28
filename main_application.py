@@ -12,7 +12,8 @@ from modules.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import platform
-import subprocess, random
+import subprocess
+import random
 # Get the script directory to construct relative paths
 from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
 # --- Constants ---
@@ -26,38 +27,45 @@ REFRESH_INTERVAL_MS = 5000  # 5 seconds
 
 
 # --- Helper Functions ---
-
 def get_dpi_aware_size(base_size, screen=None):
     """Calculate DPI-aware size based on screen DPI - Fixed for Windows scaling"""
-    if screen is None:
-        screen = QApplication.primaryScreen()
+    import platform
 
-    # Get the device pixel ratio for high DPI displays
-    dpr = screen.devicePixelRatio()
-    
-    # On Windows, Qt already handles DPI scaling automatically
-    # We only need to apply additional scaling if DPR > 1.0 and logical DPI != physical DPI
     if platform.system().lower() == "windows":
-        # On Windows, trust Qt's automatic scaling and only apply minimal adjustment
-        return int(base_size)  # Remove manual DPI scaling for Windows
+        # On Windows with Qt6, disable manual DPI scaling entirely
+        # Qt6 handles high DPI automatically, manual scaling causes double-scaling
+        return base_size
     else:
-        # Keep original logic for other platforms
+        # Keep original logic for Linux/macOS
+        if screen is None:
+            screen = QApplication.primaryScreen()
         logical_dpi = screen.logicalDotsPerInch()
         dpi_scale = logical_dpi / 96.0
         return int(base_size * dpi_scale)
 
+
 def get_scaled_dimensions(screen=None):
     """Get window dimensions scaled to screen size and DPI"""
+    import platform
+
     if screen is None:
         screen = QApplication.primaryScreen()
 
     geometry = screen.geometry()
 
-    # Calculate dimensions based on screen percentages
-    width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
-    height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
-    min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
-    min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
+    # On Windows, use raw geometry without additional scaling
+    if platform.system().lower() == "windows":
+        # Use the actual screen geometry without manual scaling
+        width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
+        height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
+        min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
+        min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
+    else:
+        # Keep original logic for other platforms
+        width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
+        height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
+        min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
+        min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
     return width, height, min_width, min_height
 
@@ -193,11 +201,22 @@ class SlurmJobManagerApp(QMainWindow):
 
     def setup_dpi_aware_dimensions(self):
         """Setup commonly used DPI-aware dimensions"""
-        self.base_spacing = get_dpi_aware_size(5)
-        self.base_margin = get_dpi_aware_size(10)
-        self.icon_size_small = get_dpi_aware_size(16)
-        self.icon_size_medium = get_dpi_aware_size(24)
-        self.icon_size_large = get_dpi_aware_size(32)
+        import platform
+        
+        if platform.system().lower() == "windows":
+            # Use fixed sizes on Windows to prevent double-scaling
+            self.base_spacing = 5
+            self.base_margin = 10
+            self.icon_size_small = 16
+            self.icon_size_medium = 24
+            self.icon_size_large = 32
+        else:
+            # Use DPI-aware sizing on other platforms
+            self.base_spacing = get_dpi_aware_size(5)
+            self.base_margin = get_dpi_aware_size(10)
+            self.icon_size_small = get_dpi_aware_size(16)
+            self.icon_size_medium = get_dpi_aware_size(24)
+            self.icon_size_large = get_dpi_aware_size(32)
     # In main_application.py - Replace the set_connection_status method and add helper methods
 
     def set_connection_status(self, connected: bool, connecting=False):
@@ -659,7 +678,7 @@ expect {{
         try:
             # Create tmux session for SSH connection
             session_name = f"slurm_{random.randint(1000, 9999)}"
-            
+
             # Create tmux session and send SSH commands
             tmux_commands = [
                 f"{tmux_utility_path} new-session -d -s {session_name}",
@@ -667,7 +686,7 @@ expect {{
                 f"sleep 2",  # Wait for SSH prompt
                 f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
             ]
-            
+
             # Use AppleScript to open Terminal and attach to tmux session
             applescript = f'''
             tell application "Terminal"
@@ -678,18 +697,19 @@ expect {{
             subprocess.Popen(["osascript", "-e", applescript])
 
             show_success_toast(self, "Terminal Opened",
-                            f"Tmux session opened for {username}@{host}")
+                               f"Tmux session opened for {username}@{host}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open macOS terminal: {str(e)}")
+                             f"Failed to open macOS terminal: {str(e)}")
+
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
             # Create tmux session for chained SSH connection
             head_node = self.slurm_connection.host
             session_name = f"slurm_{random.randint(1000, 9999)}"
-            
+
             # Create tmux session and send SSH commands
             tmux_commands = [
                 f"{tmux_utility_path} new-session -d -s {session_name}",
@@ -697,38 +717,46 @@ expect {{
                 f"sleep 2",  # Wait for SSH prompt
                 f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
             ]
-            
+
             # List of terminal emulators to try with tmux
             terminals = [
-                ["gnome-terminal", "--", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["konsole", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xfce4-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["lxterminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["mate-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["terminator", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["alacritty", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["kitty", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xterm", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+                ["gnome-terminal", "--", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["konsole", "-e", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xfce4-terminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["lxterminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["mate-terminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["terminator", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["alacritty", "-e", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["kitty", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xterm", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                    f"Tmux session opened: {head_node}")
+                                       f"Tmux session opened: {head_node}")
                     return
                 except FileNotFoundError:
                     continue
-                    
+
             # If no terminal emulator found
             show_error_toast(self, "No Terminal Found",
-                            "No supported terminal emulator found on this system.")
-
+                             "No supported terminal emulator found on this system.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                        f"Failed to open Linux terminal: {str(e)}")
-            
+                             f"Failed to open Linux terminal: {str(e)}")
+
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:
@@ -1071,9 +1099,18 @@ expect {{
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Enable High DPI scaling
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    # Configure DPI scaling based on platform
+    if platform.system().lower() == "windows":
+        # On Windows, let Qt handle DPI automatically without manual intervention
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.Round)
+        # Disable custom scaling attributes that can cause double-scaling
+        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+    else:
+        # Keep original behavior for other platforms
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
