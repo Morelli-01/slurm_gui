@@ -1586,36 +1586,57 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open terminal: {str(e)}")
-
-    def _open_windows_node_terminal(self, node_name, username, password, job_id):
-        """Open terminal on Windows for specific node"""
+    
+    def _open_windows_node_terminal(self, head_node, username, password, job_id):
+        """Open terminal on Windows for specific node with chained SSH"""
         try:
             from utils import plink_utility_path
             
             if plink_utility_path and os.path.exists(plink_utility_path):
-                cmd = [
-                    plink_utility_path,
-                    "-ssh",
-                    "-batch",
-                    "-pw", password,
-                    f"{username}@{node_name}"
-                ]
+                # For Windows, we'll create a batch script that handles the chained SSH
+                # since plink doesn't have the same interactive capabilities as expect
+                
+                # Create a batch script for chained SSH
+                batch_content = f'''@echo off
+    title SSH Chain: {head_node} -> {job_id} Node
+    echo Connecting to head node {head_node}...
+    echo After connecting, you'll need to manually SSH to the compute node.
+    echo.
+    echo Commands to run after connecting to head node:
+    echo   1. First, find the compute node for job {job_id}:
+    echo      scontrol show job {job_id} ^| grep NodeList
+    echo   2. Then SSH to that node:
+    echo      ssh [node_name_from_step1]
+    echo.
+    pause
+    {plink_utility_path} -ssh -batch -pw {password} {username}@{head_node}
+    echo.
+    echo Connection closed. Press any key to exit...
+    pause >nul
+    '''
+                
+                # Create temporary batch file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
+                    f.write(batch_content)
+                    batch_path = f.name
                 
                 try:
                     # Try Windows Terminal first
-                    wt_cmd = ["wt.exe", "new-tab", 
-                            "--title", f"Node: {node_name} (Job {job_id})"] + cmd
-                    subprocess.Popen(wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    wt_cmd = ["wt.exe", "new-tab", "--title", 
+                            f"SSH Chain: {head_node} -> Job {job_id}", "cmd.exe", "/c", batch_path]
+                    subprocess.Popen(wt_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                    f"SSH terminal opened for node {node_name}")
-                    return
+                                    f"SSH terminal opened with instructions for job {job_id}")
                 except FileNotFoundError:
                     # Fallback to cmd.exe
-                    cmd_command = ["cmd.exe", "/c", "start", "cmd.exe", "/k"] + cmd
-                    subprocess.Popen(cmd_command)
+                    subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
                     show_success_toast(self, "Terminal Opened",
-                                    f"SSH session opened for node {node_name}")
-                    return
+                                    f"SSH session opened with instructions for job {job_id}")
+                
+                # Clean up batch file after delay
+                QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
+                return
+                
             else:
                 show_error_toast(self, "PuTTY Required",
                             "PuTTY/plink is required for SSH on Windows. Please install from https://www.putty.org/")
@@ -1624,31 +1645,64 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Terminal Error",
                             f"Failed to open Windows terminal: {str(e)}")
 
-    def _open_macos_node_terminal(self, node_name, username, password, job_id):
-        """Open terminal on macOS for specific node"""
+    def _open_macos_node_terminal(self, head_node, username, password, job_id):
+        """Open terminal on macOS for specific node with chained SSH"""
         try:
+            from utils import except_utility_path
             
-            # Create expect script for automatic SSH login
+            # Create expect script for chained SSH connection - similar to Linux version
             script_content = f'''#!{except_utility_path} -f
     set timeout 30
-    spawn ssh {username}@{node_name}
+
+    # First SSH to head node  
+    spawn ssh {username}@{head_node}
     expect {{
         "password:" {{
             send "{password}\\r"
-            interact
+            exp_continue
         }}
         "yes/no" {{
             send "yes\\r"
-            expect "password:"
-            send "{password}\\r"
-            interact
+            exp_continue
+        }}
+        "$ " {{
+            # We're now on the head node
+            # First, get the compute node for this job
+            send "NODE=\\$(scontrol show job {job_id} | grep NodeList | cut -d= -f2 | cut -d, -f1)\\r"
+            expect "$ "
+            
+            # Now SSH to the compute node
+            send "echo \\"Connecting to node \\$NODE for job {job_id}\\"\\r"
+            expect "$ "
+            send "ssh \\$NODE\\r"
+            expect {{
+                "password:" {{
+                    send "{password}\\r"
+                    interact
+                }}
+                "yes/no" {{
+                    send "yes\\r"
+                    expect "password:"
+                    send "{password}\\r"
+                    interact
+                }}
+                "$ " {{
+                    # Already logged in to compute node
+                    send "echo \\"Connected to compute node for job {job_id}\\"\\r"
+                    interact
+                }}
+                timeout {{
+                    puts "Timeout connecting to compute node for job {job_id}"
+                    exit 1
+                }}
+            }}
         }}
         timeout {{
-            puts "Connection timeout"
+            puts "Timeout connecting to head node {head_node}"
             exit 1
         }}
         eof {{
-            puts "Connection failed"
+            puts "Connection to head node failed"
             exit 1
         }}
     }}
@@ -1672,16 +1726,15 @@ class JobsPanel(QWidget):
             subprocess.Popen(["osascript", "-e", applescript])
             
             # Clean up script after delay
-            from PyQt6.QtCore import QTimer
             QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
             
             show_success_toast(self, "Terminal Opened",
-                            f"Terminal opened for node {node_name}")
+                            f"Chained SSH terminal opened for job {job_id}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open macOS terminal: {str(e)}")
-   
+
     def _open_linux_node_terminal(self, node_name, username, password, job_id):
         """Open terminal on Linux with chained SSH: first to head node, then to compute node"""
         try:
