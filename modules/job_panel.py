@@ -1700,7 +1700,7 @@ class JobsPanel(QWidget):
         except Exception as e:
             print(
                 f"Warning: Could not clean up temporary file {file_path}: {e}")
-
+    
     def _open_windows_node_terminal(self, node_name, username, password):
         """Open terminal on Windows for specific node with chained SSH connection - Simplified version"""
         try:
@@ -1711,38 +1711,51 @@ class JobsPanel(QWidget):
             plink_available = Path(plink_utility_path).exists()
             
             if plink_available:
-                # Use plink for automated connection
+                # Create a batch script that handles both SSH connections automatically
+                import tempfile
+                
+                batch_content = f'''@echo off
+    title SSH {head_node} -> {node_name}
+    echo Connecting to {head_node} and then to {node_name}...
+    echo.
+
+    REM First connection to head node, then immediately connect to compute node
+    echo Connecting to head node...
+    "{plink_utility_path}" -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; sshpass -p '{password}' ssh -o StrictHostKeyChecking=no {username}@{node_name} || ssh {username}@{node_name}"
+
+    echo.
+    echo Connection closed. Press any key to exit...
+    pause >nul
+    '''
+                
+                # Create temporary batch file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
+                    f.write(batch_content)
+                    batch_path = f.name
+                
                 try:
-                    # Try Windows Terminal first with plink
+                    # Try Windows Terminal first
                     wt_cmd = [
                         "wt.exe", "new-tab",
                         "--title", f"SSH {head_node} -> {node_name}",
-                        "--", plink_utility_path,
-                        "-ssh", "-batch",
-                        "-pw", password,
-                        f"{username}@{head_node}",
-                        "-t", f"ssh {node_name}"
+                        "--", "cmd.exe", "/c", batch_path
                     ]
                     subprocess.Popen(wt_cmd, shell=False)
                     
                     show_success_toast(self, "Terminal Opened",
                                     f"SSH terminal opened: {head_node} -> {node_name}")
-                    return
                     
                 except FileNotFoundError:
-                    # Fallback to cmd.exe with plink
-                    cmd_command = [
-                        "cmd.exe", "/c", "start", "cmd.exe", "/k",
-                        plink_utility_path, "-ssh", "-batch",
-                        "-pw", password,
-                        f"{username}@{head_node}",
-                        "-t", f"ssh {node_name}"
-                    ]
+                    # Fallback to cmd.exe
+                    cmd_command = ["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path]
                     subprocess.Popen(cmd_command, shell=False)
                     
                     show_success_toast(self, "Terminal Opened",
                                     f"SSH session opened: {head_node} -> {node_name}")
-                    return
+                
+                # Clean up batch file after delay
+                QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
+                return
             
             # Fallback method without plink (requires manual password entry)
             self._open_windows_node_terminal_fallback(node_name, username, password)
@@ -1797,4 +1810,5 @@ class JobsPanel(QWidget):
                 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open terminal: {str(e)}")
+                            f"Failed to open terminal: {str(e)}")      
+
