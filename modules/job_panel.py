@@ -12,6 +12,9 @@ from modules.jobs_group import JobsGroup
 from modules.new_job_dp import ModifyJobDialog, NewJobDialog
 from style import AppStyles
 import random
+import tempfile
+import os # Import os for file operations
+from PyQt6.QtCore import QTimer # Import QTimer for singleShot
 
 class CustomInputDialog(QDialog):
     def __init__(self, parent=None):
@@ -1555,9 +1558,7 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"An error occurred while trying to open terminal: {str(e)}")
-            import traceback
-            traceback.print_exc()
-
+    
     def _open_node_terminal(self, node_name, job_id):
         """Open terminal connection to a specific compute node"""
         if not self.slurm_connection or not self.slurm_connection.check_connection():
@@ -1574,11 +1575,11 @@ class JobsPanel(QWidget):
             system = platform.system().lower()
             print(system)
             if system == "windows":
-                self._open_windows_node_terminal(base_host, username, password, job_id)
+                self._open_windows_node_terminal(node_name, username, password )
             elif system == "darwin":  # macOS
-                self._open_macos_node_terminal(base_host, username, password, job_id)
+                self._open_macos_node_terminal(node_name, username, password)
             elif system == "linux":
-                self._open_linux_node_terminal(node_name, username, password, job_id)
+                self._open_linux_node_terminal(node_name, username, password)
             else:
                 show_error_toast(self, "Unsupported Platform",
                                 f"Terminal opening not supported on {system}")
@@ -1587,155 +1588,201 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Terminal Error",
                             f"Failed to open terminal: {str(e)}")
     
-    # def _open_windows_node_terminal(self, head_node, username, password, job_id):
-    #     """Open terminal on Windows for specific node with chained SSH"""
-    #     try:
-    #         from utils import plink_utility_path
-            
-    #         if plink_utility_path and os.path.exists(plink_utility_path):
-    #             # For Windows, we'll create a batch script that handles the chained SSH
-    #             # since plink doesn't have the same interactive capabilities as expect
-                
-    #             # Create a batch script for chained SSH
-    #             batch_content = f'''@echo off
-    # title SSH Chain: {head_node} -> {job_id} Node
-    # echo Connecting to head node {head_node}...
-    # echo After connecting, you'll need to manually SSH to the compute node.
-    # echo.
-    # echo Commands to run after connecting to head node:
-    # echo   1. First, find the compute node for job {job_id}:
-    # echo      scontrol show job {job_id} ^| grep NodeList
-    # echo   2. Then SSH to that node:
-    # echo      ssh [node_name_from_step1]
-    # echo.
-    # pause
-    # {plink_utility_path} -ssh -batch -pw {password} {username}@{head_node}
-    # echo.
-    # echo Connection closed. Press any key to exit...
-    # pause >nul
-    # '''
-                
-    #             # Create temporary batch file
-    #             with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-    #                 f.write(batch_content)
-    #                 batch_path = f.name
-                
-    #             try:
-    #                 # Try Windows Terminal first
-    #                 wt_cmd = ["wt.exe", "new-tab", "--title", 
-    #                         f"SSH Chain: {head_node} -> Job {job_id}", "cmd.exe", "/c", batch_path]
-    #                 subprocess.Popen(wt_cmd)
-    #                 show_success_toast(self, "Terminal Opened",
-    #                                 f"SSH terminal opened with instructions for job {job_id}")
-    #             except FileNotFoundError:
-    #                 # Fallback to cmd.exe
-    #                 subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
-    #                 show_success_toast(self, "Terminal Opened",
-    #                                 f"SSH session opened with instructions for job {job_id}")
-                
-    #             # Clean up batch file after delay
-    #             QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
-    #             return
-                
-    #         else:
-    #             show_error_toast(self, "PuTTY Required",
-    #                         "PuTTY/plink is required for SSH on Windows. Please install from https://www.putty.org/")
+    def _open_windows_node_terminal(self, node_name, username, password):
+        """Open terminal on Windows for specific node with chained SSH using expect if available"""
+        try:
+            # Check if expect is available
+            try:
+                # Use 'where' command on Windows to find executables
+                subprocess.run(["where", except_utility_path], check=True, capture_output=True, shell=True)
+                has_expect = True
+            except subprocess.CalledProcessError:
+                has_expect = False
+            except FileNotFoundError: # 'where' command itself not found
+                has_expect = False
 
-    #     except Exception as e:
-    #         show_error_toast(self, "Terminal Error",
-    #                         f"Failed to open Windows terminal: {str(e)}")
+            if has_expect:
+                # Create expect script for chained SSH connection using plink
+                head_node = self.slurm_connection.host
+                script_content = f'''#!{except_utility_path} -f
+set timeout 30
 
-    # def _open_macos_node_terminal(self, head_node, username, password, job_id):
-    #     """Open terminal on macOS for specific node with chained SSH"""
-    #     try:
-    #         from utils import except_utility_path
-            
-    #         # Create expect script for chained SSH connection - similar to Linux version
-    #         script_content = f'''#!{except_utility_path} -f
-    # set timeout 30
+# First SSH to head node using plink
+spawn "{plink_utility_path}" -ssh -pw "{password}" "{username}@{head_node}"
+expect {{
+    "password:" {{
+        send "{password}\\r"
+        exp_continue
+    }}
+    "yes/no" {{
+        send "yes\\r"
+        exp_continue
+    }}
+    "$ " {{
+        # Now SSH to the compute node from the head node
+        send "ssh {node_name}\\r"
+        expect {{
+            "password:" {{
+                send "{password}\\r"
+                interact
+            }}
+            "yes/no" {{
+                send "yes\\r"
+                expect "password:"
+                send "{password}\\r"
+                interact
+            }}
+            "$ " {{
+                # Already logged in to compute node
+                interact
+            }}
+            timeout {{
+                puts "Timeout connecting to compute node {node_name}"
+                exit 1
+            }}
+        }}
+    }}
+    timeout {{
+        puts "Timeout connecting to head node {head_node}"
+        exit 1
+    }}
+    eof {{
+        puts "Connection to head node failed"
+        exit 1
+    }}
+}}
+'''
+                
+                # Create temporary expect script
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+                    f.write(script_content)
+                    script_path = f.name
+                
+                # Make script executable (though less critical on Windows, good practice)
+                os.chmod(script_path, 0o755)
+                
+                # Command to execute the expect script using cmd.exe or wt.exe
+                # Need to use cmd.exe /c to run the expect script
+                cmd_to_run_expect = [except_utility_path, script_path]
 
-    # # First SSH to head node  
-    # spawn ssh {username}@{head_node}
-    # expect {{
-    #     "password:" {{
-    #         send "{password}\\r"
-    #         exp_continue
-    #     }}
-    #     "yes/no" {{
-    #         send "yes\\r"
-    #         exp_continue
-    #     }}
-    #     "$ " {{
-    #         # We're now on the head node
-    #         # First, get the compute node for this job
-    #         send "NODE=\\$(scontrol show job {job_id} | grep NodeList | cut -d= -f2 | cut -d, -f1)\\r"
-    #         expect "$ "
-            
-    #         # Now SSH to the compute node
-    #         send "echo \\"Connecting to node \\$NODE for job {job_id}\\"\\r"
-    #         expect "$ "
-    #         send "ssh \\$NODE\\r"
-    #         expect {{
-    #             "password:" {{
-    #                 send "{password}\\r"
-    #                 interact
-    #             }}
-    #             "yes/no" {{
-    #                 send "yes\\r"
-    #                 expect "password:"
-    #                 send "{password}\\r"
-    #                 interact
-    #             }}
-    #             "$ " {{
-    #                 # Already logged in to compute node
-    #                 send "echo \\"Connected to compute node for job {job_id}\\"\\r"
-    #                 interact
-    #             }}
-    #             timeout {{
-    #                 puts "Timeout connecting to compute node for job {job_id}"
-    #                 exit 1
-    #             }}
-    #         }}
-    #     }}
-    #     timeout {{
-    #         puts "Timeout connecting to head node {head_node}"
-    #         exit 1
-    #     }}
-    #     eof {{
-    #         puts "Connection to head node failed"
-    #         exit 1
-    #     }}
-    # }}
-    # '''
-            
-    #         # Create temporary expect script
-    #         with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-    #             f.write(script_content)
-    #             script_path = f.name
-            
-    #         # Make script executable
-    #         os.chmod(script_path, 0o755)
-            
-    #         # Open terminal with expect script
-    #         applescript = f'''
-    #         tell application "Terminal"
-    #             activate
-    #             do script "{script_path}"
-    #         end tell
-    #         '''
-    #         subprocess.Popen(["osascript", "-e", applescript])
-            
-    #         # Clean up script after delay
-    #         QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-            
-    #         show_success_toast(self, "Terminal Opened",
-    #                         f"Chained SSH terminal opened for job {job_id}")
+                try:
+                    # Try Windows Terminal first
+                    wt_cmd = ["wt.exe", "new-tab", "--title", 
+                            f"SSH Chain: {head_node} -> {node_name}", "cmd.exe", "/c", ' '.join(f'"{arg}"' for arg in cmd_to_run_expect)]
+                    subprocess.Popen(wt_cmd)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"Chained SSH terminal opened: {head_node} -> {node_name}")
+                except FileNotFoundError:
+                    # Fallback to cmd.exe
+                    subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", ' '.join(f'"{arg}"' for arg in cmd_to_run_expect)])
+                    show_success_toast(self, "Terminal Opened",
+                                    f"Chained SSH terminal opened: {head_node} -> {node_name}")
+                
+                # Clean up script after delay
+                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+                return
+                
+            else:
+                show_error_toast(self, "Expect Required",
+                            "The 'expect' package is required for chained SSH connections on Windows. Please ensure it's installed and configured in utils.py.")
 
-    #     except Exception as e:
-    #         show_error_toast(self, "Terminal Error",
-    #                         f"Failed to open macOS terminal: {str(e)}")
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open Windows terminal: {str(e)}")
 
-    def _open_linux_node_terminal(self, node_name, username, password, job_id):
+    def _open_macos_node_terminal(self, node_name, username, password):
+        """Open terminal on macOS for specific node with chained SSH"""
+        try:
+            # Check if expect is available
+            try:
+                subprocess.run(["which", except_utility_path], check=True, capture_output=True)
+                has_expect = True
+            except subprocess.CalledProcessError:
+                has_expect = False
+
+            if has_expect:
+                # Create expect script for chained SSH connection - similar to Linux version
+                head_node = self.slurm_connection.host
+                script_content = f'''#!{except_utility_path} -f
+set timeout 30
+
+# First SSH to head node  
+spawn ssh {username}@{head_node}
+expect {{
+    "password:" {{
+        send "{password}\\r"
+        exp_continue
+    }}
+    "yes/no" {{
+        send "yes\\r"
+        exp_continue
+    }}
+    "$ " {{
+        # Now SSH to the compute node
+        send "ssh {node_name}\\r"
+        expect {{
+            "password:" {{
+                send "{password}\\r"
+                interact
+            }}
+            "yes/no" {{
+                send "yes\\r"
+                expect "password:"
+                send "{password}\\r"
+                interact
+            }}
+            "$ " {{
+                # Already logged in to compute node
+                interact
+            }}
+            timeout {{
+                puts "Timeout connecting to compute node {node_name}"
+                exit 1
+            }}
+        }}
+    }}
+    timeout {{
+        puts "Timeout connecting to head node {head_node}"
+        exit 1
+    }}
+    eof {{
+        puts "Connection to head node failed"
+        exit 1
+    }}
+}}
+'''
+                
+                # Create temporary expect script
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+                    f.write(script_content)
+                    script_path = f.name
+                
+                # Make script executable
+                os.chmod(script_path, 0o755)
+                
+                # Open terminal with expect script
+                applescript = f'''
+                tell application "Terminal"
+                    activate
+                    do script "{script_path}"
+                end tell
+                '''
+                subprocess.Popen(["osascript", "-e", applescript])
+                
+                # Clean up script after delay
+                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+                
+                show_success_toast(self, "Terminal Opened",
+                                f"Chained SSH terminal opened: {head_node} -> {node_name}")
+            else:
+                show_error_toast(self, "Expect Required",
+                            "The 'expect' package is required for chained SSH connections on macOS. Install with: brew install expect")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open macOS terminal: {str(e)}")
+
+    def _open_linux_node_terminal(self, node_name, username, password):
         """Open terminal on Linux with chained SSH: first to head node, then to compute node"""
         try:
             # Check if expect is available
@@ -1845,284 +1892,3 @@ class JobsPanel(QWidget):
                 os.unlink(file_path)
         except Exception as e:
             print(f"Warning: Could not clean up temporary file {file_path}: {e}")
-
-    def _open_windows_node_terminal(self, head_node, username, password, job_id):
-        """Open terminal on Windows for specific node with chained SSH - Enhanced Version"""
-        try:
-            from utils import plink_utility_path
-            
-            if plink_utility_path and os.path.exists(plink_utility_path):
-                # Windows plink limitation: Cannot do automatic chained SSH like expect
-                # This is because:
-                # 1. Plink is designed for batch operations, not interactive sessions
-                # 2. Windows Console doesn't support ANSI escape sequences natively
-                # 3. No native equivalent to Unix 'expect' scripting
-                
-                # SOLUTION 1: Use PuTTY's proxy command feature for true chained SSH
-                # Create a temporary PuTTY session that uses proxy command
-                session_name = f"SlurmAIO_Job_{job_id}_{random.randint(1000,9999)}"
-                
-                # Create PuTTY session with proxy command using registry
-                import winreg
-                putty_key = r"Software\SimonTatham\PuTTY\Sessions\\" + session_name
-                
-                try:
-                    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, putty_key) as key:
-                        # Basic connection settings for the compute node
-                        winreg.SetValueEx(key, "HostName", 0, winreg.REG_SZ, "COMPUTE_NODE_PLACEHOLDER")
-                        winreg.SetValueEx(key, "UserName", 0, winreg.REG_SZ, username)
-                        winreg.SetValueEx(key, "Protocol", 0, winreg.REG_SZ, "ssh")
-                        winreg.SetValueEx(key, "PortNumber", 0, winreg.REG_DWORD, 22)
-                        
-                        # Proxy settings for chained connection
-                        winreg.SetValueEx(key, "ProxyMethod", 0, winreg.REG_DWORD, 5)  # Local proxy
-                        proxy_command = f'"{plink_utility_path}" -ssh -pw {password} {username}@{head_node} -nc COMPUTE_NODE_PLACEHOLDER:22'
-                        winreg.SetValueEx(key, "ProxyLocalCommand", 0, winreg.REG_SZ, proxy_command)
-                        
-                        # Terminal settings for proper resize support
-                        winreg.SetValueEx(key, "TerminalType", 0, winreg.REG_SZ, "xterm-256color")
-                        winreg.SetValueEx(key, "TermWidth", 0, winreg.REG_DWORD, 80)
-                        winreg.SetValueEx(key, "TermHeight", 0, winreg.REG_DWORD, 24)
-                        winreg.SetValueEx(key, "BlinkCur", 0, winreg.REG_DWORD, 1)
-                        winreg.SetValueEx(key, "ScrollbackLines", 0, winreg.REG_DWORD, 10000)
-                    
-                    # Create a script that will:
-                    # 1. Get the actual compute node name
-                    # 2. Update the PuTTY session
-                    # 3. Launch PuTTY with the session
-                    script_content = f'''@echo off
-    title Connecting to Job {job_id}
-    echo Connecting to cluster and finding compute node for job {job_id}...
-
-    REM Get the compute node for this job
-    for /f "tokens=*" %%i in ('"{plink_utility_path}" -ssh -pw {password} {username}@{head_node} "scontrol show job {job_id} | grep NodeList | cut -d= -f2 | cut -d, -f1"') do set COMPUTE_NODE=%%i
-
-    if "%COMPUTE_NODE%"=="" (
-        echo Error: Could not determine compute node for job {job_id}
-        echo Job might not exist or might not be running yet.
-        pause
-        exit /b 1
-    )
-
-    echo Found compute node: %COMPUTE_NODE%
-    echo Updating connection settings...
-
-    REM Update the registry with the actual compute node
-    reg add "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\{session_name}" /v "HostName" /d "%COMPUTE_NODE%" /f >nul
-    reg add "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\{session_name}" /v "ProxyLocalCommand" /d "\\"{plink_utility_path}\\" -ssh -pw {password} {username}@{head_node} -nc %COMPUTE_NODE%:22" /f >nul
-
-    echo Launching PuTTY connection to %COMPUTE_NODE% via {head_node}...
-
-    REM Launch PuTTY with the session
-    putty -load {session_name}
-
-    REM Clean up the temporary session
-    timeout /t 5 /nobreak >nul
-    reg delete "HKCU\\Software\\SimonTatham\\PuTTY\\Sessions\\{session_name}" /f >nul 2>nul
-
-    exit
-    '''
-                    
-                    # Create temporary batch file
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-                        f.write(script_content)
-                        batch_path = f.name
-                    
-                    try:
-                        # Try Windows Terminal first
-                        wt_cmd = ["wt.exe", "new-tab", "--title", 
-                                f"Job {job_id} SSH Chain", "cmd.exe", "/c", batch_path]
-                        subprocess.Popen(wt_cmd)
-                        show_success_toast(self, "Terminal Opened",
-                                        f"Chained SSH connection opened for job {job_id}")
-                    except FileNotFoundError:
-                        # Fallback to cmd.exe
-                        subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
-                        show_success_toast(self, "Terminal Opened",
-                                        f"Chained SSH connection opened for job {job_id}")
-                    
-                    # Clean up batch file after delay
-                    QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
-                    return
-                    
-                except Exception as reg_error:
-                    print(f"Registry setup failed: {reg_error}")
-                    # Fall back to simpler method
-                    self._open_windows_simple_terminal(head_node, username, password, job_id)
-                
-            else:
-                show_error_toast(self, "PuTTY Required",
-                            "PuTTY/plink is required for SSH on Windows. Please install from https://www.putty.org/")
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                            f"Failed to open Windows terminal: {str(e)}")
-
-    def _open_windows_simple_terminal(self, head_node, username, password, job_id):
-        """Fallback method for Windows when registry method fails"""
-        batch_content = f'''@echo off
-    title SSH: {head_node} -> Job {job_id} (Manual Steps Required)
-    echo ============================================================
-    echo  SlurmAIO: SSH Connection to Job {job_id}
-    echo ============================================================
-    echo.
-    echo Step 1: Connecting to head node {head_node}...
-    echo Step 2: After connection, run these commands:
-    echo.
-    echo   # Find the compute node for your job:
-    echo   scontrol show job {job_id} ^| grep NodeList
-    echo.
-    echo   # Then SSH to that node:
-    echo   ssh [NODE_NAME_FROM_ABOVE]
-    echo.
-    echo ============================================================
-    pause
-    "{plink_utility_path}" -ssh -t -pw {password} {username}@{head_node}
-    echo.
-    echo Connection closed. Press any key to exit...
-    pause >nul
-    '''
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-            f.write(batch_content)
-            batch_path = f.name
-        
-        try:
-            subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
-            show_info_toast(self, "Terminal Opened", 
-                        f"SSH connection opened with manual steps for job {job_id}")
-        except Exception as e:
-            show_error_toast(self, "Error", f"Failed to open terminal: {e}")
-        
-        QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
-
-    def _open_macos_node_terminal(self, head_node, username, password, job_id):
-        """Open terminal on macOS for specific node with chained SSH and resize support"""
-        try:
-            from utils import except_utility_path
-            
-            # Create expect script for chained SSH connection with proper terminal setup
-            script_content = f'''#!{except_utility_path} -f
-    set timeout 30
-
-    # Enable proper terminal handling
-    exp_internal 0
-    log_user 1
-
-    # Trap SIGWINCH to handle terminal resizing
-    trap {{
-        # Get new terminal size
-        stty size < /dev/tty
-        set rows [lindex [split [exec stty size < /dev/tty]] 0]
-        set cols [lindex [split [exec stty size < /dev/tty]] 1]
-        
-        # Send new size to ssh session if connected
-        if {{[info exists spawn_id]}} {{
-            stty rows $rows cols $cols < $spawn_id
-        }}
-    }} WINCH
-
-    # First SSH to head node  
-    spawn ssh -t {username}@{head_node}
-    expect {{
-        "password:" {{
-            send "{password}\\r"
-            exp_continue
-        }}
-        "yes/no" {{
-            send "yes\\r"
-            exp_continue
-        }}
-        "$ " {{
-            # We're now on the head node
-            # Get the compute node for this job
-            send "COMPUTE_NODE=\\$(scontrol show job {job_id} | grep NodeList | cut -d= -f2 | cut -d, -f1)\\r"
-            expect "$ "
-            
-            # Show which node we're connecting to
-            send "echo \\"Connecting to \\$COMPUTE_NODE for job {job_id}\\"\\r"
-            expect "$ "
-            
-            # SSH to the compute node with proper terminal allocation
-            send "ssh -t \\$COMPUTE_NODE\\r"
-            expect {{
-                "password:" {{
-                    send "{password}\\r"
-                    # Set up proper terminal after connection
-                    expect "$ "
-                    send "export TERM=xterm-256color\\r"
-                    expect "$ "
-                    send "stty sane\\r"
-                    expect "$ "
-                    send "echo \\"Connected to compute node \\$(hostname) for job {job_id}\\"\\r"
-                    interact
-                }}
-                "yes/no" {{
-                    send "yes\\r"
-                    expect "password:"
-                    send "{password}\\r"
-                    expect "$ "
-                    send "export TERM=xterm-256color\\r"
-                    expect "$ " 
-                    send "stty sane\\r"
-                    expect "$ "
-                    send "echo \\"Connected to compute node \\$(hostname) for job {job_id}\\"\\r"
-                    interact
-                }}
-                "$ " {{
-                    # Already logged in to compute node
-                    send "export TERM=xterm-256color\\r"
-                    expect "$ "
-                    send "stty sane\\r"
-                    expect "$ "
-                    send "echo \\"Connected to compute node \\$(hostname) for job {job_id}\\"\\r"
-                    interact
-                }}
-                timeout {{
-                    puts "Timeout connecting to compute node for job {job_id}"
-                    exit 1
-                }}
-            }}
-        }}
-        timeout {{
-            puts "Timeout connecting to head node {head_node}"
-            exit 1
-        }}
-        eof {{
-            puts "Connection to head node failed"
-            exit 1
-        }}
-    }}
-    '''
-            
-            # Create temporary expect script
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-                f.write(script_content)
-                script_path = f.name
-            
-            # Make script executable
-            os.chmod(script_path, 0o755)
-            
-            # Open terminal with expect script and proper resize handling
-            applescript = f'''
-            tell application "Terminal"
-                activate
-                set newTab to do script "{script_path}"
-                -- Set terminal properties for better resize handling
-                set the font name of newTab to "Monaco"
-                set the font size of newTab to 12
-            end tell
-            '''
-            subprocess.Popen(["osascript", "-e", applescript])
-            
-            # Clean up script after delay
-            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-            
-            show_success_toast(self, "Terminal Opened",
-                            f"Chained SSH terminal with resize support opened for job {job_id}")
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                            f"Failed to open macOS terminal: {str(e)}")
-
-            
