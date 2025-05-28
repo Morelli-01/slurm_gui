@@ -1,11 +1,11 @@
 import os
-# os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-# os.environ["QT_SCALE_FACTOR"] = "1"
+os.environ["QT_SCALE_FACTOR"] = "1"
 os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_FONT_DPI"] = "1"
 
 from threading import Thread
 
-import PyQt6.QtCore as Qt
+from PyQt6.QtCore import Qt
 from modules.defaults import *
 from modules.job_panel import JobsPanel
 import modules.cluster_status_widget as cluster_status_widget
@@ -1038,8 +1038,8 @@ if __name__ == "__main__":
     # QApplication.setHighDpiScaleFactorRoundingPolicy(
     #     Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
+    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
-    app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
