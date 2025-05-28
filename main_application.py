@@ -1,30 +1,28 @@
+from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
+import sys
+import tempfile
+import threading
+import random
+import subprocess
+import platform
+from modules.project_store import ProjectStore
+from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from modules.settings_widget import SettingsWidget
+import shutil
+from pathlib import Path
+from utils import *
+from style import AppStyles
+import slurm_connection
+from modules.job_queue_widget import JobQueueWidget
+import modules.cluster_status_widget as cluster_status_widget
+from modules.job_panel import JobsPanel
+from modules.defaults import *
+from PyQt6.QtCore import Qt
+from threading import Thread
 import os
 os.environ["QT_SCALE_FACTOR"] = "1"
-os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-os.environ["QT_FONT_DPI"] = "1"
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
 
-from threading import Thread
-
-from PyQt6.QtCore import Qt
-from modules.defaults import *
-from modules.job_panel import JobsPanel
-import modules.cluster_status_widget as cluster_status_widget
-from modules.job_queue_widget import JobQueueWidget
-import slurm_connection
-from style import AppStyles
-from utils import *
-from pathlib import Path
-import shutil
-from modules.settings_widget import SettingsWidget
-from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-from modules.project_store import ProjectStore
-import platform
-import subprocess
-import random
-import threading
-import tempfile
-import sys
-from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
@@ -36,19 +34,22 @@ MIN_HEIGHT_PERCENTAGE = 0.4
 REFRESH_INTERVAL_MS = 5000
 
 # --- Helper Functions ---
+
+
 def get_scaled_dimensions(screen=None):
     """Get window dimensions as device-independent pixels (Qt handles DPI automatically)"""
     if screen is None:
         screen = QApplication.primaryScreen()
-
     # Qt 6: geometry() returns device-independent pixels, so we don't need to worry about DPI
     geometry = screen.geometry()
-    
+
     width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
     height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
     min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
     min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
+    width = min_width = 1500
+    height = min_height = 950
     return width, height, min_width, min_height
 
 
@@ -56,7 +57,7 @@ class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Setup Initial Connection")
-        
+
         # Use device-independent pixels - Qt handles DPI scaling automatically
         self.setMinimumWidth(400)
         self.setStyleSheet(AppStyles.get_dialog_styles() +
@@ -77,7 +78,8 @@ class ConnectionSetupDialog(QDialog):
         form_layout.setSpacing(10)
 
         self.cluster_address_input = QLineEdit()
-        self.cluster_address_input.setPlaceholderText("e.g., your.cluster.address")
+        self.cluster_address_input.setPlaceholderText(
+            "e.g., your.cluster.address")
         form_layout.addRow("Cluster Address:", self.cluster_address_input)
 
         self.username_input = QLineEdit()
@@ -85,7 +87,8 @@ class ConnectionSetupDialog(QDialog):
         form_layout.addRow("Username:", self.username_input)
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText("Your password (optional, or use key)")
+        self.password_input.setPlaceholderText(
+            "Your password (optional, or use key)")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         form_layout.addRow("Password:", self.password_input)
 
@@ -106,6 +109,8 @@ class ConnectionSetupDialog(QDialog):
         }
 
 # --- Main Application Class ---
+
+
 class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -143,7 +148,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        
+
         # Consistent margins and spacing in device-independent pixels
         self.main_layout.setContentsMargins(15, 15, 15, 15)
         self.main_layout.setSpacing(15)
@@ -184,7 +189,8 @@ class SlurmJobManagerApp(QMainWindow):
         icon_size = QSize(28, 28)
 
         if connecting:
-            loading_gif_path = os.path.join(script_dir, "src_static", "loading.gif")
+            loading_gif_path = os.path.join(
+                script_dir, "src_static", "loading.gif")
             loading_movie = QMovie(loading_gif_path)
             loading_movie.setScaledSize(icon_size)
             loading_movie.start()
@@ -422,7 +428,7 @@ class SlurmJobManagerApp(QMainWindow):
         logo_label.setFixedSize(logo_size, logo_size)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
-        
+
         logo_path = os.path.join(script_dir, "src_static", "icon3.png")
         pixmap = QPixmap(logo_path)
         # Qt automatically handles DPI scaling for pixmaps
@@ -463,7 +469,7 @@ class SlurmJobManagerApp(QMainWindow):
         initial_status_icon_path = os.path.join(
             script_dir, "src_static", "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png")
         # Use device-independent size - Qt scales automatically
-        icon_size = QSize(28, 28)  
+        icon_size = QSize(28, 28)
         self.connection_status.setPixmap(
             QPixmap(initial_status_icon_path).scaled(icon_size,
                                                      Qt.AspectRatioMode.KeepAspectRatio,
@@ -1025,7 +1031,7 @@ expect {{
         self.slurm_connection.close()
         print("Closing application.")
         event.accept()
-    
+
     def apply_theme(self):
         """Apply the current theme using centralized styles"""
         stylesheet = AppStyles.get_complete_stylesheet(self.current_theme)
@@ -1033,12 +1039,11 @@ expect {{
 
 # --- Main Execution ---
 
-if __name__ == "__main__":
-    # Simple DPI handling - let Qt handle it automatically
-    # QApplication.setHighDpiScaleFactorRoundingPolicy(
-    #     Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
-    QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+if __name__ == "__main__":
+
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
 
     # Get system-specific configuration directory
@@ -1062,7 +1067,6 @@ if __name__ == "__main__":
 
         shutil.copy2(default_settings_path, settings_path)
         print(f"Created settings file at: {settings_path} using defaults")
-
 
         # Set default font with fallback - let Qt handle DPI scaling
         font_families = ["Inter", "Segoe UI", "Arial", "sans-serif"]
