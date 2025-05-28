@@ -1598,6 +1598,7 @@ class JobsPanel(QWidget):
 
             # Construct the plink command for chained SSH
             # plink to head_node, and on head_node execute ssh to node_name
+            head_node = self.slurm_connection.host
             plink_command = [
                 str(plink_utility_path),
                 "-ssh",
