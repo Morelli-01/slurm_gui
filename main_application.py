@@ -33,6 +33,8 @@ if platform.system().lower() == "windows":
     os.environ["QT_SCREEN_SCALE_FACTORS"] = "1"
 
 # --- Helper Functions ---
+
+
 def get_dpi_aware_size(base_size, screen=None):
     """Calculate DPI-aware size based on screen DPI - Fixed for Windows scaling"""
     import platform
@@ -49,24 +51,36 @@ def get_dpi_aware_size(base_size, screen=None):
         dpi_scale = logical_dpi / 96.0
         return int(base_size * dpi_scale)
 
+
 def get_scaled_dimensions(screen=None):
     """Get window dimensions scaled to screen size"""
     if screen is None:
         screen = QApplication.primaryScreen()
 
     if platform.system().lower() == "windows":
-        # On Windows, get the physical screen size and apply our percentages
-        geometry = screen.availableGeometry()  # Use availableGeometry to account for taskbar
+        # On Windows, try to get the actual physical resolution
+        geometry = screen.availableGeometry()
+
+        # Get the device pixel ratio and compensate for it
+        dpr = screen.devicePixelRatio()
+
+        # Divide by device pixel ratio to get logical pixels
+        actual_width = int(geometry.width() / dpr)
+        actual_height = int(geometry.height() / dpr)
+
+        width = int(actual_width * SCREEN_WIDTH_PERCENTAGE)
+        height = int(actual_height * SCREEN_HEIGHT_PERCENTAGE)
+        min_width = int(actual_width * MIN_WIDTH_PERCENTAGE)
+        min_height = int(actual_height * MIN_HEIGHT_PERCENTAGE)
     else:
         geometry = screen.geometry()
-
-    # Calculate dimensions based on screen percentages
-    width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
-    height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
-    min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
-    min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
+        width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
+        height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
+        min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
+        min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
     return width, height, min_width, min_height
+
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -203,7 +217,7 @@ class SlurmJobManagerApp(QMainWindow):
     def setup_dpi_aware_dimensions(self):
         """Setup commonly used DPI-aware dimensions"""
         import platform
-        
+
         if platform.system().lower() == "windows":
             # Use fixed sizes on Windows to prevent double-scaling
             self.base_spacing = 5
@@ -1100,12 +1114,12 @@ expect {{
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Windows DPI scaling fix - MUST be before QApplication
+    # Windows DPI scaling fix for Qt6 - MUST be before QApplication
     if platform.system().lower() == "windows":
-        # Force disable all Qt automatic scaling on Windows
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_DisableHighDpiScaling, True)
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_Use96Dpi, True)
-    
+        # Use Qt6 compatible high DPI policy
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.Floor)
+
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
@@ -1129,10 +1143,6 @@ if __name__ == "__main__":
         print(f"Created settings file at: {settings_path} using defaults")
 
         app = QApplication(sys.argv)
-        
-        # Apply Windows scaling fix after QApplication creation
-        if platform.system().lower() == "windows":
-            app.setAttribute(Qt.ApplicationAttribute.AA_DisableHighDpiScaling, True)
 
         # Set default font with fallback
         font_families = ["Inter", "Segoe UI", "Arial", "sans-serif"]
@@ -1169,10 +1179,6 @@ if __name__ == "__main__":
     else:
         print(f"Settings file found at: {settings_path}")
         app = QApplication(sys.argv)
-        
-        # Apply Windows scaling fix after QApplication creation
-        if platform.system().lower() == "windows":
-            app.setAttribute(Qt.ApplicationAttribute.AA_DisableHighDpiScaling, True)
 
         # Set default font with fallback
         font_families = ["Inter", "Segoe UI", "Arial", "sans-serif"]
