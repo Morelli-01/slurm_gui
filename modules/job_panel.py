@@ -13,8 +13,9 @@ from modules.new_job_dp import ModifyJobDialog, NewJobDialog
 from style import AppStyles
 import random
 import tempfile
-import os # Import os for file operations
-from PyQt6.QtCore import QTimer # Import QTimer for singleShot
+import os  # Import os for file operations
+from PyQt6.QtCore import QTimer  # Import QTimer for singleShot
+
 
 class CustomInputDialog(QDialog):
     def __init__(self, parent=None):
@@ -630,7 +631,7 @@ class JobsPanel(QWidget):
         super().__init__(parent)
         self.slurm_connection = slurm_connection
         self.project_storer = None  # Initialize to None
-        
+
         # Try to initialize project store if connection is available
         if slurm_connection and slurm_connection.check_connection():
             try:
@@ -641,8 +642,9 @@ class JobsPanel(QWidget):
                 print(f"Failed to initialize project store: {e}")
                 self.project_storer = None
         else:
-            print("No SLURM connection available - project store will be initialized later")
-        
+            print(
+                "No SLURM connection available - project store will be initialized later")
+
         self.current_project = None  # Add attribute to store selected project
 
         # Use a base layout for the main content (ProjectGroup and JobsGroup)
@@ -652,7 +654,7 @@ class JobsPanel(QWidget):
 
         self.jobs_group = JobsGroup()
         self.project_group = ProjectGroup(parent=self)
-        
+
         # Only start loading projects if project_storer is available
         if self.project_storer is not None:
             self.project_group.start()
@@ -701,7 +703,7 @@ class JobsPanel(QWidget):
 
         # Initially position the button (will be adjusted in resizeEvent)
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
-                                self.height() - self.new_jobs_button.height() - 20)
+                                  self.height() - self.new_jobs_button.height() - 20)
 
         # --- Initial Project Selection ---
         # After loading projects, select the first one if available
@@ -727,28 +729,31 @@ class JobsPanel(QWidget):
         """Show a message indicating that SLURM connection is required"""
         try:
             # Add a temporary project to show the message
-            temp_project = ProjectWidget("⚠️ Connection Required", self.project_group, storer=None)
+            temp_project = ProjectWidget(
+                "⚠️ Connection Required", self.project_group, storer=None)
             temp_project.setMaximumHeight(100)
-            
+
             # Remove the delete button and status bar for this special widget
             if hasattr(temp_project, 'delete_button'):
                 temp_project.delete_button.hide()
             if hasattr(temp_project, 'status_bar'):
                 temp_project.status_bar.hide()
-                
+
             # Update the title to show the message
             temp_project.title_label.setText("⚠️ SLURM Connection Required")
-            temp_project.title_label.setStyleSheet("color: #ffb86c; font-weight: bold;")
-            
+            temp_project.title_label.setStyleSheet(
+                "color: #ffb86c; font-weight: bold;")
+
             # Add to the project group
-            self.project_group.scroll_content_layout.insertWidget(0, temp_project)
+            self.project_group.scroll_content_layout.insertWidget(
+                0, temp_project)
             self.project_group.projects_children["connection_required"] = temp_project
-            
+
             # Show message in jobs area too
             self.jobs_group.show_connection_error("connection_required")
-            
+
             print("Showing connection required message")
-            
+
         except Exception as e:
             print(f"Error showing connection required message: {e}")
 
@@ -761,16 +766,17 @@ class JobsPanel(QWidget):
             # Remove connection required message if it exists
             if "connection_required" in self.project_group.projects_children:
                 temp_widget = self.project_group.projects_children["connection_required"]
-                self.project_group.scroll_content_layout.removeWidget(temp_widget)
+                self.project_group.scroll_content_layout.removeWidget(
+                    temp_widget)
                 temp_widget.hide()
                 temp_widget.deleteLater()
                 del self.project_group.projects_children["connection_required"]
-                
+
             # Create/recreate the ProjectStore instance with the current connection
             if self.project_storer:
                 # Stop existing monitoring
                 self.project_storer.stop_job_monitoring()
-                
+
             self.project_storer = ProjectStore(self.slurm_connection)
 
             # Connect signals for real-time updates
@@ -778,7 +784,7 @@ class JobsPanel(QWidget):
 
             # Start loading projects
             self.project_group.start()
-            
+
             print("Project store setup completed successfully")
 
         except Exception as e:
@@ -786,16 +792,16 @@ class JobsPanel(QWidget):
             import traceback
             traceback.print_exc()
             self.project_storer = None
-            
+
             # Show error message
-            show_error_toast(self, "Setup Error", 
-                            f"Failed to initialize project store: {str(e)}")
+            show_error_toast(self, "Setup Error",
+                             f"Failed to initialize project store: {str(e)}")
 
     def _check_project_storer(self):
         """Check if project_storer is available and show appropriate message"""
         if not self.project_storer:
-            show_warning_toast(self, "No Connection", 
-                            "Please establish SLURM connection first.")
+            show_warning_toast(self, "No Connection",
+                               "Please establish SLURM connection first.")
             return False
         return True
 
@@ -803,7 +809,7 @@ class JobsPanel(QWidget):
         """Opens the dialog to create a new job for the selected project."""
         if not self._check_project_storer():
             return
-            
+
         if self.current_project:
             dialog = NewJobDialog(
                 selected_project=self.current_project, slurm_connection=self.slurm_connection)
@@ -853,7 +859,7 @@ class JobsPanel(QWidget):
                             self.current_project, job_row)
 
                         show_success_toast(self, "Job Created",
-                                        f"Job '{job_details.get('job_name')}' has been created!")
+                                           f"Job '{job_details.get('job_name')}' has been created!")
                     else:
                         show_warning_toast(
                             self,
@@ -878,7 +884,7 @@ class JobsPanel(QWidget):
         """Submit job - Enhanced version with project_storer check"""
         if not self._check_project_storer():
             return
-            
+
         try:
             # Get job and validate
             project = self.project_storer.get(project_name)
@@ -926,10 +932,10 @@ class JobsPanel(QWidget):
 
         except Exception as e:
             show_error_toast(self, "Submission Error",
-                            f"An error occurred during job submission: {str(e)}")
+                             f"An error occurred during job submission: {str(e)}")
             import traceback
             traceback.print_exc()
-    
+
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
         self.current_project = project_name
@@ -1233,10 +1239,12 @@ class JobsPanel(QWidget):
 
             # CRITICAL FIX: Copy Discord notification settings from original job
             if "discord_notifications" in original_job.info:
-                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy()
+                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy(
+                )
             else:
                 # If original job doesn't have Discord settings, get them from current application config
-                job_details["discord_notifications"] = self._get_current_discord_settings()
+                job_details["discord_notifications"] = self._get_current_discord_settings(
+                )
 
             # Create the duplicated job
             new_job_id = self.project_storer.add_new_job(
@@ -1275,9 +1283,9 @@ class JobsPanel(QWidget):
                     if hasattr(project_widget, 'update_status_counts'):
                         job_stats = project.get_job_stats()
                         project_widget.update_status_counts(job_stats)
-                        
-                show_success_toast(self, "Job Duplicated", 
-                                f"Job '{new_name}' duplicated successfully with Discord notifications!")
+
+                show_success_toast(self, "Job Duplicated",
+                                   f"Job '{new_name}' duplicated successfully with Discord notifications!")
             else:
                 QMessageBox.warning(
                     self,
@@ -1337,10 +1345,12 @@ class JobsPanel(QWidget):
 
                 try:
                     if "discord_notifications" in job.info and "discord_notifications" not in modified_details:
-                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy()
+                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy(
+                        )
                     elif "discord_notifications" not in modified_details:
                         # Get current Discord settings from application
-                        modified_details["discord_notifications"] = self._get_current_discord_settings()
+                        modified_details["discord_notifications"] = self._get_current_discord_settings(
+                        )
                     # Update the job in the project store
                     self._update_job_from_details(job, modified_details)
 
@@ -1420,7 +1430,7 @@ class JobsPanel(QWidget):
             job.dependency = details["dependency"]
         else:
             job.dependency = None
-        
+
         if "discord_notifications" in details:
             job.info["discord_notifications"] = details["discord_notifications"]
         # Update submission details for later use
@@ -1496,9 +1506,10 @@ class JobsPanel(QWidget):
     def _get_current_discord_settings(self):
         """Get current Discord settings from application configuration"""
         try:
-            settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+            settings = QSettings(str(Path(settings_path)),
+                                 QSettings.Format.IniFormat)
             settings.beginGroup("NotificationSettings")
-            
+
             discord_config = {
                 "enabled": settings.value("discord_enabled", False, type=bool),
                 "notify_start": True,  # Default behaviors
@@ -1506,10 +1517,10 @@ class JobsPanel(QWidget):
                 "notify_failed": True,
                 "message_prefix": f"[{self.current_project}]" if self.current_project else "[Job]"
             }
-            
+
             settings.endGroup()
             return discord_config
-            
+
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
@@ -1518,7 +1529,7 @@ class JobsPanel(QWidget):
         """Open terminal on the node where the job is running"""
         if not self._check_project_storer():
             return
-            
+
         try:
             # Get job and validate
             project = self.project_storer.get(project_name)
@@ -1550,20 +1561,20 @@ class JobsPanel(QWidget):
 
             # Get the first node from nodelist (in case multiple nodes)
             node_name = job.nodelist.split(',')[0].strip()
-            
+
             # Use the main application's terminal opening functionality
             # but connect directly to the compute node
             self._open_node_terminal(node_name, job_id)
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"An error occurred while trying to open terminal: {str(e)}")
-    
+                             f"An error occurred while trying to open terminal: {str(e)}")
+
     def _open_node_terminal(self, node_name, job_id):
         """Open terminal connection to a specific compute node"""
         if not self.slurm_connection or not self.slurm_connection.check_connection():
             show_warning_toast(self, "Connection Required",
-                            "Please establish a SLURM connection first.")
+                               "Please establish a SLURM connection first.")
             return
 
         try:
@@ -1571,67 +1582,241 @@ class JobsPanel(QWidget):
             base_host = self.slurm_connection.host
             username = self.slurm_connection.user
             password = self.slurm_connection.password
-            
+
             system = platform.system().lower()
             print(system)
             if system == "windows":
-                self._open_windows_node_terminal(node_name, username, password )
+                self._open_windows_node_terminal(node_name, username, password)
             elif system == "darwin":  # macOS
                 self._open_macos_node_terminal(node_name, username, password)
             elif system == "linux":
                 self._open_linux_node_terminal(node_name, username, password)
             else:
                 show_error_toast(self, "Unsupported Platform",
-                                f"Terminal opening not supported on {system}")
+                                 f"Terminal opening not supported on {system}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open terminal: {str(e)}")
-    
+                             f"Failed to open terminal: {str(e)}")
+
     def _open_windows_node_terminal(self, node_name, username, password):
-        """Open an SSH terminal to the node (Windows via plink)."""
+        """Open terminal on Windows for specific node with chained SSH connection"""
         try:
+            # Get connection details
+            head_node = self.slurm_connection.host
+
+            # Check if plink is available
             if not Path(plink_utility_path).exists():
-                show_error_toast(self, "Plink Required",
-                                 "The 'plink.exe' utility is not found. Please ensure it's in your PATH or specified correctly.")
+                self._open_windows_node_terminal_fallback(
+                    node_name, username, password)
                 return
 
-            # Construct the plink command for chained SSH
-            # plink to head_node, and on head_node execute ssh to node_name
-            head_node = self.slurm_connection.host
-            plink_command = [
-                str(plink_utility_path),
-                "-ssh",
-                "-pw", password,
-                f"{username}@{head_node}",
-                f"ssh {username}@{node_name}"
-            ]
+            # Create a batch script for chained SSH connection
+            import tempfile
+            import random
 
-            # Use 'wt' (Windows Terminal) if available, otherwise 'cmd.exe'
+            session_id = random.randint(1000, 9999)
+            batch_content = f'''@echo off
+    title SSH {head_node} -> {node_name}
+    echo.
+    echo ============================================
+    echo  SlurmAIO - Chained SSH Connection
+    echo ============================================
+    echo  Head Node: {head_node}
+    echo  Target Node: {node_name}
+    echo  User: {username}
+    echo ============================================
+    echo.
+    echo Connecting to head node {head_node}...
+    echo.
+
+    REM First connection to head node with plink
+    "{plink_utility_path}" -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; ssh {node_name}"
+
+    echo.
+    echo Connection closed. Press any key to exit...
+    pause >nul
+    '''
+
+            # Create temporary batch file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
+                f.write(batch_content)
+                batch_path = f.name
+
             try:
-                subprocess.Popen(["wt", "new-tab", "--title", f"SSH {head_node} -> {node_name}",
-                                  "--", *plink_command], shell=False)
+                # Try Windows Terminal first
+                wt_cmd = [
+                    "wt.exe", "new-tab",
+                    "--title", f"SSH {head_node} -> {node_name}",
+                    "--", "cmd.exe", "/c", batch_path
+                ]
+                subprocess.Popen(wt_cmd, shell=False)
+
+                show_success_toast(self, "Terminal Opened",
+                                   f"Chained SSH terminal opened: {head_node} -> {node_name}")
+                show_info_toast(self, "Manual Step Required",
+                                "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
+
             except FileNotFoundError:
                 # Fallback to cmd.exe if Windows Terminal is not found
-                subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/k",
-                                  " ".join(f'"{arg}"' for arg in plink_command)], shell=False)
+                cmd_command = ["cmd.exe", "/c", "start",
+                               "cmd.exe", "/c", batch_path]
+                subprocess.Popen(cmd_command, shell=False)
 
-            show_success_toast(self, "Terminal Opened",
-                                f"Chained SSH terminal opened: {head_node} -> {node_name}")
-            show_info_toast(self, "Manual Step Required",
-                            "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
+                show_success_toast(self, "Terminal Opened",
+                                   f"Chained SSH terminal opened: {head_node} -> {node_name}")
+                show_info_toast(self, "Manual Step Required",
+                                "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
+
+            # Clean up batch file after delay
+            QTimer.singleShot(
+                30000, lambda: self._cleanup_temp_file(batch_path))
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open Windows terminal: {str(e)}")
-    
+
+    def _open_windows_node_terminal_fallback(self, node_name, username, password):
+        """Fallback method when plink is not available"""
+        try:
+            import tempfile
+
+            batch_content = f'''@echo off
+    title SSH {self.slurm_connection.host} -> {node_name}
+    echo.
+    echo ============================================
+    echo  SlurmAIO - Chained SSH Connection
+    echo ============================================
+    echo  Head Node: {self.slurm_connection.host}
+    echo  Target Node: {node_name}
+    echo  User: {username}
+    echo ============================================
+    echo.
+    echo Note: For automatic password entry, install PuTTY/plink
+    echo Download from: https://www.putty.org/
+    echo.
+    echo Connecting to head node first...
+    ssh {username}@{self.slurm_connection.host}
+    echo.
+    echo After connecting to head node, run:
+    echo ssh {node_name}
+    echo.
+    echo Connection closed. Press any key to exit...
+    pause >nul
+    '''
+
+            # Create temporary batch file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
+                f.write(batch_content)
+                batch_path = f.name
+
+            try:
+                # Try Windows Terminal first
+                wt_cmd = [
+                    "wt.exe", "new-tab",
+                    "--title", f"SSH {self.slurm_connection.host} -> {node_name}",
+                    "--", "cmd.exe", "/c", batch_path
+                ]
+                subprocess.Popen(wt_cmd, shell=False)
+
+            except FileNotFoundError:
+                # Fallback to cmd.exe
+                cmd_command = ["cmd.exe", "/c", "start",
+                               "cmd.exe", "/c", batch_path]
+                subprocess.Popen(cmd_command, shell=False)
+
+            show_info_toast(self, "Terminal Opened",
+                            f"SSH terminal opened. Install PuTTY for automatic password entry.\n\nManual steps:\n1. Enter password for {self.slurm_connection.host}\n2. Run: ssh {node_name}")
+
+            # Clean up batch file after delay
+            QTimer.singleShot(
+                30000, lambda: self._cleanup_temp_file(batch_path))
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open terminal: {str(e)}")
+
+    def _open_windows_node_terminal_powershell_version(self, node_name, username, password):
+        """Alternative PowerShell-based implementation for Windows"""
+        try:
+            import tempfile
+
+            head_node = self.slurm_connection.host
+
+            # Create PowerShell script for chained SSH
+            ps_script_content = f'''
+    # SlurmAIO Chained SSH Connection Script
+    Write-Host "============================================" -ForegroundColor Cyan
+    Write-Host " SlurmAIO - Chained SSH Connection" -ForegroundColor Cyan
+    Write-Host "============================================" -ForegroundColor Cyan
+    Write-Host " Head Node: {head_node}" -ForegroundColor Yellow
+    Write-Host " Target Node: {node_name}" -ForegroundColor Yellow
+    Write-Host " User: {username}" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    Write-Host "Connecting to head node {head_node}..." -ForegroundColor Green
+
+    # Check if plink is available
+    $plinkPath = "{plink_utility_path.replace(chr(92), chr(92)+chr(92))}"
+    if (Test-Path $plinkPath) {{
+        Write-Host "Using plink for connection..." -ForegroundColor Green
+        & $plinkPath -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; ssh {node_name}"
+    }} else {{
+        Write-Host "plink not found. Using standard SSH..." -ForegroundColor Yellow
+        Write-Host "Note: You will need to enter passwords manually" -ForegroundColor Yellow
+        Write-Host ""
+        ssh {username}@{head_node}
+    }}
+
+    Write-Host ""
+    Write-Host "Connection closed. Press any key to exit..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    '''
+
+            # Create temporary PowerShell script
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.ps1', delete=False, encoding='utf-8') as f:
+                f.write(ps_script_content)
+                ps_script_path = f.name
+
+            try:
+                # Try Windows Terminal with PowerShell
+                wt_cmd = [
+                    "wt.exe", "new-tab",
+                    "--title", f"SSH {head_node} -> {node_name}",
+                    "--", "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", ps_script_path
+                ]
+                subprocess.Popen(wt_cmd, shell=False)
+
+                show_success_toast(self, "Terminal Opened",
+                                   f"PowerShell SSH terminal opened: {head_node} -> {node_name}")
+
+            except FileNotFoundError:
+                # Fallback to regular PowerShell window
+                ps_cmd = [
+                    "powershell.exe", "-ExecutionPolicy", "Bypass",
+                    "-WindowStyle", "Normal", "-File", ps_script_path
+                ]
+                subprocess.Popen(ps_cmd, shell=False)
+
+                show_success_toast(self, "Terminal Opened",
+                                   f"PowerShell SSH session opened: {head_node} -> {node_name}")
+
+            # Clean up script file after delay
+            QTimer.singleShot(
+                30000, lambda: self._cleanup_temp_file(ps_script_path))
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open PowerShell terminal: {str(e)}")
+
     def _open_macos_node_terminal(self, node_name, username, password):
         """Open terminal on macOS for specific node with tmux session for chained SSH"""
         try:
             # Create tmux session for chained SSH connection
             head_node = self.slurm_connection.host
             session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
-            
+
             # Create tmux session and send SSH commands
             tmux_commands = [
                 f"{tmux_utility_path} new-session -d -s {session_name}",
@@ -1643,7 +1828,7 @@ class JobsPanel(QWidget):
                 f"sleep 2",  # Wait for second SSH prompt
                 f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
             ]
-            
+
             # Use AppleScript to open Terminal and attach to tmux session
             applescript = f'''
             tell application "Terminal"
@@ -1652,21 +1837,21 @@ class JobsPanel(QWidget):
             end tell
             '''
             subprocess.Popen(["osascript", "-e", applescript])
-            
+
             show_success_toast(self, "Terminal Opened",
-                            f"Tmux session opened: {head_node} -> {node_name}")
+                               f"Tmux session opened: {head_node} -> {node_name}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open macOS terminal: {str(e)}")
-    
+                             f"Failed to open macOS terminal: {str(e)}")
+
     def _open_linux_node_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
             # Create tmux session for chained SSH connection
             head_node = self.slurm_connection.host
             session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
-            
+
             # Create tmux session and send SSH commands
             tmux_commands = [
                 f"{tmux_utility_path} new-session -d -s {session_name}",
@@ -1678,41 +1863,51 @@ class JobsPanel(QWidget):
                 f"sleep 2",  # Wait for second SSH prompt
                 f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
             ]
-            
+
             # List of terminal emulators to try with tmux
             terminals = [
-                ["gnome-terminal", "--", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["konsole", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xfce4-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["lxterminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["mate-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["terminator", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["alacritty", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["kitty", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xterm", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+                ["gnome-terminal", "--", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["konsole", "-e", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xfce4-terminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["lxterminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["mate-terminal", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["terminator", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["alacritty", "-e", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["kitty", "bash", "-c",
+                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xterm", "-e",
+                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                    f"Tmux session opened: {head_node} -> {node_name}")
+                                       f"Tmux session opened: {head_node} -> {node_name}")
                     return
                 except FileNotFoundError:
                     continue
-                    
+
             # If no terminal emulator found
             show_error_toast(self, "No Terminal Found",
-                            "No supported terminal emulator found on this system.")
+                             "No supported terminal emulator found on this system.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Linux terminal: {str(e)}")
-    
+                             f"Failed to open Linux terminal: {str(e)}")
+
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:
             if os.path.exists(file_path):
                 os.unlink(file_path)
         except Exception as e:
-            print(f"Warning: Could not clean up temporary file {file_path}: {e}")
+            print(
+                f"Warning: Could not clean up temporary file {file_path}: {e}")
