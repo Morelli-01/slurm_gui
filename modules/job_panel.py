@@ -1588,108 +1588,42 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Terminal Error",
                             f"Failed to open terminal: {str(e)}")
     
-    def _open_windows_node_terminal(self, node_name, username, password):
-        """Open terminal on Windows for specific node with chained SSH using expect if available"""
+    def _open_windows_node_terminal(self, head_node, username, password, node_name):
+        """Open an SSH terminal to the node (Windows via plink)."""
         try:
-            # Check if expect is available
-            try:
-                # Use 'where' command on Windows to find executables
-                subprocess.run(["where", except_utility_path], check=True, capture_output=True, shell=True)
-                has_expect = True
-            except subprocess.CalledProcessError:
-                has_expect = False
-            except FileNotFoundError: # 'where' command itself not found
-                has_expect = False
-
-            if has_expect:
-                # Create expect script for chained SSH connection using plink
-                head_node = self.slurm_connection.host
-                script_content = f'''#!{except_utility_path} -f
-set timeout 30
-
-# First SSH to head node using plink
-spawn "{plink_utility_path}" -ssh -pw "{password}" "{username}@{head_node}"
-expect {{
-    "password:" {{
-        send "{password}\\r"
-        exp_continue
-    }}
-    "yes/no" {{
-        send "yes\\r"
-        exp_continue
-    }}
-    "$ " {{
-        # Now SSH to the compute node from the head node
-        send "ssh {node_name}\\r"
-        expect {{
-            "password:" {{
-                send "{password}\\r"
-                interact
-            }}
-            "yes/no" {{
-                send "yes\\r"
-                expect "password:"
-                send "{password}\\r"
-                interact
-            }}
-            "$ " {{
-                # Already logged in to compute node
-                interact
-            }}
-            timeout {{
-                puts "Timeout connecting to compute node {node_name}"
-                exit 1
-            }}
-        }}
-    }}
-    timeout {{
-        puts "Timeout connecting to head node {head_node}"
-        exit 1
-    }}
-    eof {{
-        puts "Connection to head node failed"
-        exit 1
-    }}
-}}
-'''
-                
-                # Create temporary expect script
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-                    f.write(script_content)
-                    script_path = f.name
-                
-                # Make script executable (though less critical on Windows, good practice)
-                os.chmod(script_path, 0o755)
-                
-                # Command to execute the expect script using cmd.exe or wt.exe
-                # Need to use cmd.exe /c to run the expect script
-                cmd_to_run_expect = [except_utility_path, script_path]
-
-                try:
-                    # Try Windows Terminal first
-                    wt_cmd = ["wt.exe", "new-tab", "--title", 
-                            f"SSH Chain: {head_node} -> {node_name}", "cmd.exe", "/c", ' '.join(f'"{arg}"' for arg in cmd_to_run_expect)]
-                    subprocess.Popen(wt_cmd)
-                    show_success_toast(self, "Terminal Opened",
-                                    f"Chained SSH terminal opened: {head_node} -> {node_name}")
-                except FileNotFoundError:
-                    # Fallback to cmd.exe
-                    subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/c", ' '.join(f'"{arg}"' for arg in cmd_to_run_expect)])
-                    show_success_toast(self, "Terminal Opened",
-                                    f"Chained SSH terminal opened: {head_node} -> {node_name}")
-                
-                # Clean up script after delay
-                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            if not Path(plink_utility_path).exists():
+                show_error_toast(self, "Plink Required",
+                                 "The 'plink.exe' utility is not found. Please ensure it's in your PATH or specified correctly.")
                 return
-                
-            else:
-                show_error_toast(self, "Expect Required",
-                            "The 'expect' package is required for chained SSH connections on Windows. Please ensure it's installed and configured in utils.py.")
+
+            # Construct the plink command for chained SSH
+            # plink to head_node, and on head_node execute ssh to node_name
+            plink_command = [
+                str(plink_utility_path),
+                "-ssh",
+                "-pw", password,
+                f"{username}@{head_node}",
+                f"ssh {username}@{node_name}"
+            ]
+
+            # Use 'wt' (Windows Terminal) if available, otherwise 'cmd.exe'
+            try:
+                subprocess.Popen(["wt", "new-tab", "--title", f"SSH {head_node} -> {node_name}",
+                                  "--", *plink_command], shell=False)
+            except FileNotFoundError:
+                # Fallback to cmd.exe if Windows Terminal is not found
+                subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/k",
+                                  " ".join(f'"{arg}"' for arg in plink_command)], shell=False)
+
+            show_success_toast(self, "Terminal Opened",
+                                f"Chained SSH terminal opened: {head_node} -> {node_name}")
+            show_info_toast(self, "Manual Step Required",
+                            "You may need to manually enter the password for the second SSH hop (to the compute node) in the new terminal window.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Windows terminal: {str(e)}")
-
+                             f"Failed to open Windows terminal: {str(e)}")
+    
     def _open_macos_node_terminal(self, node_name, username, password):
         """Open terminal on macOS for specific node with chained SSH"""
         try:
