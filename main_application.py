@@ -194,24 +194,12 @@ class SlurmJobManagerApp(QMainWindow):
 
     def setup_dpi_aware_dimensions(self):
         """Setup commonly used DPI-aware dimensions"""
-        import platform
-
-        if platform.system().lower() == "windows":
-            # Use fixed sizes on Windows to prevent double-scaling
-            self.base_spacing = 5
-            self.base_margin = 10
-            self.icon_size_small = 16
-            self.icon_size_medium = 24
-            self.icon_size_large = 32
-        else:
-            # Use DPI-aware sizing on other platforms
-            self.base_spacing = get_dpi_aware_size(5)
-            self.base_margin = get_dpi_aware_size(10)
-            self.icon_size_small = get_dpi_aware_size(16)
-            self.icon_size_medium = get_dpi_aware_size(24)
-            self.icon_size_large = get_dpi_aware_size(32)
-    # In main_application.py - Replace the set_connection_status method and add helper methods
-
+        self.base_spacing = get_dpi_aware_size(5)
+        self.base_margin = get_dpi_aware_size(10)
+        self.icon_size_small = get_dpi_aware_size(16)
+        self.icon_size_medium = get_dpi_aware_size(24)
+        self.icon_size_large = get_dpi_aware_size(32)
+        
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling with proper project store recovery"""
         previous_status = getattr(self, 'connection_status_', None)
