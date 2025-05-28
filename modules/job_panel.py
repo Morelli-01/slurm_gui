@@ -11,7 +11,7 @@ from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
 from modules.new_job_dp import ModifyJobDialog, NewJobDialog
 from style import AppStyles
-
+import random
 
 class CustomInputDialog(QDialog):
     def __init__(self, parent=None):
