@@ -5,7 +5,7 @@ from modules import project_store
 from modules.job_logs import JobLogsDialog
 from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 from slurm_connection import SlurmConnection
-from utils import create_separator, script_dir, settings_path, except_utility_path, plink_utility_path
+from utils import create_separator, script_dir, settings_path, except_utility_path, plink_utility_path, tmux_utility_path
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
@@ -1626,199 +1626,88 @@ class JobsPanel(QWidget):
                              f"Failed to open Windows terminal: {str(e)}")
     
     def _open_macos_node_terminal(self, node_name, username, password):
-        """Open terminal on macOS for specific node with chained SSH"""
+        """Open terminal on macOS for specific node with tmux session for chained SSH"""
         try:
-            # Check if expect is available
-            try:
-                subprocess.run(["which", except_utility_path], check=True, capture_output=True)
-                has_expect = True
-            except subprocess.CalledProcessError:
-                has_expect = False
-
-            if has_expect:
-                # Create expect script for chained SSH connection - similar to Linux version
-                head_node = self.slurm_connection.host
-                script_content = f'''#!{except_utility_path} -f
-set timeout 30
-
-# First SSH to head node  
-spawn ssh {username}@{head_node}
-expect {{
-    "password:" {{
-        send "{password}\\r"
-        exp_continue
-    }}
-    "yes/no" {{
-        send "yes\\r"
-        exp_continue
-    }}
-    "$ " {{
-        # Now SSH to the compute node
-        send "ssh {node_name}\\r"
-        expect {{
-            "password:" {{
-                send "{password}\\r"
-                interact
-            }}
-            "yes/no" {{
-                send "yes\\r"
-                expect "password:"
-                send "{password}\\r"
-                interact
-            }}
-            "$ " {{
-                # Already logged in to compute node
-                interact
-            }}
-            timeout {{
-                puts "Timeout connecting to compute node {node_name}"
-                exit 1
-            }}
-        }}
-    }}
-    timeout {{
-        puts "Timeout connecting to head node {head_node}"
-        exit 1
-    }}
-    eof {{
-        puts "Connection to head node failed"
-        exit 1
-    }}
-}}
-'''
-                
-                # Create temporary expect script
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-                    f.write(script_content)
-                    script_path = f.name
-                
-                # Make script executable
-                os.chmod(script_path, 0o755)
-                
-                # Open terminal with expect script
-                applescript = f'''
-                tell application "Terminal"
-                    activate
-                    do script "{script_path}"
-                end tell
-                '''
-                subprocess.Popen(["osascript", "-e", applescript])
-                
-                # Clean up script after delay
-                QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-                
-                show_success_toast(self, "Terminal Opened",
-                                f"Chained SSH terminal opened: {head_node} -> {node_name}")
-            else:
-                show_error_toast(self, "Expect Required",
-                            "The 'expect' package is required for chained SSH connections on macOS. Install with: brew install expect")
+            # Create tmux session for chained SSH connection
+            head_node = self.slurm_connection.host
+            session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
+            
+            # Create tmux session and send SSH commands
+            tmux_commands = [
+                f"{tmux_utility_path} new-session -d -s {session_name}",
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
+                f"sleep 2",  # Wait for SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
+                f"sleep 3",  # Wait for login
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {node_name}' Enter",
+                f"sleep 2",  # Wait for second SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
+            ]
+            
+            # Use AppleScript to open Terminal and attach to tmux session
+            applescript = f'''
+            tell application "Terminal"
+                activate
+                do script "{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}"
+            end tell
+            '''
+            subprocess.Popen(["osascript", "-e", applescript])
+            
+            show_success_toast(self, "Terminal Opened",
+                            f"Tmux session opened: {head_node} -> {node_name}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open macOS terminal: {str(e)}")
-
+    
     def _open_linux_node_terminal(self, node_name, username, password):
-        """Open terminal on Linux with chained SSH: first to head node, then to compute node"""
+        """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
-            # Check if expect is available
-            try:
-                subprocess.run(["which", except_utility_path], check=True, capture_output=True)
-                has_expect = True
-            except subprocess.CalledProcessError:
-                has_expect = False
+            # Create tmux session for chained SSH connection
+            head_node = self.slurm_connection.host
+            session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
+            
+            # Create tmux session and send SSH commands
+            tmux_commands = [
+                f"{tmux_utility_path} new-session -d -s {session_name}",
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
+                f"sleep 2",  # Wait for SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
+                f"sleep 3",  # Wait for login
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {node_name}' Enter",
+                f"sleep 2",  # Wait for second SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
+            ]
+            
+            # List of terminal emulators to try with tmux
+            terminals = [
+                ["gnome-terminal", "--", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["konsole", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xfce4-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["lxterminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["mate-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["terminator", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["alacritty", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["kitty", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xterm", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+            ]
 
-            if has_expect:
-                # Create expect script for chained SSH connection
-                head_node = self.slurm_connection.host
-                script_content = f'''#!{except_utility_path} -f
-    set timeout 30
-
-    # First SSH to head node
-    spawn ssh {username}@{head_node}
-    expect {{
-        "password:" {{
-            send "{password}\\r"
-            exp_continue
-        }}
-        "yes/no" {{
-            send "yes\\r"
-            exp_continue
-        }}
-        "$ " {{
-            # Now SSH to the compute node
-            send "ssh {node_name}\\r"
-            expect {{
-                "password:" {{
-                    send "{password}\\r"
-                    interact
-                }}
-                "yes/no" {{
-                    send "yes\\r"
-                    expect "password:"
-                    send "{password}\\r"
-                    interact
-                }}
-                "$ " {{
-                    # Already logged in to compute node
-                    interact
-                }}
-                timeout {{
-                    puts "Timeout connecting to compute node {node_name}"
-                    exit 1
-                }}
-            }}
-        }}
-        timeout {{
-            puts "Timeout connecting to head node {head_node}"
-            exit 1
-        }}
-        eof {{
-            puts "Connection to head node failed"
-            exit 1
-        }}
-    }}
-    '''
-                
-                # Create temporary expect script
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-                    f.write(script_content)
-                    script_path = f.name
-                
-                # Make script executable
-                os.chmod(script_path, 0o755)
-                
-                # List of terminal emulators to try
-                terminals = [
-                    ["gnome-terminal", "--", "bash", "-c", f"{script_path}; exec bash"],
-                    ["konsole", "-e", "bash", "-c", f"{script_path}; exec bash"],
-                    ["xfce4-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["lxterminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["mate-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["terminator", "-e", f"bash -c '{script_path}; exec bash'"],
-                    ["alacritty", "-e", "bash", "-c", f"{script_path}; exec bash"],
-                    ["kitty", "bash", "-c", f"{script_path}; exec bash"],
-                    ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
-                ]
-
-                for terminal_cmd in terminals:
-                    try:
-                        subprocess.Popen(terminal_cmd)
-                        show_success_toast(self, "Terminal Opened",
-                                        f"Chained SSH terminal opened: {head_node} -> {node_name}")
-                        
-                        # Clean up script after delay
-                        QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-                        return
-                    except FileNotFoundError:
-                        continue
-            else:
-                # Fallback without expect
-                show_error_toast(self, "Expect Required",
-                            "The 'expect' package is required for chained SSH connections. Install with: sudo apt install expect")
+            for terminal_cmd in terminals:
+                try:
+                    subprocess.Popen(terminal_cmd)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"Tmux session opened: {head_node} -> {node_name}")
+                    return
+                except FileNotFoundError:
+                    continue
+                    
+            # If no terminal emulator found
+            show_error_toast(self, "No Terminal Found",
+                            "No supported terminal emulator found on this system.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Linux terminal: {str(e)}")  
+                            f"Failed to open Linux terminal: {str(e)}")
     
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""

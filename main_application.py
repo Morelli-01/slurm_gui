@@ -12,9 +12,9 @@ from modules.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import platform
-import subprocess
+import subprocess, random
 # Get the script directory to construct relative paths
-from utils import script_dir, except_utility_path, plink_utility_path
+from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
 # Base dimensions as percentages of screen size
@@ -653,88 +653,80 @@ expect {{
                              f"Failed to open terminal: {str(e)}")
 
     def _open_macos_terminal(self, host, username, password):
-        """Open terminal on macOS with automatic authentication"""
+        """Open terminal on macOS with tmux session for SSH connection"""
         try:
-
-            script_path = self._create_expect_script(host, username, password)
+            # Create tmux session for SSH connection
+            session_name = f"slurm_{random.randint(1000, 9999)}"
+            
+            # Create tmux session and send SSH commands
+            tmux_commands = [
+                f"{tmux_utility_path} new-session -d -s {session_name}",
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{host}' Enter",
+                f"sleep 2",  # Wait for SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
+            ]
+            
+            # Use AppleScript to open Terminal and attach to tmux session
             applescript = f'''
             tell application "Terminal"
                 activate
-                do script "{script_path}"
+                do script "{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}"
             end tell
             '''
             subprocess.Popen(["osascript", "-e", applescript])
 
-            # Clean up script after delay
-            QTimer.singleShot(
-                10000, lambda: self._cleanup_temp_file(script_path))
-
             show_success_toast(self, "Terminal Opened",
-                               f"Terminal opened for {username}@{host}")
+                            f"Tmux session opened for {username}@{host}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open macOS terminal: {str(e)}")
-
-    def _open_linux_terminal(self, host, username, password):
-        """Open terminal on Linux with automatic authentication"""
+                            f"Failed to open macOS terminal: {str(e)}")
+    def _open_linux_terminal(self, node_name, username, password):
+        """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
-
-                # Use expect for automatic password entry
-            script_path = self._create_expect_script(
-                    host, username, password)
-            terminal_cmd = None
-
-                # List of terminal emulators with expect script
+            # Create tmux session for chained SSH connection
+            head_node = self.slurm_connection.host
+            session_name = f"slurm_{random.randint(1000, 9999)}"
+            
+            # Create tmux session and send SSH commands
+            tmux_commands = [
+                f"{tmux_utility_path} new-session -d -s {session_name}",
+                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
+                f"sleep 2",  # Wait for SSH prompt
+                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
+            ]
+            
+            # List of terminal emulators to try with tmux
             terminals = [
-                    ["gnome-terminal", "--", "bash", "-c",
-                        f"{script_path}"],
-                    ["konsole", "-e", "bash", "-c",
-                        f"{script_path}; exec bash"],
-                    ["xfce4-terminal", "-e",
-                        f"bash -c '{script_path}; exec bash'"],
-                    ["lxterminal", "-e",
-                        f"bash -c '{script_path}; exec bash'"],
-                    ["mate-terminal", "-e",
-                        f"bash -c '{script_path}; exec bash'"],
-                    ["terminator", "-e",
-                        f"bash -c '{script_path}; exec bash'"],
-                    ["alacritty", "-e", "bash", "-c",
-                        f"{script_path}; exec bash"],
-                    ["kitty", "bash", "-c", f"{script_path}; exec bash"],
-                    ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
-                ]
+                ["gnome-terminal", "--", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["konsole", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xfce4-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["lxterminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["mate-terminal", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["terminator", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
+                ["alacritty", "-e", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["kitty", "bash", "-c", f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
+                ["xterm", "-e", f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+            ]
 
             for terminal_cmd in terminals:
-                    try:
-                        subprocess.Popen(terminal_cmd)
-                        show_success_toast(self, "Terminal Opened",
-                                           f"Terminal opened for {username}@{host}")
-
-                        # Clean up script after delay
-                        QTimer.singleShot(
-                            10000, lambda: self._cleanup_temp_file(script_path))
-                        return
-                    except FileNotFoundError:
-                        continue
-
-            for terminal_cmd in terminals:
-                    try:
-                        subprocess.Popen(terminal_cmd)
-                        show_success_toast(self, "Terminal Opened",
-                                           f"Terminal opened for {username}@{host}")
-                        return
-                    except FileNotFoundError:
-                        continue
-
+                try:
+                    subprocess.Popen(terminal_cmd)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"Tmux session opened: {head_node}")
+                    return
+                except FileNotFoundError:
+                    continue
+                    
             # If no terminal emulator found
             show_error_toast(self, "No Terminal Found",
-                             "No supported terminal emulator found on this system.")
+                            "No supported terminal emulator found on this system.")
+
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open Linux terminal: {str(e)}")
-
+                        f"Failed to open Linux terminal: {str(e)}")
+            
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:

@@ -11,6 +11,7 @@ configs_dir = os.path.join(script_dir, "configs")
 default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 except_utility_path = os.path.join(script_dir, "src_static", "expect")
 plink_utility_path = os.path.join(script_dir, "src_static", "plink.exe")
+tmux_utility_path = os.path.join(script_dir, "src_static", "tmux")
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
 BTN_RED = "btnRed"
