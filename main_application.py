@@ -27,22 +27,10 @@ REFRESH_INTERVAL_MS = 5000  # 5 seconds
 
 # --- Helper Functions ---
 def get_dpi_aware_size(base_size, screen=None):
-    """Calculate DPI-aware size based on screen DPI"""
-    if screen is None:
-        screen = QApplication.primaryScreen()
-
-    # Get the device pixel ratio for high DPI displays
-    dpr = screen.devicePixelRatio()
-
-    # Get logical DPI (typical is 96 on Windows, 72 on macOS)
-    logical_dpi = screen.logicalDotsPerInch()
-
-    # Calculate scaling factor (96 DPI is considered 100% on most systems)
-    dpi_scale = logical_dpi / 96.0
-
-    # Apply both DPI scaling and device pixel ratio
-    return int(base_size * dpi_scale)
-
+    """Calculate DPI-aware size - simplified for Windows compatibility"""
+    # On Windows with the fix above, just return base size
+    # Qt will handle scaling automatically through the OS
+    return base_size
 
 def get_scaled_dimensions(screen=None):
     """Get window dimensions scaled to screen size and DPI"""
@@ -199,7 +187,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.icon_size_small = get_dpi_aware_size(16)
         self.icon_size_medium = get_dpi_aware_size(24)
         self.icon_size_large = get_dpi_aware_size(32)
-        
+
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling with proper project store recovery"""
         previous_status = getattr(self, 'connection_status_', None)
@@ -1081,9 +1069,17 @@ expect {{
 ## --- Main Execution ---
 if __name__ == "__main__":
     # Enable High DPI scaling
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-
+    if platform.system() == "Windows":
+        # Disable Qt's DPI scaling and let Windows handle it
+        os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+        os.environ["QT_SCALE_FACTOR"] = "1"
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.Floor)
+    else:
+        # Keep automatic scaling for other platforms
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
