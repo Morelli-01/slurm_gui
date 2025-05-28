@@ -1,4 +1,6 @@
 from pathlib import Path
+import platform
+import subprocess
 from modules import project_store
 from modules.job_logs import JobLogsDialog
 from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
@@ -1508,7 +1510,7 @@ class JobsPanel(QWidget):
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
-            
+
     def open_job_terminal(self, project_name, job_id):
         """Open terminal on the node where the job is running"""
         if not self._check_project_storer():
@@ -1543,21 +1545,236 @@ class JobsPanel(QWidget):
                 )
                 return
 
-            # TODO: Implement terminal opening logic here
-            # For now, just show info about what would happen
-            show_info_toast(
-                self,
-                "Terminal Feature",
-                f"Would open terminal on node: {job.nodelist} for job {job_id}\n(Implementation coming soon)",
-                duration=3000
-            )
+            # Get the first node from nodelist (in case multiple nodes)
+            node_name = job.nodelist.split(',')[0].strip()
             
-            print(f"Terminal requested for job {job_id} on node(s): {job.nodelist}")
+            # Use the main application's terminal opening functionality
+            # but connect directly to the compute node
+            self._open_node_terminal(node_name, job_id)
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"An error occurred while trying to open terminal: {str(e)}")
             import traceback
             traceback.print_exc()
+
+    def _open_node_terminal(self, node_name, job_id):
+        """Open terminal connection to a specific compute node"""
+        if not self.slurm_connection or not self.slurm_connection.check_connection():
+            show_warning_toast(self, "Connection Required",
+                            "Please establish a SLURM connection first.")
+            return
+
+        try:
+            # Get connection details from SLURM connection
+            node_name = self.slurm_connection.host
+            username = self.slurm_connection.user
+            password = self.slurm_connection.password
+            
+            system = platform.system().lower()
+
+            if system == "windows":
+                self._open_windows_node_terminal(node_name, username, password, job_id)
+            elif system == "darwin":  # macOS
+                self._open_macos_node_terminal(node_name, username, password, job_id)
+            elif system == "linux":
+                self._open_linux_node_terminal(node_name, username, password, job_id)
+            else:
+                show_error_toast(self, "Unsupported Platform",
+                                f"Terminal opening not supported on {system}")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open terminal: {str(e)}")
+
+    def _open_windows_node_terminal(self, node_name, username, password, job_id):
+        """Open terminal on Windows for specific node"""
+        try:
+            from utils import plink_utility_path
+            
+            if plink_utility_path and os.path.exists(plink_utility_path):
+                cmd = [
+                    plink_utility_path,
+                    "-ssh",
+                    "-batch",
+                    "-pw", password,
+                    f"{username}@{node_name}"
+                ]
+                
+                try:
+                    # Try Windows Terminal first
+                    wt_cmd = ["wt.exe", "new-tab", 
+                            "--title", f"Node: {node_name} (Job {job_id})"] + cmd
+                    subprocess.Popen(wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH terminal opened for node {node_name}")
+                    return
+                except FileNotFoundError:
+                    # Fallback to cmd.exe
+                    cmd_command = ["cmd.exe", "/c", "start", "cmd.exe", "/k"] + cmd
+                    subprocess.Popen(cmd_command)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH session opened for node {node_name}")
+                    return
+            else:
+                show_error_toast(self, "PuTTY Required",
+                            "PuTTY/plink is required for SSH on Windows. Please install from https://www.putty.org/")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open Windows terminal: {str(e)}")
+
+    def _open_macos_node_terminal(self, node_name, username, password, job_id):
+        """Open terminal on macOS for specific node"""
+        try:
+            from utils import except_utility_path
+            
+            # Create expect script for automatic SSH login
+            script_content = f'''#!{except_utility_path} -f
+    set timeout 30
+    spawn ssh {username}@{node_name}
+    expect {{
+        "password:" {{
+            send "{password}\\r"
+            interact
+        }}
+        "yes/no" {{
+            send "yes\\r"
+            expect "password:"
+            send "{password}\\r"
+            interact
+        }}
+        timeout {{
+            puts "Connection timeout"
+            exit 1
+        }}
+        eof {{
+            puts "Connection failed"
+            exit 1
+        }}
+    }}
+    '''
+            
+            # Create temporary expect script
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+            
+            # Make script executable
+            os.chmod(script_path, 0o755)
+            
+            # Open terminal with expect script
+            applescript = f'''
+            tell application "Terminal"
+                activate
+                do script "{script_path}"
+            end tell
+            '''
+            subprocess.Popen(["osascript", "-e", applescript])
+            
+            # Clean up script after delay
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            
+            show_success_toast(self, "Terminal Opened",
+                            f"Terminal opened for node {node_name}")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open macOS terminal: {str(e)}")
+
+    def _open_linux_node_terminal(self, node_name, username, password, job_id):
+        """Open terminal on Linux for specific node"""
+        try:
+            from utils import except_utility_path
+            
+            # Check if expect is available
+            try:
+                subprocess.run(["which", "expect"], check=True, capture_output=True)
+                has_expect = True
+            except subprocess.CalledProcessError:
+                has_expect = False
+
+            if has_expect:
+                # Create expect script for automatic SSH login
+                script_content = f'''#!/usr/bin/expect -f
+    set timeout 30
+    spawn ssh {username}@{node_name}
+    expect {{
+        "password:" {{
+            send "{password}\\r"
+            interact
+        }}
+        "yes/no" {{
+            send "yes\\r"
+            expect "password:"
+            send "{password}\\r"
+            interact
+        }}
+        timeout {{
+            puts "Connection timeout"
+            exit 1
+        }}
+        eof {{
+            puts "Connection failed"
+            exit 1
+        }}
+    }}
+    '''
+                
+                # Create temporary expect script
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+                    f.write(script_content)
+                    script_path = f.name
+                
+                # Make script executable
+                os.chmod(script_path, 0o755)
+                
+                # List of terminal emulators to try
+                terminals = [
+                    ["gnome-terminal", "--", "bash", "-c", f"{script_path}; exec bash"],
+                    ["konsole", "-e", "bash", "-c", f"{script_path}; exec bash"],
+                    ["xfce4-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["lxterminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["mate-terminal", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["terminator", "-e", f"bash -c '{script_path}; exec bash'"],
+                    ["alacritty", "-e", "bash", "-c", f"{script_path}; exec bash"],
+                    ["kitty", "bash", "-c", f"{script_path}; exec bash"],
+                    ["xterm", "-e", f"bash -c '{script_path}; exec bash'"]
+                ]
+
+                for terminal_cmd in terminals:
+                    try:
+                        subprocess.Popen(terminal_cmd)
+                        show_success_toast(self, "Terminal Opened",
+                                        f"Terminal opened for node {node_name}")
+                        
+                        # Clean up script after delay
+                        from PyQt6.QtCore import QTimer
+                        QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+                        return
+                    except FileNotFoundError:
+                        continue
+            
+            # If no expect or no terminal found, show error
+            if not has_expect:
+                show_error_toast(self, "Expect Required",
+                            "The 'expect' package is required for automatic SSH login. Install with: sudo apt install expect")
+            else:
+                show_error_toast(self, "No Terminal Found",
+                            "No supported terminal emulator found on this system.")
+
+        except Exception as e:
+            show_error_toast(self, "Terminal Error",
+                            f"Failed to open Linux terminal: {str(e)}")
+
+    def _cleanup_temp_file(self, file_path):
+        """Clean up temporary script files"""
+        try:
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(f"Warning: Could not clean up temporary file {file_path}: {e}")
+
 
             
