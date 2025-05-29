@@ -668,31 +668,31 @@ expect {{
 
 
     def _open_macos_terminal(self, host, username, password=None):
-        """Open macOS Terminal with tmux session and SSH command (manual password)"""
+        """Open macOS Terminal using `except` to manage SSH session"""
         try:
             session_name = f"slurm_{random.randint(1000, 9999)}"
-            tmux = tmux_utility_path  # assumes tmux is installed and in PATH
+            except_path = except_utility_path  # Full path to the `except` utility
 
-            # Create a temporary shell script to run in Terminal
+            # Create temporary shell script
             with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as temp_script:
                 script_path = temp_script.name
                 temp_script.write(f"""#!/bin/bash
-    # Start a new detached tmux session
-    {tmux} new-session -d -s {session_name}
+    # Start a new session using except
+    {except_path} start-session {session_name}
 
-    # Send SSH command
-    {tmux} send-keys -t {session_name} "ssh {username}@{host}" Enter
+    # Send SSH command to session
+    {except_path} send -s {session_name} "ssh {username}@{host}" Enter
 
-    # Attach to tmux session
-    {tmux} attach-session -t {session_name}
+    # Attach to the session
+    {except_path} attach-session {session_name}
 
-    # Cleanup after exit
-    {tmux} kill-session -t {session_name} 2>/dev/null || true
+    # Clean up
+    {except_path} kill-session {session_name} 2>/dev/null || true
     """)
-            
+
             os.chmod(script_path, 0o755)
 
-            # Run the script in Terminal.app via AppleScript
+            # Use AppleScript to launch Terminal and run the script
             applescript = f'''
             tell application "Terminal"
                 activate
@@ -702,14 +702,15 @@ expect {{
             subprocess.run(["osascript", "-e", applescript], check=True)
 
             show_info_toast(self, "Terminal Opened",
-                            f"SSH session started in tmux to {username}@{host}.\n"
-                            f"Enter your password in the Terminal window.")
+                            f"SSH session started with `except` to {username}@{host}.\n"
+                            f"Please enter your password in the opened terminal.")
 
-            # Optional cleanup of script after 5 minutes
+            # Cleanup temp script after 5 minutes
             QTimer.singleShot(300000, lambda: self._cleanup_temp_file(script_path))
 
         except Exception as e:
             show_error_toast(self, "Terminal Error", f"Failed to open macOS terminal: {str(e)}")
+
 
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
