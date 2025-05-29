@@ -1114,7 +1114,7 @@ if __name__ == "__main__":
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
     app = QApplication(sys.argv)    
-    # setup_application_font()
+    setup_application_font()
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
