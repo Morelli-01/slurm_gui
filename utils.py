@@ -1,3 +1,4 @@
+import platform
 import subprocess
 from PyQt6.QtWidgets import QLabel, QFrame
 from PyQt6.QtCore import pyqtSignal
@@ -12,8 +13,172 @@ configs_dir = os.path.join(script_dir, "configs")
 default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
 except_utility_path = os.path.join(script_dir, "src_static", "expect")
 plink_utility_path = os.path.join(script_dir, "src_static", "plink.exe")
-tmux_utility_path = os.path.join(script_dir, "src_static", "tmux-amd64", "local", "bin", "tmux")
+if platform.system().lower() == "darwin":
+    import subprocess
+    import os
 
+    def find_tmux_macos():
+        """Find tmux on macOS, installing via Homebrew if necessary"""
+        
+        # Common tmux locations on macOS
+        possible_paths = [
+            "/opt/homebrew/bin/tmux",   # Homebrew Apple Silicon
+            "/usr/local/bin/tmux",      # Homebrew Intel
+            "/usr/bin/tmux",            # System tmux (rare)
+        ]
+        
+        # First, check if tmux is already installed
+        for path in possible_paths:
+            if os.path.exists(path):
+                print(f"Found tmux at: {path}")
+                return path
+        
+        # Check if tmux is available in PATH
+        try:
+            result = subprocess.run(["which", "tmux"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                tmux_path = result.stdout.strip()
+                print(f"Found tmux in PATH: {tmux_path}")
+                return tmux_path
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        
+        # tmux not found, try to install via Homebrew
+        print("tmux not found. Attempting to install via Homebrew...")
+        
+        # First check if Homebrew is installed
+        if not _is_homebrew_installed():
+            print("Homebrew not found. Installing Homebrew first...")
+            if not _install_homebrew():
+                print("Failed to install Homebrew. Falling back to 'tmux' command.")
+                return "tmux"
+        
+        # Install tmux via Homebrew
+        if _install_tmux_with_brew():
+            # Check again for tmux after installation
+            for path in possible_paths:
+                if os.path.exists(path):
+                    print(f"Successfully installed tmux at: {path}")
+                    return path
+            
+            # Try PATH again after installation
+            try:
+                result = subprocess.run(["which", "tmux"], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout.strip():
+                    tmux_path = result.stdout.strip()
+                    print(f"Successfully installed tmux, found at: {tmux_path}")
+                    return tmux_path
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+        
+        print("Failed to install tmux. Falling back to 'tmux' command.")
+        return "tmux"  # Final fallback
+
+
+    def _is_homebrew_installed():
+        """Check if Homebrew is installed"""
+        homebrew_paths = [
+            "/opt/homebrew/bin/brew",  # Apple Silicon
+            "/usr/local/bin/brew",     # Intel
+        ]
+        
+        for path in homebrew_paths:
+            if os.path.exists(path):
+                return True
+        
+        # Check PATH
+        try:
+            result = subprocess.run(["which", "brew"], capture_output=True, text=True, timeout=5)
+            return result.returncode == 0 and result.stdout.strip()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+
+    def _install_homebrew():
+        """Install Homebrew on macOS"""
+        try:
+            print("Installing Homebrew... This may take a few minutes.")
+            
+            # Official Homebrew installation command
+            install_command = [
+                "/bin/bash", "-c", 
+                "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            ]
+            
+            # Run with user interaction (can't be fully automated due to sudo requirements)
+            result = subprocess.run(
+                install_command, 
+                timeout=600,  # 10 minutes timeout
+                text=True
+            )
+            
+            if result.returncode == 0:
+                print("Homebrew installed successfully!")
+                # Add Homebrew to PATH for current session
+                os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+                return True
+            else:
+                print(f"Homebrew installation failed with return code: {result.returncode}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print("Homebrew installation timed out.")
+            return False
+        except Exception as e:
+            print(f"Error installing Homebrew: {e}")
+            return False
+
+
+    def _install_tmux_with_brew():
+        """Install tmux using Homebrew"""
+        try:
+            print("Installing tmux via Homebrew...")
+            
+            # Find brew executable
+            brew_path = None
+            for path in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
+                if os.path.exists(path):
+                    brew_path = path
+                    break
+            
+            if not brew_path:
+                # Try PATH
+                result = subprocess.run(["which", "brew"], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout.strip():
+                    brew_path = result.stdout.strip()
+            
+            if not brew_path:
+                print("Could not find brew executable after installation.")
+                return False
+            
+            # Install tmux
+            result = subprocess.run(
+                [brew_path, "install", "tmux"],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout
+            )
+            
+            if result.returncode == 0:
+                print("tmux installed successfully via Homebrew!")
+                return True
+            else:
+                print(f"Failed to install tmux via Homebrew:")
+                print(f"stdout: {result.stdout}")
+                print(f"stderr: {result.stderr}")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            print("tmux installation timed out.")
+            return False
+        except Exception as e:
+            print(f"Error installing tmux via Homebrew: {e}")
+            return False
+
+    tmux_utility_path = find_tmux_macos()  # Will auto-install if needed
+
+else:
+    tmux_utility_path = os.path.join(script_dir, "src_static", "tmux-amd64", "local", "bin", "tmux")
 
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
