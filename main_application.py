@@ -12,6 +12,7 @@ if system == "Windows":
 
 from PyQt6.QtGui import QFontDatabase, QFont
 import re
+from datetime import datetime
 from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path, font_directory
 import sys
 import tempfile
@@ -400,6 +401,33 @@ class SlurmJobManagerApp(QMainWindow):
         t.start()
 
     def update_ui_with_data(self, nodes_data, queue_jobs):
+        """Updates the UI with new data from SLURM."""
+        # Check for maintenance status
+        try:
+            maintenance_info = self.slurm_connection._read_maintenances()
+            if maintenance_info:
+                # Extract maintenance details
+                maintenance_details = []
+                for line in maintenance_info.split('\n'):
+                    if 'ReservationName=' in line:
+                        name = line.split('ReservationName=')[1].split()[0]
+                        start_time =line.split(" ")[1].split("=")[1] 
+                        end_time =line.split(" ")[2].split("=")[1] 
+                        time_to_maintenance = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
+                        maintenance_details.append(f"{name} in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
+                        break
+                
+                if maintenance_details:
+                    self.maintenance_label.setText(f"⚠️ Maintenance: {', '.join(maintenance_details)}")
+                    self.maintenance_label.show()
+                else:
+                    self.maintenance_label.hide()
+            else:
+                self.maintenance_label.hide()
+        except Exception as e:
+            print(f"Error checking maintenance status: {e}")
+            self.maintenance_label.hide()
+        
         # Add connection check
         if not self.slurm_connection.check_connection():
             # Show error messages instead of updating with empty data
@@ -764,12 +792,17 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Header with refresh button
         header_layout = QHBoxLayout()
-        cluster_label = QLabel("Cluster Status Overview")
+        self.cluster_label = QLabel("Cluster Status Overview")
         # Use device-independent font size - Qt handles DPI scaling
-        cluster_label.setFont(QFont("Inter", 16))
-        cluster_label.setStyleSheet("font-weight: bold;")
+        self.cluster_label.setFont(QFont("Inter", 16))
+        self.cluster_label.setStyleSheet("font-weight: bold;")
 
-        header_layout.addWidget(cluster_label)
+        self.maintenance_label = QLabel()
+        self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
+        self.maintenance_label.hide()  # Initially hidden
+
+        header_layout.addWidget(self.cluster_label)
+        header_layout.addWidget(self.maintenance_label)
         header_layout.addStretch()
 
         self.filter_btn_by_users = ButtonGroupWidget()
