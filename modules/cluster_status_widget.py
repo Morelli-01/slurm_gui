@@ -87,6 +87,7 @@ class NodeStatusTab(QWidget):
             ("stud_used", "Used GPU by stud"),
             ("available", "Available GPU"),
             ("unavailable", "Unavailable Node/GPU"),
+            ("reserved", "Reserved Node/GPU"),
         ]
 
         for color_name, text in key_items:
@@ -185,6 +186,7 @@ class NodeStatusTab(QWidget):
             state = node_info.get("State", "").upper()
             gres = node_info.get("total_gres/gpu", "")
             gres_used = node_info.get("alloc_gres/gpu", "")
+            reserved = node_info.get("RESERVED", "NO").upper() == "YES"
 
             if not node_name:
                 continue
@@ -272,7 +274,22 @@ class NodeStatusTab(QWidget):
 
                 block_states = current_blocks
 
-            # Finally, assume idle if none of the above
+            # Handle state combinations
+            if reserved:
+                block_states = ["reserved"] * total_gpus
+            elif "DOWN" in state or "NOT_RESPONDING" in state:
+                block_states = ["unavailable"] * total_gpus
+            elif "MIXED" in state:
+                # For MIXED state, show used GPUs first (both prod and stud), then available ones
+                current_blocks = []
+                current_blocks.extend(["stud_used"] * stud_used)
+                current_blocks.extend(["prod_used"] * (used_gpus - stud_used))
+                remaining_gpus = total_gpus - used_gpus
+                if remaining_gpus > 0:
+                    current_blocks.extend(["available"] * remaining_gpus)
+                block_states = current_blocks
+            elif "ALLOCATED" in state:
+                block_states = ["prod_used"] * total_gpus
             elif "IDLE" in state:
                 block_states = ["available"] * total_gpus
             else:
@@ -657,6 +674,40 @@ class ClusterStatusWidget(QWidget):
         
         section_title = QLabel("Node Status")
         section_title.setFont(title_font)
+        section_title.setObjectName("sectionTitle")
+
+    def update_status(self, nodes_data, jobs_data):
+        """Fetches data from Slurm and updates all tabs."""
+
+        # Update content of each tab
+
+        self.node_status_tab.update_content(nodes_data, jobs_data)
+        self.cpu_usage_tab.update_content(nodes_data, jobs_data)
+        self.ram_usage_tab.update_content(nodes_data, jobs_data)
+
+
+        # Use the application's default font consistently
+        app_font = QApplication.instance().font()
+        
+        # For section titles, scale appropriately
+        title_font = QFont(app_font)
+        title_font.setPointSize(app_font.pointSize() + 8)  # Slightly larger
+        title_font.setWeight(QFont.Weight.Bold)
+        
+        section_title = QLabel("Node Status")
+        section_title.setFont(title_font)
+        section_title.setObjectName("sectionTitle")
+
+    def update_status(self, nodes_data, jobs_data):
+        """Fetches data from Slurm and updates all tabs."""
+
+        # Update content of each tab
+
+        self.node_status_tab.update_content(nodes_data, jobs_data)
+        self.cpu_usage_tab.update_content(nodes_data, jobs_data)
+        self.ram_usage_tab.update_content(nodes_data, jobs_data)
+
+
         section_title.setObjectName("sectionTitle")
 
     def update_status(self, nodes_data, jobs_data):

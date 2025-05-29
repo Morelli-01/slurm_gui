@@ -750,6 +750,10 @@ class AppStyles:
             background-color: {BLOCK_COLOR_MAP['prod_used']};
             border: 1px solid {BLOCK_COLOR_MAP['prod_used']};
         }}
+        QWidget#coloredBlock[data-state="reserved"] {{
+            background-color: {BLOCK_COLOR_MAP['reserved']};
+            border: 1px solid {BLOCK_COLOR_MAP['reserved']};
+        }}
         """
 
     @classmethod

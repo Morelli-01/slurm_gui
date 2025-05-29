@@ -634,6 +634,9 @@ class SlurmConnection:
                     else:
                         key, value = feature.strip().split("=", 1)
                         node_dict[key] = value
+                    # Check if node is reserved
+                    if key == "State":
+                        node_dict["RESERVED"] = "YES" if "RESERVED" in value.upper() else "NO"
 
             nodes_arr.append(node_dict)
 

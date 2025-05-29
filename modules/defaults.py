@@ -104,6 +104,7 @@ BLOCK_COLOR_MAP = {
     "mid-constraint": COLOR_MID_CONSTRAINT,
     "high-constraint-ram_cpu": COLOR_UNAVAILABLE_RAM,
     "mid-constraint-ram_cpu": COLOR_MID_CONSTRAINT_RAM,
+    "reserved": "#FFA500"  # Orange color for reserved nodes
 }
 
 STATE_COLORS = {
