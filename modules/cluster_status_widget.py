@@ -603,7 +603,7 @@ class RamUsageTab(QWidget):
 class ClusterStatusWidget(QWidget):
     def __init__(self, parent=None, slurm_connection=None):
         super().__init__(parent)
-
+        self._setup_ui()
         self.setWindowTitle(APP_TITLE)
         # Set minimum size, allow resizing
         self.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
@@ -643,6 +643,21 @@ class ClusterStatusWidget(QWidget):
             self.sc_.connect()
         else:
             self.sc_ = slurm_connection
+        
+    # In cluster_status_widget.py
+    def _setup_ui(self):
+        ...
+        # Use the application's default font consistently
+        # app_font = QApplication.instance().font()
+        
+        # # For section titles, scale appropriately
+        # title_font = QFont(app_font)
+        # title_font.setPointSize(app_font.pointSize() + 8)  # Slightly larger
+        # title_font.setWeight(QFont.Weight.Bold)
+        
+        # section_title = QLabel("Node Status")
+        # section_title.setFont(title_font)
+        # section_title.setObjectName("sectionTitle")
 
     def update_status(self, nodes_data, jobs_data):
         """Fetches data from Slurm and updates all tabs."""

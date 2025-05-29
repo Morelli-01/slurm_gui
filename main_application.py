@@ -70,6 +70,23 @@ def get_scaled_dimensions(screen=None):
     height = min_height = 950
     return width, height, min_width, min_height
 
+def setup_application_font():
+    """Set up consistent font across platforms"""
+    # Use point sizes for device independence
+    base_font_size = 10
+    
+    # Try fonts in order of preference, with fallbacks
+    font_families = ["Inter", "Segoe UI", "Roboto", "Arial", "sans-serif"]
+    
+    for family in font_families:
+        font = QFont(family, base_font_size)
+        font.setStyleHint(QFont.StyleHint.SansSerif)
+        font.setWeight(QFont.Weight.Normal)
+        
+        if font.exactMatch() or family == "sans-serif":
+            QApplication.instance().setFont(font)
+            print(f"Using font: {font.family()} at {base_font_size}pt")
+            break
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -1097,6 +1114,7 @@ if __name__ == "__main__":
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
     app = QApplication(sys.argv)    
+    # setup_application_font()
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
