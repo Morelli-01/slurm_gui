@@ -673,24 +673,42 @@ expect {{
             # Generate session name
             session_name = f"slurm_{random.randint(1000, 9999)}"
             
-            # Build the command string with escaped quotes
-            cmd = f'{tmux_utility_path} new-session -d -s {session_name} && '
-            cmd += f'{tmux_utility_path} send-keys -t {session_name} \\"ssh {username}@{host}\\" Enter && '
-            cmd += f'sleep 3 && '
-            cmd += f'{tmux_utility_path} send-keys -t {session_name} \\"{password}\\" Enter && '
-            cmd += f'{tmux_utility_path} attach-session -t {session_name}'
+            # Create a simple shell script instead
+            import tempfile
             
-            # AppleScript with proper escaping
-            applescript = f'tell application "Terminal" to activate\ntell application "Terminal" to do script "{cmd}"'
+            script_content = f'''#!/bin/bash
+    echo "Starting tmux session {session_name}..."
+    {tmux_utility_path} new-session -d -s {session_name}
+    echo "Sending SSH command..."
+    {tmux_utility_path} send-keys -t {session_name} "ssh {username}@{host}" Enter
+    echo "Waiting for password prompt..."
+    sleep 3
+    echo "Sending password..."
+    {tmux_utility_path} send-keys -t {session_name} "{password}" Enter
+    echo "Attaching to session..."
+    {tmux_utility_path} attach-session -t {session_name}
+    '''
             
-            # Run it
+            # Write to temp file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+            
+            os.chmod(script_path, 0o755)
+            
+            # Simple AppleScript to run the script
+            applescript = f'tell application "Terminal" to do script "bash {script_path}"'
+            
             subprocess.run(["osascript", "-e", applescript], check=True)
             
             show_success_toast(self, "Terminal Opened", f"SSH connection to {username}@{host}")
             
+            # Clean up after 5 minutes
+            QTimer.singleShot(300000, lambda: self._cleanup_temp_file(script_path))
+            
         except Exception as e:
             show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
-    
+            
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
