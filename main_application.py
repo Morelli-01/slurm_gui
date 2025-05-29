@@ -665,7 +665,6 @@ expect {{
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
-    
     def _open_macos_terminal(self, host, username, password):
         """Simple macOS terminal with tmux and automatic password"""
         try:
@@ -674,22 +673,18 @@ expect {{
             # Generate session name
             session_name = f"slurm_{random.randint(1000, 9999)}"
             
-            # Simple tmux commands
-            commands = [
-                f'"{tmux_utility_path}" new-session -d -s {session_name}',
-                f'"{tmux_utility_path}" send-keys -t {session_name} "ssh {username}@{host}" Enter',
-                f'sleep 3',
-                f'"{tmux_utility_path}" send-keys -t {session_name} "{password}" Enter'
-            ]
+            # Build the command string properly
+            cmd = f'{tmux_utility_path} new-session -d -s {session_name} && '
+            cmd += f'{tmux_utility_path} send-keys -t {session_name} "ssh {username}@{host}" Enter && '
+            cmd += f'sleep 3 && '
+            cmd += f'{tmux_utility_path} send-keys -t {session_name} "{password}" Enter && '
+            cmd += f'{tmux_utility_path} attach-session -t {session_name}'
             
-            # Join commands with && and add attach at the end
-            full_command = " && ".join(commands) + f' && "{tmux_utility_path}" attach-session -t {session_name}'
-            
-            # Simple AppleScript
-            applescript = f'''tell application "Terminal"
+            # Simple AppleScript - escape the quotes properly
+            applescript = f"""tell application "Terminal"
         activate
-        do script "{full_command}"
-    end tell'''
+        do script "{cmd}"
+    end tell"""
             
             # Run it
             subprocess.run(["osascript", "-e", applescript], check=True)
@@ -697,8 +692,7 @@ expect {{
             show_success_toast(self, "Terminal Opened", f"SSH connection to {username}@{host}")
             
         except Exception as e:
-            show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")    
-              
+            show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
