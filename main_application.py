@@ -1,4 +1,25 @@
-import os, platform
+from threading import Thread
+from PyQt6.QtCore import Qt
+from modules.defaults import *
+from modules.job_panel import JobsPanel
+import modules.cluster_status_widget as cluster_status_widget
+from modules.job_queue_widget import JobQueueWidget
+import slurm_connection
+from style import AppStyles
+from utils import *
+from pathlib import Path
+import shutil
+from modules.settings_widget import SettingsWidget
+from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from modules.project_store import ProjectStore
+import subprocess
+import random
+import threading
+import tempfile
+import sys
+from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
+import os
+import platform
 import re
 system = platform.system()
 
@@ -9,38 +30,6 @@ if system == "Windows":
     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
     os.environ["QT_FONT_DPI"] = "96"
     print("Windows: Qt DPI scaling enabled")
-    
-# elif system == "Linux":
-#     # Linux: More conservative approach, let the system handle most scaling
-#     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"  # Enable auto-scaling
-#     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-#     os.environ["QT_FONT_DPI"] = f"{96*1}"
-
-#     print("Linux: Using system DPI settings")
-#     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
-
-from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
-import sys
-import tempfile
-import threading
-import random
-import subprocess
-from modules.project_store import ProjectStore
-from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-from modules.settings_widget import SettingsWidget
-import shutil
-from pathlib import Path
-from utils import *
-from style import AppStyles
-import slurm_connection
-from modules.job_queue_widget import JobQueueWidget
-import modules.cluster_status_widget as cluster_status_widget
-from modules.job_panel import JobsPanel
-from modules.defaults import *
-from PyQt6.QtCore import Qt
-from threading import Thread
-
-
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
@@ -70,23 +59,25 @@ def get_scaled_dimensions(screen=None):
     height = min_height = 950
     return width, height, min_width, min_height
 
+
 def setup_application_font():
     """Set up consistent font across platforms"""
     # Use point sizes for device independence
     base_font_size = 10
-    
+
     # Try fonts in order of preference, with fallbacks
     font_families = ["Inter", "Segoe UI", "Roboto", "Arial", "sans-serif"]
-    
+
     for family in font_families:
         font = QFont(family, base_font_size)
         font.setStyleHint(QFont.StyleHint.SansSerif)
         font.setWeight(QFont.Weight.Normal)
-        
+
         if font.exactMatch() or family == "sans-serif":
             QApplication.instance().setFont(font)
             print(f"Using font: {font.family()} at {base_font_size}pt")
             break
+
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -543,42 +534,6 @@ class SlurmJobManagerApp(QMainWindow):
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
 
-    def _create_expect_script(self, host, username, password):
-        """Create an expect script for automatic password authentication"""
-        script_content = f'''#!{except_utility_path} -f
-set timeout 30
-spawn ssh {username}@{host}
-expect {{
-    "password:" {{
-        send "{password}\\r"
-        interact
-    }}
-    "yes/no" {{
-        send "yes\\r"
-        expect "password:"
-        send "{password}\\r"
-        interact
-    }}
-    timeout {{
-        puts "Connection timeout"
-        exit 1
-    }}
-    eof {{
-        puts "Connection failed"
-        exit 1
-    }}
-}}
-'''
-
-        # Create temporary expect script
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-            f.write(script_content)
-            script_path = f.name
-
-        # Make script executable
-        os.chmod(script_path, 0o755)
-        return script_path
-
     def _open_windows_terminal(self, host, username, password):
         """Open terminal on Windows using plink for direct password authentication"""
         try:
@@ -667,63 +622,62 @@ expect {{
                              f"Failed to open terminal: {str(e)}")
 
     def _create_expect_script(self, host, username, password):
-            """Create an expect script for automatic password authentication"""
-            script_content = f'''#!{except_utility_path} -f
-    set timeout 30
-    spawn ssh {username}@{host}
-    expect {{
-        "password:" {{
-            send "{password}\\r"
-            interact
-        }}
-        "yes/no" {{
-            send "yes\\r"
-            expect "password:"
-            send "{password}\\r"
-            interact
-        }}
-        timeout {{
-            puts "Connection timeout"
-            exit 1
-        }}
-        eof {{
-            puts "Connection failed"
-            exit 1
-        }}
-    }}
-    '''
-            
-            # Create temporary expect script
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-                f.write(script_content)
-                script_path = f.name
-            
-            # Make script executable
-            os.chmod(script_path, 0o755)
-            return script_path
+        """Create an expect script for automatic password authentication"""
+        script_content = f'''#!{except_utility_path}
+                            set timeout 30
+                            spawn ssh {username}@{host}
+                            expect {{
+                                "password:" {{
+                                    send "{password}\\r"
+                                    interact
+                                }}
+                                "yes/no" {{
+                                    send "yes\\r"
+                                    expect "password:"
+                                    send "{password}\\r"
+                                    interact
+                                }}
+                                timeout {{
+                                    puts "Connection timeout"
+                                    exit 1
+                                }}
+                                eof {{
+                                    puts "Connection failed"
+                                    exit 1
+                                }}
+                            }}
+                            '''
 
+        # Create temporary expect script
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+            f.write(script_content)
+            script_path = f.name
+
+        # Make script executable
+        os.chmod(script_path, 0o755)
+        return script_path
 
     def _open_macos_terminal(self, host, username, password):
-        """Open terminal on macOS with automatic authentication"""
         try:
             script_path = self._create_expect_script(host, username, password)
             applescript = f'''
-            tell application "Terminal"
-                activate
-                do script "{script_path}"
-            end tell
-            '''
-            subprocess.Popen(["osascript", "-e", applescript])
-            
+                                        tell application "Terminal"
+                                            activate
+                                            do script "expect {script_path}"
+                                        end tell
+                                        '''
+            subprocess.run(["osascript", "-e", applescript], check=True)
+
             # Clean up script after delay
-            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
-            
-            show_success_toast(self, "Terminal Opened", 
-                             f"Terminal opened for {username}@{host}")
-                             
+            QTimer.singleShot(
+                10000, lambda: self._cleanup_temp_file(script_path))
+
+            show_success_toast(self, "Terminal Opened",
+                               f"Terminal opened for {username}@{host}")
+
         except Exception as e:
-            show_error_toast(self, "Terminal Error", 
-                           f"Failed to open macOS terminal: {str(e)}")
+            show_error_toast(self, "Terminal Error",
+                             f"Failed to open macOS terminal: {str(e)}")
 
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
@@ -1106,13 +1060,13 @@ expect {{
 
 if __name__ == "__main__":
 
-
-
     if "linux" in platform.system().lower():
         if os.environ.get("XDG_SESSION_TYPE") != "wayland":
             try:
-                output = subprocess.check_output("xdpyinfo", shell=True).decode()
-                match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
+                output = subprocess.check_output(
+                    "xdpyinfo", shell=True).decode()
+                match = re.search(
+                    r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
 
                 if match:
                     dpi_x = int(match.group(1))
@@ -1126,7 +1080,8 @@ if __name__ == "__main__":
                         192: "0.5"
                     }
 
-                    closest_dpi = min(dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x))
+                    closest_dpi = min(dpi_scale_map.keys(),
+                                      key=lambda k: abs(k - dpi_x))
                     scale = dpi_scale_map[closest_dpi]
 
                     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
@@ -1141,9 +1096,43 @@ if __name__ == "__main__":
         else:
             print("Wayland session detected — using automatic scaling.")
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    elif "darwin" in platform.system().lower():
+        print("macOS detected — using automatic scaling.")
 
-    app = QApplication(sys.argv)    
-    setup_application_font()    
+        try:
+            from screeninfo import get_monitors
+            monitor = get_monitors()[0]  # assume main monitor
+            width_px = monitor.width
+            height_px = monitor.height
+
+            # Heuristic: macbooks are usually ~13" with 2560x1600 (Retina)
+            # So we assume physical width ~11.3 inches → DPI = px / in
+            estimated_width_in = 11.3
+            dpi_x = width_px / estimated_width_in
+            dpi_scale_map = {
+                90: "0.6",    # 100%
+                96: "0.7",    # 100%
+                120: "0.8",  # 125%
+                144: "0.9",   # 150%
+                168: "1",
+                192: "0.5"
+            }
+
+            closest_dpi = min(dpi_scale_map.keys(),
+                              key=lambda k: abs(k - dpi_x))
+            scale = dpi_scale_map[closest_dpi]
+            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+            os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+            # os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
+            os.environ["QT_SCALE_FACTOR"] = f"{scale}"
+            print("env variables setted")
+
+            print(f"Set scale: {scale} for DPI: {dpi_x}")
+        except Exception as e:
+            print("Error reading DPI:", e)
+
+    app = QApplication(sys.argv)
+    setup_application_font()
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
