@@ -1,3 +1,15 @@
+import glob
+import os
+import platform
+system = platform.system()
+if system == "Windows":
+    # Windows: Use Qt's built-in high DPI handling
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
+    os.environ["QT_FONT_DPI"] = "96"
+    print("Windows: Qt DPI scaling enabled")
+
 from threading import Thread
 from PyQt6.QtCore import Qt
 from modules.defaults import *
@@ -17,19 +29,11 @@ import random
 import threading
 import tempfile
 import sys
-from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
-import os
-import platform
-import re
-system = platform.system()
+from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path, font_directory
 
-if system == "Windows":
-    # Windows: Use Qt's built-in high DPI handling
-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
-    os.environ["QT_FONT_DPI"] = "96"
-    print("Windows: Qt DPI scaling enabled")
+import re
+from PyQt6.QtGui import QFontDatabase, QFont
+
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
@@ -61,23 +65,34 @@ def get_scaled_dimensions(screen=None):
 
 
 def setup_application_font():
-    """Set up consistent font across platforms"""
-    # Use point sizes for device independence
-    base_font_size = 10
-
-    # Try fonts in order of preference, with fallbacks
-    font_families = ["Inter", "Segoe UI", "Roboto", "Arial", "sans-serif"]
-
-    for family in font_families:
-        font = QFont(family, base_font_size)
-        font.setStyleHint(QFont.StyleHint.SansSerif)
-        font.setWeight(QFont.Weight.Normal)
-
-        if font.exactMatch() or family == "sans-serif":
-            QApplication.instance().setFont(font)
-            print(f"Using font: {font.family()} at {base_font_size}pt")
-            break
-
+   # Create QApplication
+   
+   # Find all .ttf files in the directory and static subdirectory
+   ttf_files = []
+   ttf_files.extend(glob.glob(os.path.join(font_directory, "*.ttf")))
+   ttf_files.extend(glob.glob(os.path.join(font_directory, "static", "*.ttf")))
+   
+   print(f"Found {len(ttf_files)} font files")
+   
+   # Load all font files
+   loaded_families = set()
+   for font_path in ttf_files:
+       font_id = QFontDatabase.addApplicationFont(font_path)
+       if font_id != -1:
+           families = QFontDatabase.applicationFontFamilies(font_id)
+           loaded_families.update(families)
+           print(f"Loaded: {os.path.basename(font_path)}")
+   
+   # Set Open Sans as default application font, size 14
+   if loaded_families:
+       family_name = next(iter(loaded_families))  # Get first family name
+       app_font = QFont(family_name, 14)
+       app.setFont(app_font)
+       print(f"Set application font to: {family_name}, size 14")
+   else:
+       print("No fonts loaded, using system default")
+   
+   return app
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):

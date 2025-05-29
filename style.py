@@ -46,7 +46,6 @@ class AppStyles:
         QMainWindow, QWidget {{
             background-color: {colors['bg']};
             color: {colors['fg']};
-            font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
             font-size: 10pt;  /* Use point sizes for consistency */
         }}
         """
