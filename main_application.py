@@ -665,37 +665,61 @@ expect {{
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
-
+    
     def _open_macos_terminal(self, host, username, password):
-        """Open terminal on macOS with tmux session for SSH connection"""
+        """Open terminal on macOS with improved SSH connection handling"""
         try:
-            # Create tmux session for SSH connection
-            session_name = f"slurm_{random.randint(1000, 9999)}"
+            # Create a simple, reliable shell script
+            import tempfile
+            
+            # Create a shell script that handles the SSH connection
+            script_content = f'''#!/bin/bash
+    # SSH connection script for SlurmAIO
+    echo "==============================================="
+    echo "SlurmAIO - SSH Connection"
+    echo "==============================================="
+    echo "Connecting to: {username}@{host}"
+    echo "Enter password when prompted"
+    echo ""
 
-            # Create tmux session and send SSH commands
-            tmux_commands = [
-                f"{tmux_utility_path} new-session -d -s {session_name}",
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{host}' Enter",
-                f"sleep 2",  # Wait for SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
-            ]
+    # Use SSH with some helpful options
+    ssh -o ServerAliveInterval=60 -o ServerAliveCountMax=3 {username}@{host}
 
-            # Use AppleScript to open Terminal and attach to tmux session
-            applescript = f'''
-            tell application "Terminal"
-                activate
-                do script "{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}"
-            end tell
-            '''
-            subprocess.Popen(["osascript", "-e", applescript])
-
-            show_success_toast(self, "Terminal Opened",
-                               f"Tmux session opened for {username}@{host}")
-
+    echo ""
+    echo "Connection closed. Press any key to close this window..."
+    read -n 1
+    '''
+            
+            # Create temporary script file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, prefix='slurm_ssh_') as f:
+                f.write(script_content)
+                script_path = f.name
+            
+            # Make script executable
+            os.chmod(script_path, 0o755)
+            
+            # Simple AppleScript to open Terminal with our script
+            applescript = f'''tell application "Terminal"
+        activate
+        do script "bash '{script_path}'"
+    end tell'''
+            
+            # Execute AppleScript
+            subprocess.run(["osascript", "-e", applescript], check=True)
+            
+            show_success_toast(self, "Terminal Opened", 
+                            f"SSH terminal opened for {username}@{host}")
+            
+            # Clean up script after delay
+            QTimer.singleShot(60000, lambda: self._cleanup_temp_file(script_path))
+            
+        except subprocess.CalledProcessError as e:
+            show_error_toast(self, "Terminal Error", 
+                            f"Failed to open Terminal app: {str(e)}")
         except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open macOS terminal: {str(e)}")
-
+            show_error_toast(self, "Terminal Error", 
+                            f"Failed to open macOS terminal: {str(e)}")
+            
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
@@ -1114,7 +1138,7 @@ if __name__ == "__main__":
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
     app = QApplication(sys.argv)    
-    setup_application_font()
+    setup_application_font()    
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
