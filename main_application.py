@@ -1,10 +1,30 @@
+import os, platform
+import re
+system = platform.system()
+
+if system == "Windows":
+    # Windows: Use Qt's built-in high DPI handling
+    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
+    os.environ["QT_FONT_DPI"] = "96"
+    print("Windows: Qt DPI scaling enabled")
+    
+# elif system == "Linux":
+#     # Linux: More conservative approach, let the system handle most scaling
+#     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"  # Enable auto-scaling
+#     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+#     os.environ["QT_FONT_DPI"] = f"{96*1}"
+
+#     print("Linux: Using system DPI settings")
+#     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
+
 from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path
 import sys
 import tempfile
 import threading
 import random
 import subprocess
-import platform
 from modules.project_store import ProjectStore
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.settings_widget import SettingsWidget
@@ -19,7 +39,6 @@ from modules.job_panel import JobsPanel
 from modules.defaults import *
 from PyQt6.QtCore import Qt
 from threading import Thread
-import os
 
 
 
@@ -47,8 +66,8 @@ def get_scaled_dimensions(screen=None):
     min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
     min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
 
-    # width = min_width = 1500
-    # height = min_height = 950
+    width = min_width = 1500
+    height = min_height = 950
     return width, height, min_width, min_height
 
 
@@ -424,7 +443,7 @@ class SlurmJobManagerApp(QMainWindow):
         # Logo - use device-independent size
         logo_label = QLabel()
         logo_size = 40  # Device-independent pixels
-        # logo_label.setFixedSize(logo_size, logo_size)
+        logo_label.setFixedSize(logo_size, logo_size)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
 
@@ -561,8 +580,10 @@ expect {{
 
                 try:
                     # Try Windows Terminal first
-                    subprocess.Popen(["powershell.exe", "-NoExit", "-Command",  f"chcp 65001; $env:TERM='xterm-256color';"]+ cmd,
-                                     creationflags=subprocess.CREATE_NEW_CONSOLE)
+                    wt_cmd = ["wt.exe", "new-tab",
+                              "--title", f"SSH - {host}"] + cmd
+                    subprocess.Popen(
+                        wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
                     show_success_toast(self, "Terminal Opened",
                                        f"SSH terminal opened for {username}@{host}")
                     return
@@ -775,10 +796,7 @@ expect {{
         self.filter_jobs.setClearButtonEnabled(True)
         self.filter_jobs.setPlaceholderText("Filter jobs...")
         # Use device-independent width
-        font_metrics = QFontMetrics(self.filter_jobs.font())
-        char_width = font_metrics.horizontalAdvance('M')  # or font_metrics.width('M') in older PyQt versions
-        total_width = 20 * char_width
-        self.filter_jobs.setFixedWidth(total_width)
+        self.filter_jobs.setFixedWidth(220)
         header_layout.addWidget(self.filter_jobs)
 
         self.filter_jobs.textChanged.connect(
@@ -1043,8 +1061,42 @@ expect {{
 if __name__ == "__main__":
 
 
-    app = QApplication(sys.argv)
 
+    if "linux" in platform.system().lower():
+        if os.environ.get("XDG_SESSION_TYPE") != "wayland":
+            try:
+                output = subprocess.check_output("xdpyinfo", shell=True).decode()
+                match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
+
+                if match:
+                    dpi_x = int(match.group(1))
+
+                    # Map DPI to scale factor
+                    dpi_scale_map = {
+                        96: "1.0",    # 100%
+                        120: "1.25",  # 125%
+                        144: "0.9",   # 150%
+                        168: "0.6",
+                        192: "0.5"
+                    }
+
+                    closest_dpi = min(dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x))
+                    scale = dpi_scale_map[closest_dpi]
+
+                    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+                    os.environ["QT_SCALE_FACTOR"] = scale
+                    os.environ["QT_FONT_DPI"] = str(closest_dpi)
+
+                    print(f"Set scale: {scale} for DPI: {dpi_x}")
+                else:
+                    print("Could not determine DPI.")
+            except Exception as e:
+                print("Error reading DPI:", e)
+        else:
+            print("Wayland session detected — using automatic scaling.")
+            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+
+    app = QApplication(sys.argv)    
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
