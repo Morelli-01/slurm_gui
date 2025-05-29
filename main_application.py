@@ -666,51 +666,64 @@ expect {{
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
 
-
-    def _open_macos_terminal(self, host, username, password=None):
-        """Open macOS Terminal using `except` to manage SSH session"""
-        try:
-            session_name = f"slurm_{random.randint(1000, 9999)}"
-            except_path = except_utility_path  # Full path to the `except` utility
-
-            # Create temporary shell script
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as temp_script:
-                script_path = temp_script.name
-                temp_script.write(f"""#!/bin/bash
-    # Start a new session using except
-    {except_path} start-session {session_name}
-
-    # Send SSH command to session
-    {except_path} send -s {session_name} "ssh {username}@{host}" Enter
-
-    # Attach to the session
-    {except_path} attach-session {session_name}
-
-    # Clean up
-    {except_path} kill-session {session_name} 2>/dev/null || true
-    """)
-
+    def _create_expect_script(self, host, username, password):
+            """Create an expect script for automatic password authentication"""
+            script_content = f'''#!{except_utility_path} -f
+    set timeout 30
+    spawn ssh {username}@{host}
+    expect {{
+        "password:" {{
+            send "{password}\\r"
+            interact
+        }}
+        "yes/no" {{
+            send "yes\\r"
+            expect "password:"
+            send "{password}\\r"
+            interact
+        }}
+        timeout {{
+            puts "Connection timeout"
+            exit 1
+        }}
+        eof {{
+            puts "Connection failed"
+            exit 1
+        }}
+    }}
+    '''
+            
+            # Create temporary expect script
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+            
+            # Make script executable
             os.chmod(script_path, 0o755)
+            return script_path
 
-            # Use AppleScript to launch Terminal and run the script
+
+    def _open_macos_terminal(self, host, username, password):
+        """Open terminal on macOS with automatic authentication"""
+        try:
+            script_path = self._create_expect_script(host, username, password)
             applescript = f'''
             tell application "Terminal"
                 activate
-                do script "bash '{script_path}'"
+                do script "{script_path}"
             end tell
             '''
-            subprocess.run(["osascript", "-e", applescript], check=True)
-
-            show_info_toast(self, "Terminal Opened",
-                            f"SSH session started with `except` to {username}@{host}.\n"
-                            f"Please enter your password in the opened terminal.")
-
-            # Cleanup temp script after 5 minutes
-            QTimer.singleShot(300000, lambda: self._cleanup_temp_file(script_path))
-
+            subprocess.Popen(["osascript", "-e", applescript])
+            
+            # Clean up script after delay
+            QTimer.singleShot(10000, lambda: self._cleanup_temp_file(script_path))
+            
+            show_success_toast(self, "Terminal Opened", 
+                             f"Terminal opened for {username}@{host}")
+                             
         except Exception as e:
-            show_error_toast(self, "Terminal Error", f"Failed to open macOS terminal: {str(e)}")
-
+            show_error_toast(self, "Terminal Error", 
+                           f"Failed to open macOS terminal: {str(e)}")
 
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
