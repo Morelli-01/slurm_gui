@@ -46,6 +46,7 @@ class AppStyles:
         QMainWindow, QWidget {{
             background-color: {colors['bg']};
             color: {colors['fg']};
+            font-family: Roboto;
             font-size: 10pt;  /* Use point sizes for consistency */
         }}
         """

@@ -1,4 +1,3 @@
-import glob
 import os
 import platform
 system = platform.system()
@@ -10,29 +9,30 @@ if system == "Windows":
     os.environ["QT_FONT_DPI"] = "96"
     print("Windows: Qt DPI scaling enabled")
 
-from threading import Thread
-from PyQt6.QtCore import Qt
-from modules.defaults import *
-from modules.job_panel import JobsPanel
-import modules.cluster_status_widget as cluster_status_widget
-from modules.job_queue_widget import JobQueueWidget
-import slurm_connection
-from style import AppStyles
-from utils import *
-from pathlib import Path
-import shutil
-from modules.settings_widget import SettingsWidget
-from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-from modules.project_store import ProjectStore
-import subprocess
-import random
-import threading
-import tempfile
-import sys
-from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path, font_directory
 
-import re
 from PyQt6.QtGui import QFontDatabase, QFont
+import re
+from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path, font_directory
+import sys
+import tempfile
+import threading
+import random
+import subprocess
+from modules.project_store import ProjectStore
+from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from modules.settings_widget import SettingsWidget
+import shutil
+from pathlib import Path
+from utils import *
+from style import AppStyles
+import slurm_connection
+from modules.job_queue_widget import JobQueueWidget
+import modules.cluster_status_widget as cluster_status_widget
+from modules.job_panel import JobsPanel
+from modules.defaults import *
+from PyQt6.QtCore import Qt
+from threading import Thread
+import glob
 
 
 # --- Constants ---
@@ -63,36 +63,6 @@ def get_scaled_dimensions(screen=None):
     height = min_height = 950
     return width, height, min_width, min_height
 
-
-def setup_application_font():
-   # Create QApplication
-   
-   # Find all .ttf files in the directory and static subdirectory
-   ttf_files = []
-   ttf_files.extend(glob.glob(os.path.join(font_directory, "*.ttf")))
-   ttf_files.extend(glob.glob(os.path.join(font_directory, "static", "*.ttf")))
-   
-   print(f"Found {len(ttf_files)} font files")
-   
-   # Load all font files
-   loaded_families = set()
-   for font_path in ttf_files:
-       font_id = QFontDatabase.addApplicationFont(font_path)
-       if font_id != -1:
-           families = QFontDatabase.applicationFontFamilies(font_id)
-           loaded_families.update(families)
-           print(f"Loaded: {os.path.basename(font_path)}")
-   
-   # Set Open Sans as default application font, size 14
-   if loaded_families:
-       family_name = next(iter(loaded_families))  # Get first family name
-       app_font = QFont(family_name, 14)
-       app.setFont(app_font)
-       print(f"Set application font to: {family_name}, size 14")
-   else:
-       print("No fonts loaded, using system default")
-   
-   return app
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -1147,7 +1117,6 @@ if __name__ == "__main__":
             print("Error reading DPI:", e)
 
     app = QApplication(sys.argv)
-    setup_application_font()
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
     configs_dir = Path(QStandardPaths.writableLocation(
