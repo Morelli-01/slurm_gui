@@ -673,18 +673,15 @@ expect {{
             # Generate session name
             session_name = f"slurm_{random.randint(1000, 9999)}"
             
-            # Build the command string properly
+            # Build the command string with escaped quotes
             cmd = f'{tmux_utility_path} new-session -d -s {session_name} && '
-            cmd += f'{tmux_utility_path} send-keys -t {session_name} "ssh {username}@{host}" Enter && '
+            cmd += f'{tmux_utility_path} send-keys -t {session_name} \\"ssh {username}@{host}\\" Enter && '
             cmd += f'sleep 3 && '
-            cmd += f'{tmux_utility_path} send-keys -t {session_name} "{password}" Enter && '
+            cmd += f'{tmux_utility_path} send-keys -t {session_name} \\"{password}\\" Enter && '
             cmd += f'{tmux_utility_path} attach-session -t {session_name}'
             
-            # Simple AppleScript - escape the quotes properly
-            applescript = f"""tell application "Terminal"
-        activate
-        do script "{cmd}"
-    end tell"""
+            # AppleScript with proper escaping
+            applescript = f'tell application "Terminal" to activate\ntell application "Terminal" to do script "{cmd}"'
             
             # Run it
             subprocess.run(["osascript", "-e", applescript], check=True)
@@ -692,7 +689,7 @@ expect {{
             show_success_toast(self, "Terminal Opened", f"SSH connection to {username}@{host}")
             
         except Exception as e:
-            show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
+        show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
