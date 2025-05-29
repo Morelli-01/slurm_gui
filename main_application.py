@@ -689,7 +689,8 @@ expect {{
             show_success_toast(self, "Terminal Opened", f"SSH connection to {username}@{host}")
             
         except Exception as e:
-        show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
+            show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
+    
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
