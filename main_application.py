@@ -414,7 +414,7 @@ class SlurmJobManagerApp(QMainWindow):
                         start_time =line.split(" ")[1].split("=")[1] 
                         end_time =line.split(" ")[2].split("=")[1] 
                         time_to_maintenance = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
-                        maintenance_details.append(f"{name} in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
+                        maintenance_details.append(f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
                         break
                 
                 if maintenance_details:

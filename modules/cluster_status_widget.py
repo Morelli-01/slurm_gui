@@ -303,7 +303,6 @@ class NodeStatusTab(QWidget):
 
             # Add block widgets starting from the second column (column 1)
             for block_index, block_state in enumerate(block_states):
-                # Check if we need to move to the next row for blocks
                 if i >= 8:
                     row_offset += 1
                     i = 0  # Reset column counter for the new row
@@ -311,16 +310,58 @@ class NodeStatusTab(QWidget):
                 block_widget = QWidget()
                 block_widget.setFixedSize(QSize(block_size, block_size))
                 block_widget.setObjectName("coloredBlock")
-                # Use dynamic property to apply specific styles based on state
+                
+                # Find the username for used GPUs
+                tooltip_text = ""
+                if block_state in ["prod_used", "stud_used"]:
+                    # Find jobs running on this node
+                    node_jobs = [job for job in jobs_data if node_info["NodeName"] == job.get("Nodelist", "")]
+                    
+                    # Separate student and production jobs
+                    stud_jobs = []
+                    prod_jobs = []
+                    for job in node_jobs:
+                        account = job.get("Account", "")
+                        if any(k in account for k in STUDENTS_JOBS_KEYWORD):
+                            stud_jobs.append(job)
+                        else:
+                            prod_jobs.append(job)
+                    
+                    # Count total GPUs for each type to determine offset
+                    total_stud_gpus = sum(int(job.get("GPUs", 0)) for job in stud_jobs)
+                    
+                    if block_state == "stud_used":
+                        current_gpu_index = 0
+                        # Process student jobs
+                        for job in stud_jobs:
+                            num_gpus = int(job.get("GPUs", 0))
+                            if block_index < total_stud_gpus and block_index >= current_gpu_index:
+                                if block_index < current_gpu_index + num_gpus:
+                                    tooltip_text = job.get("User", "unknown")
+                                    break
+                            current_gpu_index += num_gpus
+                    
+                    elif block_state == "prod_used":
+                        current_gpu_index = total_stud_gpus
+                        # Process production jobs
+                        for job in prod_jobs:
+                            num_gpus = int(job.get("GPUs", 0))
+                            if block_index >= total_stud_gpus and block_index >= current_gpu_index:
+                                if block_index < current_gpu_index + num_gpus:
+                                    tooltip_text = job.get("User", "unknown")
+                                    break
+                            current_gpu_index += num_gpus
+
+                if tooltip_text:
+                    block_widget.setToolTip(tooltip_text)
+                    
                 block_widget.setProperty("data-state", block_state)
-                # Apply stylesheet using the stored theme
                 if self.theme_stylesheet:
                     block_widget.setStyleSheet(self.theme_stylesheet)
 
-                # Add block widget to the grid at the current row and column (col_start + i)
                 self.node_status_grid_layout.addWidget(
                     block_widget, row_index + row_offset, col_start + i)
-                i += 1  # Increment column counter
+                i += 1
 
         # Adjust column stretches
         self.node_status_grid_layout.setColumnStretch(0, 0)  # Node name column
