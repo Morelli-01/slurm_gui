@@ -679,14 +679,25 @@ expect {{
             script_content = f'''#!/bin/bash
     echo "Starting tmux session {session_name}..."
     {tmux_utility_path} new-session -d -s {session_name}
+
     echo "Sending SSH command..."
     {tmux_utility_path} send-keys -t {session_name} "ssh {username}@{host}" Enter
+
     echo "Waiting for password prompt..."
-    sleep 3
+    sleep 4
+
     echo "Sending password..."
     {tmux_utility_path} send-keys -t {session_name} "{password}" Enter
+
+    echo "Waiting for connection to establish..."
+    sleep 2
+
     echo "Attaching to session..."
     {tmux_utility_path} attach-session -t {session_name}
+
+    # Clean up session when done
+    echo "Cleaning up session..."
+    {tmux_utility_path} kill-session -t {session_name} 2>/dev/null || true
     '''
             
             # Write to temp file
@@ -708,7 +719,6 @@ expect {{
             
         except Exception as e:
             show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
-            
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
