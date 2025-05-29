@@ -666,59 +666,27 @@ expect {{
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
     def _open_macos_terminal(self, host, username, password):
-        """Simple macOS terminal with tmux and automatic password"""
+        """Simple macOS terminal with SSH connection"""
         try:
-            import random
+            # Create a simple SSH command
+            ssh_command = f"ssh {username}@{host}"
             
-            # Generate session name
-            session_name = f"slurm_{random.randint(1000, 9999)}"
-            
-            # Create a simple shell script instead
-            import tempfile
-            
-            script_content = f'''#!/bin/bash
-    echo "Starting tmux session {session_name}..."
-    {tmux_utility_path} new-session -d -s {session_name}
-
-    echo "Sending SSH command..."
-    {tmux_utility_path} send-keys -t {session_name} "ssh {username}@{host}" Enter
-
-    echo "Waiting for password prompt..."
-    sleep 4
-
-    echo "Sending password..."
-    {tmux_utility_path} send-keys -t {session_name} "{password}" Enter
-
-    echo "Waiting for connection to establish..."
-    sleep 2
-
-    echo "Attaching to session..."
-    {tmux_utility_path} attach-session -t {session_name}
-
-    # Clean up session when done
-    echo "Cleaning up session..."
-    {tmux_utility_path} kill-session -t {session_name} 2>/dev/null || true
-    '''
-            
-            # Write to temp file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                f.write(script_content)
-                script_path = f.name
-            
-            os.chmod(script_path, 0o755)
-            
-            # Simple AppleScript to run the script
-            applescript = f'tell application "Terminal" to do script "bash {script_path}"'
+            # Use AppleScript to open Terminal and run the SSH command
+            applescript = f'''
+            tell application "Terminal"
+                activate
+                do script "{ssh_command}"
+            end tell
+            '''
             
             subprocess.run(["osascript", "-e", applescript], check=True)
             
-            show_success_toast(self, "Terminal Opened", f"SSH connection to {username}@{host}")
-            
-            # Clean up after 5 minutes
-            QTimer.singleShot(300000, lambda: self._cleanup_temp_file(script_path))
+            show_info_toast(self, "Terminal Opened", 
+                        f"SSH terminal opened to {username}@{host}\n"
+                        f"You will need to enter your password manually.")
             
         except Exception as e:
-            show_error_toast(self, "Terminal Error", f"Failed: {str(e)}")
+            show_error_toast(self, "Terminal Error", f"Failed to open macOS terminal: {str(e)}")
     def _open_linux_terminal(self, node_name, username, password):
         """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
         try:
