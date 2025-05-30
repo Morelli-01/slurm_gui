@@ -755,7 +755,7 @@ class SlurmConnection:
             # Use 'ls -F' to list files and directories, then filter for directories only.
             # -F appends / to directories, * to executables, etc.
             # We then filter for lines ending with / and remove the slash.
-            command = f"ls -F '{path}'"
+            command = f"ls -aF '{path}'"
             stdout, stderr = self.run_command(command)
 
             if stderr:
@@ -768,11 +768,10 @@ class SlurmConnection:
                     f"Warning listing remote directories in {path}: {stderr}")
 
             directories = []
-            # Filter out hidden files and current/parent directory entries from ls output
-            # Also ensure we only add directories.
+            # Include all directories, including hidden ones (but still exclude . and ..)
             for line in stdout.split('\n'):
                 line = line.strip()
-                if line and line.endswith('/') and not line.startswith('.'):
+                if line and line.endswith('/') and line not in ('./', '../'):
                     directories.append(line.rstrip('/'))
             return sorted(directories, key=str.lower)  # Sort alphabetically
         except Exception as e:
@@ -789,7 +788,7 @@ class SlurmConnection:
         try:
             # Use 'test -d' to check if it's a directory
             stdout, stderr = self.run_command(
-                f"test -d '{path}' && echo 'exists' || echo 'not_exists'")
+                f"test -d '{path}' || test -e '{path}' && echo 'exists' || echo 'not_exists'")
             return stdout.strip() == 'exists'
         except Exception as e:
             print(f"Error checking remote path existence: {e}")

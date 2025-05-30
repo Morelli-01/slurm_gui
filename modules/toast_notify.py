@@ -5,10 +5,10 @@ A modern, properly styled toast notification implementation
 
 from enum import Enum
 import os
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint, QSize, pyqtSignal
 from PyQt6.QtGui import QFont, QPixmap, QColor
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QGraphicsDropShadowEffect
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QGraphicsDropShadowEffect, QSizePolicy
 )
 from modules.defaults import *
 from utils import script_dir
@@ -143,37 +143,58 @@ class ToastWidget(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+        
         self.content_frame = QFrame()
         self.content_frame.setObjectName("toastContent")
+        self.content_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
+        
         content_layout = QHBoxLayout(self.content_frame)
         content_layout.setContentsMargins(20, 16, 20, 16)
         content_layout.setSpacing(15)
+        
+        # Icon container
         icon_container = QWidget()
         icon_container.setFixedSize(32, 32)
         icon_layout = QHBoxLayout(icon_container)
         icon_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.icon_label = QLabel()
         self.icon_label.setFixedSize(24, 24)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_icon()
         icon_layout.addWidget(self.icon_label)
-        content_layout.addWidget(icon_container)
+        content_layout.addWidget(icon_container, 0, Qt.AlignmentFlag.AlignTop)
+        
+        # Text container
         text_container = QWidget()
+        text_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         text_layout = QVBoxLayout(text_container)
         text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(4)
+        text_layout.setSpacing(6)
+        
+        # Title
         self.title_label = QLabel(title)
         self.title_label.setObjectName("toastTitle")
         self.title_label.setWordWrap(True)
+        self.title_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.title_label.setFont(QFont("Inter", 13, QFont.Weight.Bold))
-        text_layout.addWidget(self.title_label)
+        text_layout.addWidget(self.title_label, 0, Qt.AlignmentFlag.AlignTop)
+        
+        # Message
         if message.strip():
             self.message_label = QLabel(message)
             self.message_label.setObjectName("toastMessage")
             self.message_label.setWordWrap(True)
+            self.message_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             self.message_label.setFont(QFont("Inter", 11))
-            text_layout.addWidget(self.message_label)
+            self.message_label.setTextFormat(Qt.TextFormat.RichText)
+            self.message_label.setOpenExternalLinks(True)
+            self.message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+            text_layout.addWidget(self.message_label, 0, Qt.AlignmentFlag.AlignTop)
+        
         content_layout.addWidget(text_container, 1)
+        
+        # Close button
         if self.closable:
             close_container = QWidget()
             close_container.setFixedSize(32, 32)
@@ -184,13 +205,25 @@ class ToastWidget(QWidget):
             self.close_button.setFixedSize(24, 24)
             self.close_button.clicked.connect(self.hide_toast)
             close_layout.addWidget(self.close_button)
-            content_layout.addWidget(close_container)
+            content_layout.addWidget(close_container, 0, Qt.AlignmentFlag.AlignTop)
+        
         main_layout.addWidget(self.content_frame)
+        
+        # Progress bar
         if self.duration > 0:
             self.progress_frame = QFrame()
             self.progress_frame.setObjectName("toastProgress")
             self.progress_frame.setFixedHeight(4)
             main_layout.addWidget(self.progress_frame)
+        
+        # Adjust size after content is set
+        self.adjustSize()
+        
+    def sizeHint(self):
+        # Calculate the preferred size based on content
+        width = 380  # Fixed width
+        height = self.content_frame.sizeHint().height() + (8 if hasattr(self, 'progress_frame') else 0)
+        return QSize(width, min(height, 400))  # Cap maximum height at 400px
 
     def _set_icon(self):
         icon_config = {
