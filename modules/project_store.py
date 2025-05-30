@@ -628,22 +628,130 @@ class ProjectStore:
                 except (ValueError, IndexError):
                     pass  # Keep default value if parsing fails
 
-            # Add array information if present
+
+            # If this is a job array, expand and create a Job for each task
+            def parse_array_spec(spec):
+                # Accepts formats like "1-5", "1-5:2", "1,2,3,5,8"
+                result = []
+                if not spec:
+                    return result
+                if "," in spec:
+                    for part in spec.split(","):
+                        part = part.strip()
+                        if "-" in part:
+                            if ":" in part:
+                                rng, step = part.split(":")
+                                start, end = map(int, rng.split("-"))
+                                step = int(step)
+                                result.extend(list(range(start, end+1, step)))
+                            else:
+                                start, end = map(int, part.split("-"))
+                                result.extend(list(range(start, end+1)))
+                        else:
+                            try:
+                                result.append(int(part))
+                            except Exception:
+                                pass
+                elif "-" in spec:
+                    if ":" in spec:
+                        rng, step = spec.split(":")
+                        start, end = map(int, rng.split("-"))
+                        step = int(step)
+                        result.extend(list(range(start, end+1, step)))
+                    else:
+                        start, end = map(int, spec.split("-"))
+                        result.extend(list(range(start, end+1)))
+                else:
+                    try:
+                        result.append(int(spec))
+                    except Exception:
+                        pass
+                return sorted(set(result))
+
             if array_spec:
-                job.array_spec = array_spec
-                if array_max_jobs:
-                    job.array_max_jobs = array_max_jobs
+                # Always use %a in output/error file for arrays
+                output_file_mod = output_file.replace("%A", "%A_%a") if "%A" in output_file and "%a" not in output_file else output_file
+                if "%a" not in output_file_mod:
+                    output_file_mod = output_file_mod.replace(".log", "_%a.log")
+                error_file_mod = error_file.replace("%A", "%A_%a") if "%A" in error_file and "%a" not in error_file else error_file
+                if "%a" not in error_file_mod:
+                    error_file_mod = error_file_mod.replace(".log", "_%a.log")
 
-            # Add dependency information if present
-            if dependency:
-                job.dependency = dependency
-
-            # Store job details in info for later submission
-            job.info["submission_details"] = job_details
-
-            # Add the job to the project in the store
-            self.add_job(project, job)
-            return temp_id
+                task_ids = parse_array_spec(array_spec)
+                if not task_ids:
+                    # fallback: treat as single job
+                    task_ids = [0]
+                created_ids = []
+                for tid in task_ids:
+                    job = Job(
+                        id=f"{temp_id}_{tid}",
+                        name=f"{job_name}[{tid}]",
+                        status="NOT_SUBMITTED",
+                        command=command,
+                        partition=partition,
+                        account=account,
+                        time_limit=time_limit,
+                        nodes=nodes,
+                        cpus=cpus_per_task,
+                        constraints=constraint,
+                        qos=qos,
+                        gres=gres,
+                        output_file=output_file_mod.replace("%a", str(tid)),
+                        error_file=error_file_mod.replace("%a", str(tid)),
+                        working_dir=working_dir,
+                        submission_time=None,
+                        memory=memory or "",
+                        array_spec=str(tid),
+                        array_max_jobs=array_max_jobs,
+                        dependency=dependency,
+                    )
+                    if "discord_notifications" in job_details:
+                        job.info["discord_notifications"] = job_details["discord_notifications"]
+                    job.info["submission_details"] = job_details
+                    self.add_job(project, job)
+                    created_ids.append(job.id)
+                return created_ids[0] if created_ids else None
+            else:
+                # Not an array job, normal single job
+                job = Job(
+                    id=temp_id,
+                    name=job_name,
+                    status="NOT_SUBMITTED",  # Special status to indicate job is not submitted yet
+                    command=command,
+                    partition=partition,
+                    account=account,
+                    time_limit=time_limit,
+                    nodes=nodes,
+                    cpus=cpus_per_task,
+                    constraints=constraint,
+                    qos=qos,
+                    gres=gres,
+                    output_file=output_file,
+                    error_file=error_file,
+                    working_dir=working_dir,
+                    submission_time=None,  # No submission time yet
+                    memory=memory or "",
+                )
+                if "discord_notifications" in job_details:
+                    job.info["discord_notifications"] = job_details["discord_notifications"]
+                if gres and "gpu:" in gres:
+                    try:
+                        gpu_parts = gres.split(":")
+                        if len(gpu_parts) == 2:
+                            job.gpus = int(gpu_parts[1])
+                        elif len(gpu_parts) == 3:
+                            job.gpus = int(gpu_parts[2])
+                    except (ValueError, IndexError):
+                        pass
+                if array_spec:
+                    job.array_spec = array_spec
+                    if array_max_jobs:
+                        job.array_max_jobs = array_max_jobs
+                if dependency:
+                    job.dependency = dependency
+                job.info["submission_details"] = job_details
+                self.add_job(project, job)
+                return temp_id
 
         except Exception as e:
             import traceback
@@ -692,6 +800,8 @@ class ProjectStore:
             error_file = job.error_file
             memory = job.memory
             cpus = job.cpus
+            array_spec = job.array_spec
+            array_max_jobs = job.array_max_jobs
 
             # Submit job using SlurmConnection with Discord settings
             new_job_id = self.slurm.submit_job(
@@ -708,7 +818,9 @@ class ProjectStore:
                 error_file=error_file,
                 memory=memory,
                 cpus=cpus,
-                discord_settings=discord_settings  # Pass Discord settings
+                discord_settings=discord_settings,  # Pass Discord settings
+                array_spec=array_spec,
+                array_max_jobs=array_max_jobs
             )
 
             if new_job_id:

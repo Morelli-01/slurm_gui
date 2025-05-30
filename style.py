@@ -12,7 +12,7 @@ down_arrow_path = os.path.join(script_dir, 'src_static', 'down_arrow.svg').repla
 up_arrow_path = os.path.join(script_dir, 'src_static', 'up_arrow.svg').replace('\\', '/')
 check_path = os.path.join(script_dir, 'src_static', 'check.svg').replace('\\', '/')
 err_path = os.path.join(script_dir, 'src_static', 'err.svg').replace('\\', '/')
-checkmark_path = os.path.join(script_dir, 'src_static', 'checkamrk.svg').replace('\\', '/')
+checkmark_path = os.path.join(script_dir, 'src_static', 'checkmark.svg').replace('\\', '/')
 terminal_path = os.path.join(script_dir, 'src_static', 'terminal.svg').replace('\\', '/')
 
 class AppStyles:

@@ -330,6 +330,8 @@ class SlurmConnection:
                 acc_out, _ = self.run_command(
                     f"sacctmgr show associations user={self.remote_user} format=Account -n -P")
                 self.accounts = sorted(set(acc_out.splitlines()))
+            else:
+                print("[WARNING] remote_user is not set, cannot fetch accounts.")
 
             # Fetch GRES (Generic Resources)
             gres_out, _ = self.run_command("scontrol show gres")
@@ -344,7 +346,8 @@ class SlurmConnection:
                    constraint: Optional[str] = None, qos: Optional[str] = None,
                    gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
                    output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", 
-                   memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
+                   memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None,
+                   array_spec: Optional[str] = None, array_max_jobs: Optional[int] = None) -> Optional[str]:
         """
         Submit a job to the SLURM scheduler.
 
@@ -370,7 +373,7 @@ class SlurmConnection:
         script_content = self._create_job_script(
             job_name, partition, time_limit, command, account,
             constraint, qos, gres, nodes, ntasks, output_file, error_file, memory, cpus,
-            discord_settings  # Pass Discord settings to script creation
+            discord_settings, array_spec, array_max_jobs  # Pass Discord settings and array params
         )
     
 
@@ -844,15 +847,22 @@ class SlurmConnection:
     def _create_job_script(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                         constraint: Optional[str], qos: Optional[str], gres: Optional[str],
                         nodes: int, ntasks: int, output_file: str, error_file: str, memory: str, cpus: int,
-                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
+                        discord_settings: Optional[Dict[str, Any]] = None,
+                        array_spec: Optional[str] = None, array_max_jobs: Optional[int] = None) -> str:
         """
         Create the content of a SLURM job script with enhanced Discord notifications.
         """
         
-        # Normalize output and error file paths
+        # Always use %a in output/error file for arrays
+        if array_spec:
+            if "%a" not in output_file:
+                output_file = output_file.replace("%A", "%A_%a") if "%A" in output_file else output_file.replace(".log", "_%a.log")
+            if "%a" not in error_file:
+                error_file = error_file.replace("%A", "%A_%a") if "%A" in error_file else error_file.replace(".log", "_%a.log")
+
         normalized_output = self._normalize_path(output_file)
         normalized_error = self._normalize_path(error_file)
-        
+
         script_lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name=\"{job_name}\"",
@@ -865,6 +875,13 @@ class SlurmConnection:
             f"#SBATCH --mem={memory}",
             f"#SBATCH --cpus-per-task={cpus}",
         ]
+
+        # Add job array directive if specified
+        if array_spec:
+            array_line = f"#SBATCH --array={array_spec}"
+            if array_max_jobs:
+                array_line += f"%{array_max_jobs}"
+            script_lines.append(array_line)
 
         # Add optional parameters
         if "None" not in str(constraint):
