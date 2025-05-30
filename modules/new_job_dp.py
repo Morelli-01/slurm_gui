@@ -63,6 +63,8 @@ class NewJobDialog(QDialog):
         self.accounts = ["Loading..."] if slurm_connection else ["project1", "project2", "mylab"]
         self.gres = ["Loading..."] if slurm_connection else ["gpu:1", "gpu:2", "gpu:rtx5000:1"]
 
+
+        self.nodelist_options = []
         self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
         self._prefetch_data()
 
@@ -134,9 +136,13 @@ class NewJobDialog(QDialog):
             self.accounts = self.slurm_connection.accounts
             self.gres = self.slurm_connection.gres
             self.running_jobs = self.slurm_connection.get_running_jobs()
+            # Fetch available nodes for nodelist selection
+            nodes_info = self.slurm_connection._fetch_nodes_infos()
+            self.nodelist_options = [n["NodeName"] for n in nodes_info if "NodeName" in n]
         except Exception as e:
             print(f"Error prefetching SLURM data: {e}")
             self.running_jobs = []
+            self.nodelist_options = []
 
     def _setup_essential_tab(self):
         # Main layout with scroll area
@@ -306,12 +312,20 @@ class NewJobDialog(QDialog):
         constraints_layout.setSpacing(10)
         constraints_layout.setContentsMargins(10, 15, 10, 15)
         
+
         # Node Constraints
         self.constraint_combo = CheckableComboBox()
         for constraint_option in self.constraints:
             self.constraint_combo.add_item(constraint_option)
         self.constraint_combo.selection_changed.connect(self._update_preview)
         constraints_layout.addRow(self._create_label("Node Constraints:"), self.constraint_combo)
+
+        # Nodelist selection (multi-select)
+        self.nodelist_combo = CheckableComboBox()
+        for node in getattr(self, "nodelist_options", []):
+            self.nodelist_combo.add_item(node)
+        self.nodelist_combo.selection_changed.connect(self._update_preview)
+        constraints_layout.addRow(self._create_label("Nodelist (specific nodes):"), self.nodelist_combo)
         
         # QoS
         qos_widget = QWidget()
@@ -464,7 +478,7 @@ class NewJobDialog(QDialog):
         tab_layout.addWidget(scroll)
         
         # Connect signals for updating preview
-        for widget in [self.constraint_combo, self.qos_combo, self.gpu_check, 
+        for widget in [self.constraint_combo, self.nodelist_combo, self.qos_combo, self.gpu_check, 
                      self.gpu_type_combo, self.gpu_count_spin, self.output_file_edit,
                      self.error_file_edit, self.working_dir_edit]:
             if hasattr(widget, 'selection_changed'):
@@ -876,6 +890,10 @@ class NewJobDialog(QDialog):
                 script_lines.append(f"#SBATCH --account={account}")
             if constraint:
                 script_lines.append(f'#SBATCH --constraint="{constraint}"')
+            # Nodelist directive
+            selected_nodes = self.nodelist_combo.get_checked_items() if hasattr(self, 'nodelist_combo') else []
+            if selected_nodes:
+                script_lines.append(f"#SBATCH --nodelist={','.join(selected_nodes)}")
             if gres:
                 script_lines.append(f"#SBATCH --gres={gres}")
             if output_file:
@@ -987,6 +1005,7 @@ class NewJobDialog(QDialog):
         if venv_path == "None":
             venv_path = None
         command = self.command_text.toPlainText()
+        memory = f"{self.memory_spin.value()}{self.memory_unit_combo.currentText()}"
         script_lines = [
             "#!/bin/bash",
             f"#SBATCH --job-name={job_name}",
@@ -1075,6 +1094,7 @@ class NewJobDialog(QDialog):
         output_file = self.output_file_edit.text()
         error_file = self.error_file_edit.text()
         working_dir = self.working_dir_edit.text()
+        selected_nodes = self.nodelist_combo.get_checked_items() if hasattr(self, 'nodelist_combo') else []
         result = {
             "job_name": job_name,
             "partition": partition,
@@ -1090,7 +1110,8 @@ class NewJobDialog(QDialog):
             "output_file": output_file,
             "error_file": error_file,
             "project": self.selected_project,
-            "working_dir": working_dir
+            "working_dir": working_dir,
+            "nodelist": selected_nodes if selected_nodes else None
         }
         # Job array
         if self.array_group.isChecked():
