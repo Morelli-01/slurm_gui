@@ -546,49 +546,45 @@ class SlurmJobManagerApp(QMainWindow):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
-
+    
     def _open_windows_terminal(self, host, username, password):
-        """Open terminal on Windows using plink for direct password authentication"""
+        """Open terminal on Windows using PuTTY for SSH connection"""
         try:
-            # Check if plink is available
-            plink_path = plink_utility_path
-
-            if plink_path:
-                cmd = [
-                    plink_path,
-                    "-ssh",           # Use SSH protocol
-                    # Non-interactive (don't prompt for anything)
-                    "-batch",
-                    "-pw", password,  # Provide password directly
-                    f"{username}@{host}"
+            # Check if putty.exe is available in common locations
+            putty_paths = [
+                "putty.exe",  # In PATH
+                r"C:\Program Files\PuTTY\putty.exe",
+                r"C:\Program Files (x86)\PuTTY\putty.exe",
+                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
+            ]
+            
+            putty_path = None
+            for path in putty_paths:
+                if shutil.which(path) or os.path.exists(path):
+                    putty_path = path
+                    break
+            
+            if putty_path:
+                # Use PuTTY with saved session or direct connection
+                putty_cmd = [
+                    putty_path,
+                    f"{username}@{host}",
+                    "-ssh",
+                    "-pw", password
                 ]
-
-                try:
-                    # Try Windows Terminal first
-                    wt_cmd = ["wt.exe", "new-tab",
-                              "--title", f"SSH - {host}"] + cmd
-                    subprocess.Popen(
-                        wt_cmd, creationflags=subprocess.CREATE_NEW_CONSOLE)
-                    show_success_toast(self, "Terminal Opened",
-                                       f"SSH terminal opened for {username}@{host}")
-                    return
-                except FileNotFoundError:
-                    # Fallback to cmd.exe
-                    cmd_command = ["cmd.exe", "/c",
-                                   "start", "cmd.exe", "/k"] + cmd
-                    subprocess.Popen(cmd_command)
-                    show_success_toast(self, "Terminal Opened",
-                                       f"SSH session opened for {username}@{host}")
-                    return
+                
+                subprocess.Popen(putty_cmd)
+                show_success_toast(self, "Terminal Opened",
+                                f"PuTTY SSH session opened for {username}@{host}")
             else:
-                # Plink not found - 
-                show_error_toast(self, "Terminal Error",
-                                f"Somethings off with Plink")
+                # PuTTY not found - show error with installation suggestion
+                show_error_toast(self, "PuTTY Not Found",
+                                "PuTTY is required for SSH connections on Windows.\n"
+                                "Please install PuTTY from https://www.putty.org/")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open Windows terminal: {str(e)}")
-
+                            f"Failed to open Windows terminal: {str(e)}")
     def _create_expect_script(self, host, username, password):
         """Create an expect script for automatic password authentication"""
         script_content = f'''#!{except_utility_path}
