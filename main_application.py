@@ -692,53 +692,41 @@ class SlurmJobManagerApp(QMainWindow):
             show_error_toast(self, "Terminal Error",
                              f"Failed to open macOS terminal: {str(e)}")
 
-    def _open_linux_terminal(self, node_name, username, password):
-        """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
+    def _open_linux_terminal(self, host, username, password):
+        """Open terminal on Linux using sshpass for automatic SSH login."""
         try:
-            # Create tmux session for chained SSH connection
-            head_node = self.slurm_connection.host
-            session_name = f"slurm_{random.randint(1000, 9999)}"
+            # Check if sshpass is available
+            sshpass_path = shutil.which("sshpass")
+            if not sshpass_path:
+                show_error_toast(self, "sshpass Not Found",
+                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').")
+                return
 
-            # Create tmux session and send SSH commands
-            tmux_commands = [
-                f"{tmux_utility_path} new-session -d -s {session_name}",
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
-                f"sleep 2",  # Wait for SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
-            ]
+            # Build the sshpass command
+            ssh_cmd = f"{sshpass_path} -p '{password}' ssh {username}@{host}"
 
-            # List of terminal emulators to try with tmux
+            # List of terminal emulators to try
             terminals = [
-                ["gnome-terminal", "--", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["konsole", "-e", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xfce4-terminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["lxterminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["mate-terminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["terminator", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["alacritty", "-e", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["kitty", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xterm", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+                ["gnome-terminal", "--", "bash", "-c", f"{ssh_cmd}"],
+                ["konsole", "-e", "bash", "-c", f"{ssh_cmd}"],
+                ["xfce4-terminal", "-e", f"bash -c {ssh_cmd}"],
+                ["lxterminal", "-e", f"bash -c {ssh_cmd}"],
+                ["mate-terminal", "-e", f"bash -c {ssh_cmd}"],
+                ["terminator", "-e", f"bash -c {ssh_cmd}"],
+                ["alacritty", "-e", "bash", "-c", f"{ssh_cmd}"],
+                ["kitty", "bash", "-c", f"{ssh_cmd}"],
+                ["xterm", "-e", f"bash -c {ssh_cmd}"]
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                       f"Tmux session opened: {head_node}")
+                                       f"SSH session opened for {username}@{host}")
                     return
                 except FileNotFoundError:
                     continue
 
-            # If no terminal emulator found
             show_error_toast(self, "No Terminal Found",
                              "No supported terminal emulator found on this system.")
 
