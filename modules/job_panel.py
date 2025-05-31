@@ -111,7 +111,8 @@ class ProjectWidget(QGroupBox):
         self.parent_group = parent
         self.project_storer = storer
         self._is_selected = False
-        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum,
+                           QSizePolicy.Policy.Minimum)
         # Main layout
         self.layout = QVBoxLayout(self)
         self.layout.setSpacing(8)
@@ -230,7 +231,8 @@ class ProjectWidget(QGroupBox):
             # Store reference to this block for updating
             self.status_blocks[status_key] = mini_block
 
-        status_container.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        status_container.setSizePolicy(
+            QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         return status_container
 
     def create_mini_status_block(self, icon_color, count_color, icon_path, count, tooltip):
@@ -272,8 +274,9 @@ class ProjectWidget(QGroupBox):
         mini_icon_section = QFrame()
         # print(icon_label.movie().scaledSize())
         font_metrics = QFontMetrics(icon_label.font())
-        char_width = font_metrics.horizontalAdvance('M')*2  # or font_metrics.width('M') in older PyQt versions
-        mini_icon_section.setFixedSize(char_width,char_width)
+        # or font_metrics.width('M') in older PyQt versions
+        char_width = font_metrics.horizontalAdvance('M')*2
+        mini_icon_section.setFixedSize(char_width, char_width)
         mini_icon_section.setStyleSheet(f"""
             background-color: {icon_color};
             border-top-left-radius: 6px;
@@ -381,7 +384,8 @@ class ProjectGroup(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Project", parent)
         # self.setFixedWidth(350)
-        self.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        self.setSizePolicy(QSizePolicy.Policy.Minimum,
+                           QSizePolicy.Policy.Minimum)
         self.parent = parent
         self.project_counter = 0
         self.scroll_area = QScrollArea()
@@ -659,7 +663,6 @@ class JobsPanel(QWidget):
 
         self.project_group = ProjectGroup(parent=self)
         self.jobs_group = JobsGroup()
-
 
         # Only start loading projects if project_storer is available
         if self.project_storer is not None:
@@ -1604,6 +1607,7 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
+
     def _open_macos_node_terminal(self, node_name, username, password):
         """Open terminal on macOS for specific node using sshpass for chained SSH connection"""
         try:
@@ -1611,7 +1615,7 @@ class JobsPanel(QWidget):
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
                 show_error_toast(self, "sshpass Not Found",
-                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
+                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
                 return
 
             # Get connection details
@@ -1643,27 +1647,28 @@ class JobsPanel(QWidget):
                 end tell
                 '''
                 subprocess.Popen(["osascript", "-e", applescript])
-                
+
                 show_success_toast(self, "Terminal Opened",
-                                f"SSH session opened: {head_node} -> {node_name}")
+                                   f"SSH session opened: {head_node} -> {node_name}")
 
             except Exception as fallback_error:
                 # Fallback: try to run script directly in background
                 try:
                     subprocess.Popen(["open", "-a", "Terminal", script_path])
                     show_success_toast(self, "Terminal Opened",
-                                    f"SSH session opened: {head_node} -> {node_name}")
+                                       f"SSH session opened: {head_node} -> {node_name}")
                 except Exception:
                     show_error_toast(self, "Terminal Error",
-                                    f"Failed to open terminal: {str(fallback_error)}")
+                                     f"Failed to open terminal: {str(fallback_error)}")
 
             # Clean up script file after delay
-            QTimer.singleShot(30000, lambda: self._cleanup_temp_file(script_path))
+            QTimer.singleShot(
+                30000, lambda: self._cleanup_temp_file(script_path))
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open macOS terminal: {str(e)}")
-            
+                             f"Failed to open macOS terminal: {str(e)}")
+
     def _open_linux_node_terminal(self, node_name, username, password):
         """Open terminal on Linux for specific node using sshpass for chained SSH connection"""
         try:
@@ -1671,7 +1676,7 @@ class JobsPanel(QWidget):
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
                 show_error_toast(self, "sshpass Not Found",
-                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').")
+                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').")
                 return
 
             # Get connection details
@@ -1711,22 +1716,25 @@ class JobsPanel(QWidget):
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                    f"SSH session opened: {head_node} -> {node_name}")
-                    
+                                       f"SSH session opened: {head_node} -> {node_name}")
+
                     # Clean up script file after delay
-                    QTimer.singleShot(30000, lambda: self._cleanup_temp_file(script_path))
+                    QTimer.singleShot(
+                        30000, lambda: self._cleanup_temp_file(script_path))
                     return
                 except FileNotFoundError:
                     continue
 
             # If no terminal emulator found
-            self._cleanup_temp_file(script_path)  # Clean up immediately since we failed
+            # Clean up immediately since we failed
+            self._cleanup_temp_file(script_path)
             show_error_toast(self, "No Terminal Found",
-                            "No supported terminal emulator found on this system.")
+                             "No supported terminal emulator found on this system.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Linux terminal: {str(e)}")
+                             f"Failed to open Linux terminal: {str(e)}")
+
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:
@@ -1735,70 +1743,42 @@ class JobsPanel(QWidget):
         except Exception as e:
             print(
                 f"Warning: Could not clean up temporary file {file_path}: {e}")
-    
-    def _open_windows_node_terminal(self, node_name, username, password):
-        """Open terminal on Windows for specific node with chained SSH connection - Simplified version"""
+
+    def _open_windows_terminal(self, host, username, password):
+        """Open terminal on Windows using PuTTY for SSH connection"""
         try:
-            # Get connection details
-            head_node = self.slurm_connection.host
+            # Check if putty.exe is available in common locations
+            putty_paths = [
+                "putty.exe",  # In PATH
+                r"C:\Program Files\PuTTY\putty.exe",
+                r"C:\Program Files (x86)\PuTTY\putty.exe",
+                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
+            ]
             
-            # Check if plink is available for automated password entry
-            plink_available = Path(plink_utility_path).exists()
+            putty_path = None
+            for path in putty_paths:
+                if shutil.which(path) or os.path.exists(path):
+                    putty_path = path
+                    break
             
-            if plink_available:
-                # Create a batch script that handles both SSH connections automatically
-                import tempfile
+            if putty_path:
+                # Use PuTTY with saved session or direct connection
+                putty_cmd = [
+                    putty_path,
+                    f"{username}@{host}",
+                    "-ssh",
+                    "-pw", password
+                ]
                 
-                batch_content = f'''@echo off
-    title SSH {head_node} -> {node_name}
-    echo Connecting to {head_node} and then to {node_name}...
-    echo.
+                subprocess.Popen(putty_cmd)
+                show_success_toast(self, "Terminal Opened",
+                                f"PuTTY SSH session opened for {username}@{host}")
+            else:
+                # PuTTY not found - show error with installation suggestion
+                show_error_toast(self, "PuTTY Not Found",
+                                "PuTTY is required for SSH connections on Windows.\n"
+                                "Please install PuTTY from https://www.putty.org/")
 
-    REM First connection to head node, then immediately connect to compute node
-    echo Connecting to head node...
-    "{plink_utility_path}" -ssh -batch -pw "{password}" {username}@{head_node} -t "echo 'Connected to head node. Connecting to {node_name}...'; sshpass -p '{password}' ssh -o StrictHostKeyChecking=no {username}@{node_name} || ssh {username}@{node_name}"
-
-    echo.
-    echo Connection closed. Press any key to exit...
-    pause >nul
-    '''
-                
-                # Create temporary batch file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-                    f.write(batch_content)
-                    batch_path = f.name
-                
-                try:
-                    # Try Windows Terminal first
-                    
-                    wt_cmd = [
-        "wt.exe", "new-tab",
-        "--title", f"SSH {head_node} -> {node_name}",
-        "--", "cmd.exe", "/k",
-        f'chcp 65001 && "{batch_path}"'
-    ]
-                    subprocess.Popen(wt_cmd, shell=False)
-                    
-                    show_success_toast(self, "Terminal Opened",
-                                    f"SSH terminal opened: {head_node} -> {node_name}")
-                    
-                except FileNotFoundError:
-                    # Fallback to cmd.exe
-                    cmd_command = ["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path]
-                    subprocess.Popen(cmd_command, shell=False)
-                    
-                    show_success_toast(self, "Terminal Opened",
-                                    f"SSH session opened: {head_node} -> {node_name}")
-                
-                # Clean up batch file after delay
-                QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
-                return
-            
-            # Fallback method without plink (requires manual password entry)
-            show_error_toast("Plink not found")
-            
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open Windows terminal: {str(e)}")
-
-
