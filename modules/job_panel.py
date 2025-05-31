@@ -1604,100 +1604,129 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
-
     def _open_macos_node_terminal(self, node_name, username, password):
-        """Open terminal on macOS for specific node with tmux session for chained SSH"""
+        """Open terminal on macOS for specific node using sshpass for chained SSH connection"""
         try:
-            # Create tmux session for chained SSH connection
+            # Check if sshpass is available
+            sshpass_path = shutil.which("sshpass")
+            if not sshpass_path:
+                show_error_toast(self, "sshpass Not Found",
+                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
+                return
+
+            # Get connection details
             head_node = self.slurm_connection.host
-            session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
 
-            # Create tmux session and send SSH commands
-            tmux_commands = [
-                f"{tmux_utility_path} new-session -d -s {session_name}",
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
-                f"sleep 2",  # Wait for SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
-                f"sleep 3",  # Wait for login
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {node_name}' Enter",
-                f"sleep 2",  # Wait for second SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
-            ]
+            # Create a script that handles the chained SSH connection
+            script_content = f'''#!/bin/bash
+    echo "Connecting to {head_node} and then to {node_name}..."
+    echo ""
 
-            # Use AppleScript to open Terminal and attach to tmux session
-            applescript = f'''
-            tell application "Terminal"
-                activate
-                do script "{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}"
-            end tell
-            '''
-            subprocess.Popen(["osascript", "-e", applescript])
+    # First connection to head node, then immediately connect to compute node
+    {sshpass_path} -p '{password}' ssh -t {username}@{head_node} "echo 'Connected to head node. Connecting to {node_name}...'; {sshpass_path} -p '{password}' ssh -o StrictHostKeyChecking=no {username}@{node_name} || ssh {username}@{node_name}"
+    '''
 
-            show_success_toast(self, "Terminal Opened",
-                               f"Tmux session opened: {head_node} -> {node_name}")
+            # Create temporary script file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+
+            # Make script executable
+            os.chmod(script_path, 0o755)
+
+            try:
+                # Try Terminal.app with AppleScript
+                applescript = f'''
+                tell application "Terminal"
+                    activate
+                    do script "{script_path}"
+                end tell
+                '''
+                subprocess.Popen(["osascript", "-e", applescript])
+                
+                show_success_toast(self, "Terminal Opened",
+                                f"SSH session opened: {head_node} -> {node_name}")
+
+            except Exception as fallback_error:
+                # Fallback: try to run script directly in background
+                try:
+                    subprocess.Popen(["open", "-a", "Terminal", script_path])
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH session opened: {head_node} -> {node_name}")
+                except Exception:
+                    show_error_toast(self, "Terminal Error",
+                                    f"Failed to open terminal: {str(fallback_error)}")
+
+            # Clean up script file after delay
+            QTimer.singleShot(30000, lambda: self._cleanup_temp_file(script_path))
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open macOS terminal: {str(e)}")
-
+                            f"Failed to open macOS terminal: {str(e)}")
+            
     def _open_linux_node_terminal(self, node_name, username, password):
-        """Open terminal on Linux with tmux session for chained SSH: first to head node, then to compute node"""
+        """Open terminal on Linux for specific node using sshpass for chained SSH connection"""
         try:
-            # Create tmux session for chained SSH connection
+            # Check if sshpass is available
+            sshpass_path = shutil.which("sshpass")
+            if not sshpass_path:
+                show_error_toast(self, "sshpass Not Found",
+                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').")
+                return
+
+            # Get connection details
             head_node = self.slurm_connection.host
-            session_name = f"slurm_{node_name}_{random.randint(1000, 9999)}"
 
-            # Create tmux session and send SSH commands
-            tmux_commands = [
-                f"{tmux_utility_path} new-session -d -s {session_name}",
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {username}@{head_node}' Enter",
-                f"sleep 2",  # Wait for SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter",
-                f"sleep 3",  # Wait for login
-                f"{tmux_utility_path} send-keys -t {session_name} 'ssh {node_name}' Enter",
-                f"sleep 2",  # Wait for second SSH prompt
-                f"{tmux_utility_path} send-keys -t {session_name} '{password}' Enter"
-            ]
+            # Create a script that handles the chained SSH connection
+            script_content = f'''#!/bin/bash
+    echo "Connecting to {head_node} and then to {node_name}..."
+    echo ""
 
-            # List of terminal emulators to try with tmux
+    # First connection to head node, then immediately connect to compute node
+    {sshpass_path} -p '{password}' ssh -t {username}@{head_node} "echo 'Connected to head node. Connecting to {node_name}...'; {sshpass_path} -p '{password}' ssh -o StrictHostKeyChecking=no {username}@{node_name} || ssh {username}@{node_name}"
+    '''
+
+            # Create temporary script file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                f.write(script_content)
+                script_path = f.name
+
+            # Make script executable
+            os.chmod(script_path, 0o755)
+
+            # List of terminal emulators to try with the script
             terminals = [
-                ["gnome-terminal", "--", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["konsole", "-e", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xfce4-terminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["lxterminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["mate-terminal", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["terminator", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"],
-                ["alacritty", "-e", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["kitty", "bash", "-c",
-                    f"{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash"],
-                ["xterm", "-e",
-                    f"bash -c '{'; '.join(tmux_commands)}; {tmux_utility_path} attach -t {session_name}; exec bash'"]
+                ["gnome-terminal", "--", "bash", script_path],
+                ["konsole", "-e", "bash", script_path],
+                ["xfce4-terminal", "-e", f"bash {script_path}"],
+                ["lxterminal", "-e", f"bash {script_path}"],
+                ["mate-terminal", "-e", f"bash {script_path}"],
+                ["terminator", "-e", f"bash {script_path}"],
+                ["alacritty", "-e", "bash", script_path],
+                ["kitty", "bash", script_path],
+                ["xterm", "-e", f"bash {script_path}"]
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                       f"Tmux session opened: {head_node} -> {node_name}")
+                                    f"SSH session opened: {head_node} -> {node_name}")
+                    
+                    # Clean up script file after delay
+                    QTimer.singleShot(30000, lambda: self._cleanup_temp_file(script_path))
                     return
                 except FileNotFoundError:
                     continue
 
             # If no terminal emulator found
+            self._cleanup_temp_file(script_path)  # Clean up immediately since we failed
             show_error_toast(self, "No Terminal Found",
-                             "No supported terminal emulator found on this system.")
+                            "No supported terminal emulator found on this system.")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open Linux terminal: {str(e)}")
-
+                            f"Failed to open Linux terminal: {str(e)}")
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
         try:
@@ -1766,57 +1795,10 @@ class JobsPanel(QWidget):
                 return
             
             # Fallback method without plink (requires manual password entry)
-            self._open_windows_node_terminal_fallback(node_name, username, password)
+            show_error_toast("Plink not found")
             
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open Windows terminal: {str(e)}")
 
-    def _open_windows_node_terminal_fallback(self, node_name, username, password):
-        """Fallback method when plink is not available - requires manual password entry"""
-        try:
-            head_node = self.slurm_connection.host
-            
-            # Create a simple PowerShell command for the connection
-            ps_command = f'ssh {username}@{head_node}'
-            
-            try:
-                # Try Windows Terminal first
-                wt_cmd = [
-                    "wt.exe", "new-tab",
-                    "--title", f"SSH {head_node} -> {node_name}",
-                    "--", "powershell.exe", "-NoExit", "-Command",
-                    f'Write-Host "Connecting to {head_node}..."; '
-                    f'Write-Host "After connecting, run: ssh {node_name}"; '
-                    f'Write-Host ""; {ps_command}'
-                ]
-                subprocess.Popen(wt_cmd, shell=False)
-                
-                show_info_toast(self, "Terminal Opened",
-                                f"SSH terminal opened. Manual steps required:\n"
-                                f"1. Enter password for {head_node}\n"
-                                f"2. Run: ssh {node_name}\n"
-                                f"3. Enter password again for {node_name}")
-                return
-                
-            except FileNotFoundError:
-                # Fallback to cmd.exe
-                cmd_command = [
-                    "cmd.exe", "/c", "start", "cmd.exe", "/k",
-                    "echo", f"Connecting to {head_node}...", "&&",
-                    "echo", f"After connecting, run: ssh {node_name}", "&&",
-                    "echo", "", "&&",
-                    "ssh", f"{username}@{head_node}"
-                ]
-                subprocess.Popen(cmd_command, shell=False)
-                
-                show_info_toast(self, "Terminal Opened",
-                                f"SSH session opened. Manual steps required:\n"
-                                f"1. Enter password for {head_node}\n"
-                                f"2. Run: ssh {node_name}\n"
-                                f"3. Enter password again for {node_name}")
-                
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                            f"Failed to open terminal: {str(e)}")      
 

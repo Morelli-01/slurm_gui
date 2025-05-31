@@ -669,29 +669,55 @@ class SlurmJobManagerApp(QMainWindow):
         # Make script executable
         os.chmod(script_path, 0o755)
         return script_path
-
+    
     def _open_macos_terminal(self, host, username, password):
+        """Open terminal on macOS using sshpass for automatic SSH login."""
         try:
-            script_path = self._create_expect_script(host, username, password)
-            applescript = f'''
-                                        tell application "Terminal"
-                                            activate
-                                            do script "expect {script_path}"
-                                        end tell
-                                        '''
-            subprocess.run(["osascript", "-e", applescript], check=True)
+            # Check if sshpass is available
+            sshpass_path = shutil.which("sshpass")
+            if not sshpass_path:
+                show_error_toast(self, "sshpass Not Found",
+                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
+                return
 
-            # Clean up script after delay
-            QTimer.singleShot(
-                10000, lambda: self._cleanup_temp_file(script_path))
+            # Build the sshpass command
+            ssh_cmd = f"{sshpass_path} -p '{password}' ssh {username}@{host}"
 
-            show_success_toast(self, "Terminal Opened",
-                               f"Terminal opened for {username}@{host}")
+            # List of terminal emulators to try for macOS
+            terminals = [
+                ["open", "-a", "Terminal", f"{ssh_cmd}"],  # Default Terminal.app
+                ["open", "-a", "iTerm", f"{ssh_cmd}"],     # iTerm2
+                ["osascript", "-e", f'tell application "Terminal" to do script "{ssh_cmd}"'],  # AppleScript fallback
+            ]
+
+            for terminal_cmd in terminals:
+                try:
+                    subprocess.Popen(terminal_cmd)
+                    show_success_toast(self, "Terminal Opened",
+                                    f"SSH session opened for {username}@{host}")
+                    return
+                except FileNotFoundError:
+                    continue
+
+            # If no terminal emulator found, try AppleScript approach
+            try:
+                applescript = f'''
+                tell application "Terminal"
+                    activate
+                    do script "{ssh_cmd}"
+                end tell
+                '''
+                subprocess.Popen(["osascript", "-e", applescript])
+                show_success_toast(self, "Terminal Opened",
+                                f"SSH session opened for {username}@{host}")
+            except Exception as e:
+                show_error_toast(self, "No Terminal Found",
+                                f"No supported terminal emulator found on this system: {str(e)}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                             f"Failed to open macOS terminal: {str(e)}")
-
+                            f"Failed to open macOS terminal: {str(e)}")
+    
     def _open_linux_terminal(self, host, username, password):
         """Open terminal on Linux using sshpass for automatic SSH login."""
         try:
