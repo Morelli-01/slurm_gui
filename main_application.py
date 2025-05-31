@@ -581,58 +581,13 @@ class SlurmJobManagerApp(QMainWindow):
                                        f"SSH session opened for {username}@{host}")
                     return
             else:
-                # Plink not found - suggest installation or use basic SSH
-                self._open_windows_terminal_fallback(host, username, password)
+                # Plink not found - 
+                show_error_toast(self, "Terminal Error",
+                                f"Somethings off with Plink")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open Windows terminal: {str(e)}")
-
-    def _open_windows_terminal_fallback(self, host, username, password):
-        """Fallback method when plink is not available"""
-        try:
-            # Create a simple batch file for SSH connection
-            import tempfile
-
-            batch_content = f'''@echo off
-    title SSH - {host}
-    echo Connecting to {username}@{host}...
-    echo.
-    echo Note: For automatic password entry, install PuTTY/plink
-    echo Download from: https://www.putty.org/
-    echo.
-    ssh {username}@{host}
-    echo.
-    echo Connection closed. Press any key to exit...
-    pause >nul
-    '''
-
-            # Create temporary batch file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
-                f.write(batch_content)
-                batch_path = f.name
-
-            try:
-                # Try Windows Terminal first
-                wt_cmd = ["wt.exe", "new-tab", "--title",
-                          f"SSH - {host}", "cmd.exe", "/c", batch_path]
-                subprocess.Popen(wt_cmd)
-                show_info_toast(self, "Terminal Opened",
-                                f"SSH terminal opened. Install PuTTY for automatic password entry.")
-            except FileNotFoundError:
-                # Fallback to cmd.exe
-                subprocess.Popen(
-                    ["cmd.exe", "/c", "start", "cmd.exe", "/c", batch_path])
-                show_info_toast(self, "Terminal Opened",
-                                f"SSH session opened. Install PuTTY for automatic password entry.")
-
-            # Clean up batch file after delay
-            QTimer.singleShot(
-                30000, lambda: self._cleanup_temp_file(batch_path))
-
-        except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open terminal: {str(e)}")
 
     def _create_expect_script(self, host, username, password):
         """Create an expect script for automatic password authentication"""
