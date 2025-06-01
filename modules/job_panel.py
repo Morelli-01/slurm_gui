@@ -889,61 +889,6 @@ class JobsPanel(QWidget):
                 "Please select a project first before creating a new job."
             )
 
-    def submit_job(self, project_name, job_id):
-        """Submit job - Enhanced version with project_storer check"""
-        if not self._check_project_storer():
-            return
-
-        try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                show_warning_toast(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            if job.status != "NOT_SUBMITTED":
-                show_info_toast(
-                    self,
-                    "Already Submitted",
-                    f"Job '{job_id}' has already been submitted with status: {job.status}."
-                )
-                return
-
-            # Store the old job ID for UI updates
-            old_job_id = str(job_id)
-
-            # Submit the job
-            new_job_id = self.project_storer.submit_job(project_name, job_id)
-
-            if new_job_id:
-                # Get the updated job with the new ID
-                updated_job = project.get_job(new_job_id)
-                if updated_job:
-                    job_row = updated_job.to_table_row()
-
-                    # Update the UI to reflect the ID change efficiently
-                    self.jobs_group.update_job_id(
-                        project_name, old_job_id, str(new_job_id), job_row)
-
-                # Show success message
-                show_success_toast(
-                    self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
-
-            else:
-                show_warning_toast(
-                    self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
-
-        except Exception as e:
-            show_error_toast(self, "Submission Error",
-                             f"An error occurred during job submission: {str(e)}")
-            import traceback
-            traceback.print_exc()
 
     def on_project_selected(self, project_name):
         """Slot to update the currently selected project."""
@@ -1083,315 +1028,6 @@ class JobsPanel(QWidget):
         # Update status counts in project widget if it has the method
         if hasattr(project_widget, 'update_status_counts'):
             project_widget.update_status_counts(stats)
-
-    def delete_job(self, project_name, job_id):
-        """Delete job - SIMPLIFIED VERSION with efficient UI update"""
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
-        try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED", "CANCELLED"]:
-                QMessageBox.warning(self, "Error",
-                                    f"Job can't be deleted since it is {job.status} status\n"
-                                    f"Job '{job_id}' needs to be stopped before deleting.")
-                return
-
-            # Remove the job from store
-            self.project_storer.remove_job(project_name, job_id)
-
-            # Remove from UI efficiently
-            self.jobs_group.remove_job(project_name, job_id)
-
-            print(f"Job {job_id} deleted successfully")
-
-        except Exception as e:
-            QMessageBox.critical(self, "Deletion Error",
-                                 f"An error occurred during job deletion: {str(e)}")
-            import traceback
-            traceback.print_exc()
-
-    def stop_job(self, project_name, job_id):
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
-        try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
-                QMessageBox.warning(self, "Error",
-                                    f"Job can't be deleted since it is {job.status} status\n")
-                return
-
-            stdout, stderr = self.slurm_connection.run_command(
-                f"scancel {job_id}")
-            if stderr:
-                QMessageBox.warning(
-                    self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
-                return
-
-        except Exception as e:
-            QMessageBox.critical(self, "Deletion Error",
-                                 f"An error occurred during job deletion: {str(e)}")
-            import traceback
-            traceback.print_exc()
-
-    def show_job_logs(self, project_name, job_id):
-        """Show the job logs dialog"""
-        if not self.project_storer:
-            QMessageBox.warning(
-                self, "Error", "Not connected to project store.")
-            return
-
-        try:
-            # Create and show the logs dialog
-            dialog = JobLogsDialog(
-                project_name=project_name,
-                job_id=job_id,
-                project_store=self.project_storer,
-                parent=self
-            )
-            dialog.exec()
-
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error Opening Logs",
-                f"Failed to open job logs:\n{str(e)}"
-            )
-            import traceback
-            traceback.print_exc()
-
-    def duplicate_job(self, project_name, job_id):
-        """Duplicate an existing job with a new name - Fixed to carry over Discord settings"""
-        if not self.project_storer:
-            QMessageBox.warning(
-                self, "Error", "Not connected to project store.")
-            return
-
-        try:
-            # Get the original job
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            original_job = project.get_job(job_id)
-            if not original_job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            # Ask user for new job name
-            new_name, ok = QInputDialog.getText(
-                self,
-                "Duplicate Job",
-                f"Enter name for duplicated job (original: '{original_job.name}'):",
-                text=f"{original_job.name}_copy"
-            )
-
-            if not ok or not new_name.strip():
-                return  # User cancelled or entered empty name
-
-            # Create job details from the original job - INCLUDING Discord settings
-            job_details = {
-                "job_name": new_name.strip(),
-                "partition": original_job.partition,
-                "time_limit": original_job.time_limit,
-                "command": original_job.command,
-                "account": original_job.account,
-                "constraint": original_job.constraints,
-                "qos": original_job.qos,
-                "gres": original_job.gres,
-                "nodes": original_job.nodes,
-                "cpus_per_task": original_job.cpus,
-                "memory": original_job.memory,
-                "output_file": original_job.output_file,
-                "error_file": original_job.error_file,
-                "working_dir": original_job.working_dir,
-            }
-
-            # Add optional array and dependency settings if they exist
-            if original_job.array_spec:
-                job_details["array"] = original_job.array_spec
-                if original_job.array_max_jobs:
-                    job_details["array_max_jobs"] = original_job.array_max_jobs
-
-            if original_job.dependency:
-                job_details["dependency"] = original_job.dependency
-
-            # CRITICAL FIX: Copy Discord notification settings from original job
-            if "discord_notifications" in original_job.info:
-                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy(
-                )
-            else:
-                # If original job doesn't have Discord settings, get them from current application config
-                job_details["discord_notifications"] = self._get_current_discord_settings(
-                )
-
-            # Create the duplicated job
-            new_job_id = self.project_storer.add_new_job(
-                project_name, job_details)
-
-            if new_job_id:
-                # Parse GPU count from gres if available
-                gpu_count = 0
-                if original_job.gres and "gpu:" in original_job.gres:
-                    try:
-                        gpu_parts = original_job.gres.split(":")
-                        if len(gpu_parts) == 2:  # Format: gpu:N
-                            gpu_count = int(gpu_parts[1])
-                        elif len(gpu_parts) == 3:  # Format: gpu:type:N
-                            gpu_count = int(gpu_parts[2])
-                    except (ValueError, IndexError):
-                        pass
-
-                # Create a job row for the UI display
-                job_row = [
-                    new_job_id,
-                    new_name.strip(),
-                    "NOT_SUBMITTED",  # New job starts as not submitted
-                    "00:00:00",  # Initial runtime is zero
-                    original_job.cpus,  # CPU count
-                    gpu_count,  # GPU count
-                    original_job.memory,  # Memory
-                ]
-
-                # Add the job to the jobs group UI
-                self.jobs_group.add_single_job(project_name, job_row)
-
-                # Update project status display
-                if project_name in self.project_group.projects_children:
-                    project_widget = self.project_group.projects_children[project_name]
-                    if hasattr(project_widget, 'update_status_counts'):
-                        job_stats = project.get_job_stats()
-                        project_widget.update_status_counts(job_stats)
-
-                show_success_toast(self, "Job Duplicated",
-                                   f"Job '{new_name}' duplicated successfully with Discord notifications!")
-            else:
-                QMessageBox.warning(
-                    self,
-                    "Duplication Failed",
-                    "Failed to duplicate job. Please check logs for more information."
-                )
-
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Duplication Error",
-                f"An error occurred while duplicating the job: {str(e)}"
-            )
-            import traceback
-            traceback.print_exc()
-
-    def modify_job(self, project_name, job_id):
-        """Modify an existing job"""
-        if not self.project_storer:
-            QMessageBox.warning(
-                self, "Error", "Not connected to project store.")
-            return
-
-        try:
-            # Get the job to modify
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
-            # Only allow modification of NOT_SUBMITTED jobs
-            if job.status != "NOT_SUBMITTED":
-                show_warning_toast(
-                    self,
-                    "Cannot Modify Job",
-                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'. Only jobs with status 'NOT_SUBMITTED' can be modified."
-                )
-                return
-
-            # Open the modify dialog
-            dialog = ModifyJobDialog(
-                job=job,
-                project_name=project_name,
-                slurm_connection=self.slurm_connection,
-                parent=self
-            )
-
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                modified_details = dialog.get_job_details()
-
-                try:
-                    if "discord_notifications" in job.info and "discord_notifications" not in modified_details:
-                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy(
-                        )
-                    elif "discord_notifications" not in modified_details:
-                        # Get current Discord settings from application
-                        modified_details["discord_notifications"] = self._get_current_discord_settings(
-                        )
-                    # Update the job in the project store
-                    self._update_job_from_details(job, modified_details)
-
-                    # Update the job in the store
-                    self.project_storer.add_job(project_name, job)
-
-                    # Update the UI
-                    job_row = job.to_table_row()
-                    self.jobs_group.update_single_job_row(
-                        project_name, str(job_id), job_row)
-
-                    # Show success message
-                    show_success_toast(
-                        self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
-
-                except Exception as e:
-                    QMessageBox.critical(
-                        self,
-                        "Modification Error",
-                        f"An error occurred while modifying the job: {str(e)}"
-                    )
-                    import traceback
-                    traceback.print_exc()
-
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Modification Error",
-                f"An error occurred while opening the modify dialog: {str(e)}"
-            )
-            import traceback
-            traceback.print_exc()
 
     def _update_job_from_details(self, job, details):
         """Update job object with new details from the modify dialog"""
@@ -1744,7 +1380,6 @@ class JobsPanel(QWidget):
             print(
                 f"Warning: Could not clean up temporary file {file_path}: {e}")
 
-
     def _open_windows_node_terminal(self, node_name, username, password):
         """Open terminal on Windows for specific node using PuTTY with ProxyCommand"""
         try:
@@ -1808,3 +1443,371 @@ class JobsPanel(QWidget):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                             f"Failed to open Windows terminal: {str(e)}")
+            
+    #------------------ Actions Buttons ------------------------
+    def submit_job(self, project_name, job_id):
+        """Submit job - Enhanced version with project_storer check"""
+        if not self._check_project_storer():
+            return
+
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                show_warning_toast(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status != "NOT_SUBMITTED":
+                show_info_toast(
+                    self,
+                    "Already Submitted",
+                    f"Job '{job_id}' has already been submitted with status: {job.status}."
+                )
+                return
+
+            # Store the old job ID for UI updates
+            old_job_id = str(job_id)
+
+            # Submit the job
+            new_job_id = self.project_storer.submit_job(project_name, job_id)
+
+            if new_job_id:
+                # Get the updated job with the new ID
+                updated_job = project.get_job(new_job_id)
+                if updated_job:
+                    job_row = updated_job.to_table_row()
+
+                    # Update the UI to reflect the ID change efficiently
+                    self.jobs_group.update_job_id(
+                        project_name, old_job_id, str(new_job_id), job_row)
+
+                # Show success message
+                show_success_toast(
+                    self, "Job Submitted", f"Job has been submitted with ID {new_job_id}")
+
+            else:
+                show_warning_toast(
+                    self, "Submission Failed", "Failed to submit job. Please check logs for more information.")
+
+        except Exception as e:
+            show_error_toast(self, "Submission Error",
+                             f"An error occurred during job submission: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def delete_job(self, project_name, job_id):
+        """Delete job - SIMPLIFIED VERSION with efficient UI update"""
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED", "CANCELLED"]:
+                QMessageBox.warning(self, "Error",
+                                    f"Job can't be deleted since it is {job.status} status\n"
+                                    f"Job '{job_id}' needs to be stopped before deleting.")
+                return
+
+            # Remove the job from store
+            self.project_storer.remove_job(project_name, job_id)
+
+            # Remove from UI efficiently
+            self.jobs_group.remove_job(project_name, job_id)
+
+            print(f"Job {job_id} deleted successfully")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Deletion Error",
+                                 f"An error occurred during job deletion: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def stop_job(self, project_name, job_id):
+        if not self.project_storer:
+            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
+            return
+
+        try:
+            # Get job and validate
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
+                QMessageBox.warning(self, "Error",
+                                    f"Job can't be deleted since it is {job.status} status\n")
+                return
+
+            stdout, stderr = self.slurm_connection.run_command(
+                f"scancel {job_id}")
+            if stderr:
+                QMessageBox.warning(
+                    self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
+                return
+
+        except Exception as e:
+            QMessageBox.critical(self, "Deletion Error",
+                                 f"An error occurred during job deletion: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def show_job_logs(self, project_name, job_id):
+        """Show the job logs dialog"""
+        if not self.project_storer:
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
+            return
+
+        try:
+            # Create and show the logs dialog
+            dialog = JobLogsDialog(
+                project_name=project_name,
+                job_id=job_id,
+                project_store=self.project_storer,
+                parent=self
+            )
+            dialog.exec()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error Opening Logs",
+                f"Failed to open job logs:\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
+    def duplicate_job(self, project_name, job_id):
+        """Duplicate an existing job with a new name - Fixed to carry over Discord settings"""
+        if not self.project_storer:
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
+            return
+
+        try:
+            # Get the original job
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            original_job = project.get_job(job_id)
+            if not original_job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            # Ask user for new job name
+            new_name, ok = QInputDialog.getText(
+                self,
+                "Duplicate Job",
+                f"Enter name for duplicated job (original: '{original_job.name}'):",
+                text=f"{original_job.name}_copy"
+            )
+
+            if not ok or not new_name.strip():
+                return  # User cancelled or entered empty name
+
+            # Create job details from the original job - INCLUDING Discord settings
+            job_details = {
+                "job_name": new_name.strip(),
+                "partition": original_job.partition,
+                "time_limit": original_job.time_limit,
+                "command": original_job.command,
+                "account": original_job.account,
+                "constraint": original_job.constraints,
+                "qos": original_job.qos,
+                "gres": original_job.gres,
+                "nodes": original_job.nodes,
+                "cpus_per_task": original_job.cpus,
+                "memory": original_job.memory,
+                "output_file": original_job.output_file,
+                "error_file": original_job.error_file,
+                "working_dir": original_job.working_dir,
+            }
+
+            # Add optional array and dependency settings if they exist
+            if original_job.array_spec:
+                job_details["array"] = original_job.array_spec
+                if original_job.array_max_jobs:
+                    job_details["array_max_jobs"] = original_job.array_max_jobs
+
+            if original_job.dependency:
+                job_details["dependency"] = original_job.dependency
+
+            # CRITICAL FIX: Copy Discord notification settings from original job
+            if "discord_notifications" in original_job.info:
+                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy(
+                )
+            else:
+                # If original job doesn't have Discord settings, get them from current application config
+                job_details["discord_notifications"] = self._get_current_discord_settings(
+                )
+
+            # Create the duplicated job
+            new_job_id = self.project_storer.add_new_job(
+                project_name, job_details)
+
+            if new_job_id:
+                # Parse GPU count from gres if available
+                gpu_count = 0
+                if original_job.gres and "gpu:" in original_job.gres:
+                    try:
+                        gpu_parts = original_job.gres.split(":")
+                        if len(gpu_parts) == 2:  # Format: gpu:N
+                            gpu_count = int(gpu_parts[1])
+                        elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                            gpu_count = int(gpu_parts[2])
+                    except (ValueError, IndexError):
+                        pass
+
+                # Create a job row for the UI display
+                job_row = [
+                    new_job_id,
+                    new_name.strip(),
+                    "NOT_SUBMITTED",  # New job starts as not submitted
+                    "00:00:00",  # Initial runtime is zero
+                    original_job.cpus,  # CPU count
+                    gpu_count,  # GPU count
+                    original_job.memory,  # Memory
+                ]
+
+                # Add the job to the jobs group UI
+                self.jobs_group.add_single_job(project_name, job_row)
+
+                # Update project status display
+                if project_name in self.project_group.projects_children:
+                    project_widget = self.project_group.projects_children[project_name]
+                    if hasattr(project_widget, 'update_status_counts'):
+                        job_stats = project.get_job_stats()
+                        project_widget.update_status_counts(job_stats)
+
+                show_success_toast(self, "Job Duplicated",
+                                   f"Job '{new_name}' duplicated successfully with Discord notifications!")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Duplication Failed",
+                    "Failed to duplicate job. Please check logs for more information."
+                )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Duplication Error",
+                f"An error occurred while duplicating the job: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
+    def modify_job(self, project_name, job_id):
+        """Modify an existing job"""
+        if not self.project_storer:
+            QMessageBox.warning(
+                self, "Error", "Not connected to project store.")
+            return
+
+        try:
+            # Get the job to modify
+            project = self.project_storer.get(project_name)
+            if not project:
+                QMessageBox.warning(
+                    self, "Error", f"Project '{project_name}' not found.")
+                return
+
+            job = project.get_job(job_id)
+            if not job:
+                QMessageBox.warning(
+                    self, "Error", f"Job '{job_id}' not found.")
+                return
+
+            # Only allow modification of NOT_SUBMITTED jobs
+            if job.status != "NOT_SUBMITTED":
+                show_warning_toast(
+                    self,
+                    "Cannot Modify Job",
+                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'. Only jobs with status 'NOT_SUBMITTED' can be modified."
+                )
+                return
+
+            # Open the modify dialog
+            dialog = ModifyJobDialog(
+                job=job,
+                project_name=project_name,
+                slurm_connection=self.slurm_connection,
+                parent=self
+            )
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                modified_details = dialog.get_job_details()
+
+                try:
+                    if "discord_notifications" in job.info and "discord_notifications" not in modified_details:
+                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy(
+                        )
+                    elif "discord_notifications" not in modified_details:
+                        # Get current Discord settings from application
+                        modified_details["discord_notifications"] = self._get_current_discord_settings(
+                        )
+                    # Update the job in the project store
+                    self._update_job_from_details(job, modified_details)
+
+                    # Update the job in the store
+                    self.project_storer.add_job(project_name, job)
+
+                    # Update the UI
+                    job_row = job.to_table_row()
+                    self.jobs_group.update_single_job_row(
+                        project_name, str(job_id), job_row)
+
+                    # Show success message
+                    show_success_toast(
+                        self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
+
+                except Exception as e:
+                    QMessageBox.critical(
+                        self,
+                        "Modification Error",
+                        f"An error occurred while modifying the job: {str(e)}"
+                    )
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Modification Error",
+                f"An error occurred while opening the modify dialog: {str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+    
+    #-----------------------------------------------------------

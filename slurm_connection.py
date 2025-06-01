@@ -341,76 +341,6 @@ class SlurmConnection:
         except Exception as e:
             print(f"Failed to fetch submission options: {e}")
 
-    @require_connection
-    def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
-                   constraint: Optional[str] = None, qos: Optional[str] = None,
-                   gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
-                   output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", 
-                   memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None,
-                   array_spec: Optional[str] = None, array_max_jobs: Optional[int] = None) -> Optional[str]:
-        """
-        Submit a job to the SLURM scheduler.
-
-        Args:
-            job_name: Job name
-            partition: SLURM partition
-            time_limit: Time limit in format HH:MM:SS
-            command: Command to execute
-            account: SLURM account
-            constraint: Node constraints
-            qos: Quality of Service
-            gres: Generic Resources
-            nodes: Number of nodes
-            ntasks: Number of tasks
-            output_file: Path for job output file
-            error_file: Path for job error file
-
-        Returns:
-            str: Job ID if submission was successful, None otherwise
-        """
-
-        # Create SLURM script content
-        script_content = self._create_job_script(
-            job_name, partition, time_limit, command, account,
-            constraint, qos, gres, nodes, ntasks, output_file, error_file, memory, cpus,
-            discord_settings, array_spec, array_max_jobs  # Pass Discord settings and array params
-        )
-    
-
-        # Save script locally
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh", newline='\n') as f:
-            f.write(script_content)
-            local_script_path = f.name
-
-        # Remote path (temporary directory)
-        remote_script_path = f"/tmp/{os.path.basename(local_script_path)}"
-
-        try:
-            # Upload script via SFTP
-            sftp = self.client.open_sftp()
-            sftp.put(local_script_path, remote_script_path)
-            sftp.close()
-
-            # Submit via sbatch
-            stdout, stderr = self.run_command(f"sbatch {remote_script_path}")
-            if stderr and "INFO" not in stderr:
-                os.remove(local_script_path)
-                raise RuntimeError(f"SLURM error: {stderr}")
-            else:
-                os.remove(local_script_path)
-
-            # Cleanup local file
-
-            # Parse job ID
-            job_id = None
-            if "Submitted batch job" in stdout:
-                job_id = stdout.strip().split()[-1]
-
-            return job_id
-
-        except Exception as e:
-            raise RuntimeError(f"Job submission failed: {e}")
-
     def _normalize_path(self, path: str) -> str:
         """
         Normalize a file path - if it's absolute, return as-is; if relative, prepend home directory.
@@ -1182,7 +1112,234 @@ class SlurmConnection:
             script_content = script_content.replace('\r\n', '\n').replace('\r', '\n')
         
         return script_content
-    
+
+    def submit_job_from_object(self, job: 'Job', discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """
+        Submit a job using the enhanced Job object.
+        
+        Args:
+            job: Enhanced Job object with all parameters
+            discord_settings: Optional Discord notification settings
+            
+        Returns:
+            str: Job ID if submission successful, None otherwise
+        """
+        if not self.check_connection():
+            raise ConnectionError("SSH connection not established.")
+        
+        try:
+            # Validate job parameters
+            validation_issues = job.validate_parameters()
+            if validation_issues:
+                raise ValueError(f"Job validation failed: {'; '.join(validation_issues)}")
+            
+            # Generate the sbatch script using the job's method
+            script_content = job.generate_sbatch_script(
+                include_discord=bool(discord_settings and discord_settings.get("enabled", False)),
+                discord_settings=discord_settings
+            )
+            
+            # Save script to temporary file
+            script_path = job.save_sbatch_script(
+                include_discord=bool(discord_settings and discord_settings.get("enabled", False)),
+                discord_settings=discord_settings
+            )
+            
+            try:
+                # Upload and submit the script
+                remote_script_path = f"/tmp/{os.path.basename(script_path)}"
+                
+                # Upload via SFTP
+                sftp = self.client.open_sftp()
+                sftp.put(script_path, remote_script_path)
+                sftp.close()
+                
+                # Submit via sbatch
+                stdout, stderr = self.run_command(f"sbatch {remote_script_path}")
+                
+                if stderr and "INFO" not in stderr:
+                    raise RuntimeError(f"SLURM error: {stderr}")
+                
+                # Parse job ID
+                job_id = None
+                if "Submitted batch job" in stdout:
+                    job_id = stdout.strip().split()[-1]
+                    
+                    # Update the job object with the new ID and submission info
+                    job.id = job_id
+                    job.status = "PENDING"
+                    job.submission_time = datetime.now()
+                
+                return job_id
+                
+            finally:
+                # Clean up local script file
+                try:
+                    os.unlink(script_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            raise RuntimeError(f"Job submission failed: {e}")
+
+    def create_job_from_details(self, job_details: Dict[str, Any]) -> 'Job':
+        """
+        Create an enhanced Job object from job details dictionary.
+        
+        Args:
+            job_details: Dictionary containing job parameters
+            
+        Returns:
+            Job: Enhanced Job object
+        """
+        from modules.project_store import Job  # Import here to avoid circular imports
+        
+        # Generate temporary ID for new jobs
+        import random
+        temp_id = f"NEW-{random.randint(1000, 9999)}"
+        
+        # Map common job details to Job class parameters
+        job_params = {
+            'id': temp_id,
+            'name': job_details.get('job_name', ''),
+            'status': 'NOT_SUBMITTED',
+            'command': job_details.get('command', ''),
+            'partition': job_details.get('partition', ''),
+            'account': job_details.get('account', ''),
+            'time_limit': job_details.get('time_limit', ''),
+            'nodes': job_details.get('nodes', 1),
+            'cpus': job_details.get('cpus_per_task', 1),
+            'ntasks': job_details.get('ntasks', 1),
+            'ntasks_per_node': job_details.get('ntasks_per_node'),
+            'memory': job_details.get('memory', ''),
+            'memory_per_cpu': job_details.get('memory_per_cpu'),
+            'memory_per_node': job_details.get('memory_per_node'),
+            'gpus': 0,  # Will be calculated from gres
+            'gres': job_details.get('gres'),
+            'constraints': job_details.get('constraint'),
+            'qos': job_details.get('qos'),
+            'reservation': job_details.get('reservation'),
+            'nodelist': ','.join(job_details.get('nodelist', [])) if isinstance(job_details.get('nodelist'), list) else job_details.get('nodelist', ''),
+            'exclude': job_details.get('exclude'),
+            'begin_time': job_details.get('begin_time'),
+            'deadline': job_details.get('deadline'),
+            'dependency': job_details.get('dependency'),
+            'array_spec': job_details.get('array'),
+            'array_max_jobs': job_details.get('array_max_jobs'),
+            'output_file': job_details.get('output_file', ''),
+            'error_file': job_details.get('error_file', ''),
+            'input_file': job_details.get('input_file'),
+            'working_dir': job_details.get('working_dir', ''),
+            'priority': job_details.get('priority', 0),
+            'nice': job_details.get('nice'),
+            'requeue': job_details.get('requeue'),
+            'no_requeue': job_details.get('no_requeue'),
+            'reboot': job_details.get('reboot'),
+            'mail_type': job_details.get('mail_type'),
+            'mail_user': job_details.get('mail_user'),
+            'export_env': job_details.get('export_env'),
+            'get_user_env': job_details.get('get_user_env'),
+            'exclusive': job_details.get('exclusive'),
+            'overcommit': job_details.get('overcommit'),
+            'oversubscribe': job_details.get('oversubscribe'),
+            'threads_per_core': job_details.get('threads_per_core'),
+            'sockets_per_node': job_details.get('sockets_per_node'),
+            'cores_per_socket': job_details.get('cores_per_socket'),
+            'wait': job_details.get('wait'),
+            'wrap': job_details.get('wrap'),
+        }
+        
+        # Parse GPU count from gres if available
+        if job_params['gres'] and "gpu:" in job_params['gres']:
+            try:
+                gpu_parts = job_params['gres'].split(":")
+                if len(gpu_parts) == 2:  # Format: gpu:N
+                    job_params['gpus'] = int(gpu_parts[1])
+                elif len(gpu_parts) == 3:  # Format: gpu:type:N
+                    job_params['gpus'] = int(gpu_parts[2])
+            except (ValueError, IndexError):
+                pass
+        
+        # Handle memory unit conversion if needed
+        if 'memory_spin' in job_details and 'memory_unit' in job_details:
+            memory_value = job_details.get('memory_spin', 1)
+            memory_unit = job_details.get('memory_unit', 'GB')
+            job_params['memory'] = f"{memory_value}{memory_unit.replace('B', '')}"
+        
+        # Clean None values
+        job_params = {k: v for k, v in job_params.items() if v is not None}
+        
+        # Create Job object
+        job = Job(**job_params)
+        
+        # Store additional info
+        job.info['submission_details'] = job_details
+        if 'discord_notifications' in job_details:
+            job.info['discord_notifications'] = job_details['discord_notifications']
+        
+        return job
+
+    # Update the existing submit_job method to use the new Job-based approach
+    def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
+                constraint: Optional[str] = None, qos: Optional[str] = None,
+                gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
+                output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", 
+                memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None,
+                array_spec: Optional[str] = None, array_max_jobs: Optional[int] = None,
+                **additional_params) -> Optional[str]:
+        """
+        Submit a job to the SLURM scheduler using the enhanced Job class.
+        
+        This method now creates a Job object internally and uses the new submission system.
+        Maintains backward compatibility with existing code.
+        """
+        
+        # Create job details dictionary
+        job_details = {
+            'job_name': job_name,
+            'partition': partition,
+            'time_limit': time_limit,
+            'command': command,
+            'account': account,
+            'constraint': constraint,
+            'qos': qos,
+            'gres': gres,
+            'nodes': nodes,
+            'ntasks': ntasks,
+            'output_file': output_file,
+            'error_file': error_file,
+            'memory': memory,
+            'cpus_per_task': cpus,
+            'array': array_spec,
+            'array_max_jobs': array_max_jobs,
+            **additional_params  # Include any additional parameters
+        }
+        
+        # Create Job object
+        job = self.create_job_from_details(job_details)
+        
+        # Submit using the new method
+        return self.submit_job_from_object(job, discord_settings)
+
+    def preview_job_script(self, job_details: Dict[str, Any], 
+                        include_discord: bool = False,
+                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Generate a preview of the sbatch script without submitting.
+        
+        Args:
+            job_details: Dictionary containing job parameters
+            include_discord: Whether to include Discord notifications
+            discord_settings: Discord notification settings
+            
+        Returns:
+            str: Generated sbatch script content
+        """
+        job = self.create_job_from_details(job_details)
+        return job.generate_sbatch_script(
+            include_discord=include_discord,
+            discord_settings=discord_settings
+        )
 
     
 class JobStatusMonitor(QThread):

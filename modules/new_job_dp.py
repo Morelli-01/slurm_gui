@@ -184,7 +184,9 @@ class NewJobDialog(QDialog):
         partition_account_layout.addSpacing(20)
         
         self.account_combo = QComboBox()
-        self.account_combo.addItems(self.accounts)
+        if hasattr(self, 'accounts'):
+            self.account_combo.addItems(["None"] + self.accounts)
+        self.account_combo.setEditable(True)
         partition_account_layout.addWidget(QLabel("Account*:"))
         partition_account_layout.addWidget(self.account_combo)
         partition_account_layout.addStretch()
@@ -247,29 +249,20 @@ class NewJobDialog(QDialog):
         
         resource_layout.addRow(cpu_mem_widget)
         
-        # Tasks and CPUs per Node
-        tasks_cpus_node_widget = QWidget()
-        tasks_cpus_node_layout = QHBoxLayout(tasks_cpus_node_widget)
-        tasks_cpus_node_layout.setContentsMargins(0, 0, 0, 0)
-        tasks_cpus_node_layout.setSpacing(10)
+        # Tasks 
+        tasks_widget = QWidget()
+        tasks_layout = QHBoxLayout(tasks_widget)
+        tasks_layout.setContentsMargins(0, 0, 0, 0)
+        tasks_layout.setSpacing(10)
         
         self.ntasks_spin = QSpinBox()
         self.ntasks_spin.setMinimum(1)
         self.ntasks_spin.setMaximum(1000)
         self.ntasks_spin.setValue(1)
-        tasks_cpus_node_layout.addWidget(QLabel("Number of Tasks:"))
-        tasks_cpus_node_layout.addWidget(self.ntasks_spin)
-        tasks_cpus_node_layout.addSpacing(20)
-        
-        self.cpus_per_node_spin = QSpinBox()
-        self.cpus_per_node_spin.setMinimum(1)
-        self.cpus_per_node_spin.setMaximum(128)
-        self.cpus_per_node_spin.setValue(1)
-        tasks_cpus_node_layout.addWidget(QLabel("CPUs per Node:"))
-        tasks_cpus_node_layout.addWidget(self.cpus_per_node_spin)
-        tasks_cpus_node_layout.addStretch()
-        
-        resource_layout.addRow(tasks_cpus_node_widget)
+        tasks_layout.addWidget(QLabel("Number of Tasks:"))
+        tasks_layout.addWidget(self.ntasks_spin)
+        tasks_layout.addStretch()
+        resource_layout.addRow(tasks_widget)
         
         # Add groups to main layout
         layout.addWidget(job_info_group)
@@ -289,7 +282,7 @@ class NewJobDialog(QDialog):
         for widget in [self.job_name_edit, self.job_comment_edit, self.partition_combo, 
                       self.account_combo, self.time_limit_edit, self.nodes_spin, 
                       self.cpu_per_task_spin, self.memory_spin, self.memory_unit_combo,
-                      self.ntasks_spin, self.cpus_per_node_spin]:
+                      self.ntasks_spin]:
             if isinstance(widget, QLineEdit):
                 widget.textChanged.connect(self._update_preview)
             elif isinstance(widget, QComboBox):
@@ -448,7 +441,7 @@ class NewJobDialog(QDialog):
         
         self.working_dir_edit = QLineEdit()
         self.working_dir_edit.setPlaceholderText("Working directory for job")
-        self.working_dir_edit.setText(os.getcwd())
+        self.working_dir_edit.setText("$HOME")
         self.working_dir_edit.textChanged.connect(self._update_preview)
         
         self.browse_dir_button = QPushButton("Browse...")
@@ -807,344 +800,147 @@ class NewJobDialog(QDialog):
                 self.venv_combo.setCurrentText(selected_directory)
                 self._update_preview()
 
-    def _update_preview(self):
-        try:
-            # Job Information
-            job_name = self.job_name_edit.text().strip() or "job"
-            job_comment = self.job_comment_edit.text().strip()
-            
-            # Resource Allocation
-            partition = self.partition_combo.currentText()
-            account = self.account_combo.currentText()
-            
-            # Time Limit
-            time = self.time_limit_edit.time()
-            hours = time.hour()
-            minutes = time.minute()
-            seconds = time.second()
-            # Format as days-hours:minutes:seconds (SLURM format)
-            days = hours // 24
-            hours = hours % 24
-            time_limit = f"{days}-{hours:02d}:{minutes:02d}:{seconds:02d}"
-            
-            # Node and CPU Configuration
-            nodes = self.nodes_spin.value()
-            ntasks = self.ntasks_spin.value()
-            cpus_per_task = self.cpu_per_task_spin.value()
-            cpus_per_node = self.cpus_per_node_spin.value()
-            
-            # Memory Configuration
-            memory = f"{self.memory_spin.value()}{self.memory_unit_combo.currentText()}"
-            
-            # Resource Constraints
-            selected_constraints = self.constraint_combo.get_checked_items()
-            constraint = "|".join(selected_constraints) if selected_constraints else None
-            
-            # QoS
-            qos = self.qos_combo.currentText()
-            qos = None if qos == "None" else qos
-            
-            # GPU Configuration
-            gres = None
-            if self.gpu_check.isChecked():
-                gpu_type = self.gpu_type_combo.currentText()
-                gpu_count = self.gpu_count_spin.value()
-                gres = f"gpu:{gpu_count}" if gpu_type == "any" else f"gpu:{gpu_type}:{gpu_count}"
-            
-            # File Management
-            output_file = self.output_file_edit.text().strip()
-            error_file = self.error_file_edit.text().strip()
-            working_dir = self.working_dir_edit.text().strip()
-            
-            # Command
-            command = self.command_text.toPlainText().strip()
-            
-            # Build SLURM Script
-            script_lines = [
-                "#!/bin/bash -l",
-                "",
-                "# ============================================",
-                f"# Job Name: {job_name}",
-                f"# Job Comment: {job_comment or 'N/A'}",
-                f"# Submission Time: {QDateTime.currentDateTime().toString('yyyy-MM-dd hh:mm:ss')}",
-                "# ============================================\n"
-            ]
-            
-            # Basic Directives
-            script_lines.extend([
-                "# Basic Job Configuration",
-                f"#SBATCH --job-name={job_name}",
-                f"#SBATCH --partition={partition}",
-                f"#SBATCH --time={time_limit}",
-                f"#SBATCH --nodes={nodes}",
-                f"#SBATCH --ntasks={ntasks}",
-                f"#SBATCH --cpus-per-task={cpus_per_task}",
-                f"#SBATCH --cpus-per-node={cpus_per_node}",
-                f"#SBATCH --mem={memory}",
-            ])
-            
-            # Optional Directives
-            if qos:
-                script_lines.append(f"#SBATCH --qos={qos}")
-            if account:
-                script_lines.append(f"#SBATCH --account={account}")
-            if constraint:
-                script_lines.append(f'#SBATCH --constraint="{constraint}"')
-            # Nodelist directive
-            selected_nodes = self.nodelist_combo.get_checked_items() if hasattr(self, 'nodelist_combo') else []
-            if selected_nodes:
-                script_lines.append(f"#SBATCH --nodelist={','.join(selected_nodes)}")
-            if gres:
-                script_lines.append(f"#SBATCH --gres={gres}")
-            if output_file:
-                script_lines.append(f"#SBATCH --output={output_file}")
-            if error_file:
-                script_lines.append(f"#SBATCH --error={error_file}")
-            
-            # Job Array
-            if hasattr(self, 'array_group') and self.array_group.isChecked():
-                array_spec = ""
-                if self.array_format_combo.currentIndex() == 0:  # Range
-                    start = self.array_start_spin.value()
-                    end = self.array_end_spin.value()
-                    array_spec = f"{start}-{end}"
-                elif self.array_format_combo.currentIndex() == 1:  # List
-                    array_spec = self.array_list_edit.text()
-                elif self.array_format_combo.currentIndex() == 2:  # Range with step
-                    start = self.array_start_spin.value()
-                    end = self.array_end_spin.value()
-                    step = self.array_step_spin.value()
-                    array_spec = f"{start}-{end}:{step}"
-                if array_spec:
-                    script_lines.append(f"#SBATCH --array={array_spec}")
-                    if hasattr(self, 'max_jobs_check') and self.max_jobs_check.isChecked():
-                        max_jobs = self.max_jobs_spin.value()
-                        script_lines[-1] += f"%{max_jobs}"
-            
-            # Dependencies
-            if hasattr(self, 'dep_type_combo'):
-                dep_type = self.dep_type_combo.currentText().split(" - ")[0].strip()
-                dep_ids = [self.dep_id_display_combo.itemText(i) for i in range(self.dep_id_display_combo.count())]
-                dep_ids_str = ":".join(dep_ids)
-                if dep_type == "singleton":
-                    script_lines.append(f"#SBATCH --dependency={dep_type}")
-                elif dep_ids_str:
-                    script_lines.append(f"#SBATCH --dependency={dep_type}:{dep_ids_str}")
-            
-            # Working Directory
-            if working_dir:
-                script_lines.extend([
-                    "# Change to working directory",
-                    f"cd {working_dir} || {{ echo \"Failed to change to directory: {working_dir}\"; exit 1; }}",
-                ])
-            
-            # Activate Virtual Environment if specified
-            venv_path = self.venv_combo.currentText()
-            if venv_path and venv_path != "None":
-                script_lines.extend([
-                    "# Activate Python virtual environment",
-                    f'if [ -f "{venv_path}/bin/activate" ]; then',
-                    f'    source "{venv_path}/bin/activate"',
-                    'else',
-                    f'    echo "Warning: Virtual environment not found at {venv_path}"',
-                    '    echo "Falling back to system Python"',
-                    'fi\n'
-                ])
-            
-            
-            # Command Execution
-            if command:
-                script_lines.extend([
-                    "# ============================================",
-                    "# Command Execution",
-                    "# ============================================\n",
-                    f"{command}\n",
-                ])
-            else:
-                script_lines.extend([
-                    'echo "No command specified. Exiting..."',
-                    'exit 1'
-                ])
-            
-            # Set the script content
-            script_content = '\n'.join(script_lines)
-            self.preview_text.setText(script_content)
-            
-        except Exception as e:
-            self.preview_text.setText(f"Error generating preview: {str(e)}")
-        self.preview_text.setStyleSheet(f"""
-            background-color: #282a36;
-            color: #f8f8f2;
-            font-family: monospace;
-            padding: 10px;
-            border: 1px solid {COLOR_DARK_BORDER};
-            selection-background-color: {COLOR_BLUE};
-        """)
-
     def get_job_details(self):
-        job_name = self.job_name_edit.text()
+        """
+        Get comprehensive job details for the enhanced Job class.
+        This method returns all possible SLURM parameters.
+        
+        Returns:
+            Dict[str, Any]: Complete job configuration
+        """
+        # Basic job information
+        job_name = self.job_name_edit.text().strip()
+        command = self.command_text.toPlainText().strip()
+        
+        # Resource allocation
         partition = self.partition_combo.currentText()
         account = self.account_combo.currentText()
         time_limit = self.time_limit_edit.time().toString("HH:mm:ss")
         nodes = self.nodes_spin.value()
         cpus_per_task = self.cpu_per_task_spin.value()
+        ntasks = self.ntasks_spin.value()
+        
+        # Memory configuration
+        memory = f"{self.memory_spin.value()}{self.memory_unit_combo.currentText().replace('B', '')}"
+        
+        # Constraints and QoS
         selected_constraints = self.constraint_combo.get_checked_items()
-        constraint = "|".join(selected_constraints) if selected_constraints else "None"
-        qos = self.qos_combo.currentText()
-        if qos == "None":
-            qos = None
+        constraint = "|".join(selected_constraints) if selected_constraints else None
+        qos = self.qos_combo.currentText() if self.qos_combo.currentText() != "None" else None
+        
+        # GPU/GRES configuration
         gres = None
+        gpus = 0
         if self.gpu_check.isChecked():
             gpu_type = self.gpu_type_combo.currentText()
             gpu_count = self.gpu_count_spin.value()
+            gpus = gpu_count
             gres = f"gpu:{gpu_count}" if gpu_type == "any" else f"gpu:{gpu_type}:{gpu_count}"
-        output_file = self.output_file_edit.text()
-        error_file = self.error_file_edit.text()
-        working_dir = self.working_dir_edit.text()
-        venv_path = self.venv_combo.currentText()
-        if venv_path == "None":
-            venv_path = None
-        command = self.command_text.toPlainText()
-        memory = f"{self.memory_spin.value()}{self.memory_unit_combo.currentText()}"
-        script_lines = [
-            "#!/bin/bash",
-            f"#SBATCH --job-name={job_name}",
-            f"#SBATCH --partition={partition}",
-            f"#SBATCH --time={time_limit}",
-            f"#SBATCH --nodes={nodes}",
-        ]
-        if cpus_per_task > 1:
-            script_lines.append(f"#SBATCH --cpus-per-task={cpus_per_task}")
-        script_lines.append(f"#SBATCH --mem={memory}")
-        if constraint:
-            script_lines.append(f"#SBATCH --constraint=\"{constraint}\"")
-        if qos:
-            script_lines.append(f"#SBATCH --qos={qos}")
-        if account:
-            script_lines.append(f"#SBATCH --account={account}")
-        if gres:
-            script_lines.append(f"#SBATCH --gres={gres}")
-        if output_file:
-            script_lines.append(f"#SBATCH --output={output_file}")
-        if error_file:
-            script_lines.append(f"#SBATCH --error={error_file}")
-        # Job array
-        if self.array_group.isChecked():
-            array_spec = ""
-            if self.array_format_combo.currentIndex() == 0:  # Range
-                start = self.array_start_spin.value()
-                end = self.array_end_spin.value()
-                array_spec = f"{start}-{end}"
-            elif self.array_format_combo.currentIndex() == 1:  # List
-                array_spec = self.array_list_edit.text()
-            elif self.array_format_combo.currentIndex() == 2:  # Range with step
-                start = self.array_start_spin.value()
-                end = self.array_end_spin.value()
-                step = self.array_step_spin.value()
-                array_spec = f"{start}-{end}:{step}"
-            if array_spec:
-                script_lines.append(f"#SBATCH --array={array_spec}")
-                if self.max_jobs_check.isChecked():
-                    max_jobs = self.max_jobs_spin.value()
-                    script_lines[-1] += f"%{max_jobs}"
-        # Dependencies
-        dep_type = self.dep_type_combo.currentText().split(" - ")[0].strip()
-        dep_ids = [self.dep_id_display_combo.itemText(i) for i in range(self.dep_id_display_combo.count())]
-        dep_ids_str = ":".join(dep_ids)
-        if dep_type == "singleton":
-            script_lines.append(f"#SBATCH --dependency={dep_type}")
-        elif dep_ids_str:
-            script_lines.append(f"#SBATCH --dependency={dep_type}:{dep_ids_str}")
-        if working_dir:
-            script_lines.append(f"\ncd {working_dir}")
-        if self.array_group.isChecked():
-            script_lines.append("\n# Job array information")
-            script_lines.append("echo \"Running array job ${SLURM_ARRAY_JOB_ID}, task ID ${SLURM_ARRAY_TASK_ID}\"")
-            script_lines.append("")
-        script_lines.append("# Job command")
-        script_lines.append(command)
-        preview_text = "\n".join(script_lines)
-        self.preview_text.setText(preview_text)
-        self.preview_text.setStyleSheet(f"""
-            background-color: #282a36;
-            color: #f8f8f2;
-            font-family: monospace;
-            padding: 10px;
-            border: 1px solid {COLOR_DARK_BORDER};
-            selection-background-color: {COLOR_BLUE};
-        """)
-
-    def get_job_details(self):
-        job_name = self.job_name_edit.text()
-        partition = self.partition_combo.currentText()
-        account = self.account_combo.currentText()
-        time_limit = self.time_limit_edit.time().toString("HH:mm:ss")
-        nodes = self.nodes_spin.value()
-        cpus_per_task = self.cpu_per_task_spin.value()
-        selected_constraints = self.constraint_combo.get_checked_items()
-        constraint = "|".join(selected_constraints) if selected_constraints else "None"
-        qos = self.qos_combo.currentText()
-        if qos == "None":
-            qos = None
-        gres = None
-        if self.gpu_check.isChecked():
-            gpu_type = self.gpu_type_combo.currentText()
-            gpu_count = self.gpu_count_spin.value()
-            gres = f"gpu:{gpu_count}" if gpu_type == "any" else f"gpu:{gpu_type}:{gpu_count}"
-        output_file = self.output_file_edit.text()
-        error_file = self.error_file_edit.text()
-        working_dir = self.working_dir_edit.text()
+        
+        # Node selection
         selected_nodes = self.nodelist_combo.get_checked_items() if hasattr(self, 'nodelist_combo') else []
-        result = {
-            "job_name": job_name,
-            "partition": partition,
-            "time_limit": time_limit,
-            "command": self.command_text.toPlainText(),
-            "account": account,
-            "constraint": f"\"{constraint}\"",
-            "qos": qos,
-            "gres": gres,
-            "nodes": nodes,
-            "memory": str(self.memory_spin.value()) + self.memory_unit_combo.currentText().replace("B", ""),
-            "cpus_per_task": cpus_per_task,
-            "output_file": output_file,
-            "error_file": error_file,
-            "project": self.selected_project,
-            "working_dir": working_dir,
-            "nodelist": selected_nodes if selected_nodes else None
-        }
-        # Job array
-        if self.array_group.isChecked():
-            array_spec = ""
+        nodelist = ",".join(selected_nodes) if selected_nodes else None
+        
+        # Files and directories
+        output_file = self.output_file_edit.text().strip()
+        error_file = self.error_file_edit.text().strip()
+        working_dir = self.working_dir_edit.text().strip()
+        
+        # Virtual environment
+        venv_path = getattr(self, 'venv_combo', None)
+        if venv_path and hasattr(venv_path, 'currentText'):
+            venv = venv_path.currentText() if venv_path.currentText() != "None" else None
+        else:
+            venv = None
+        
+        # Job arrays
+        array_spec = None
+        array_max_jobs = None
+        if hasattr(self, 'array_group') and self.array_group.isChecked():
             if self.array_format_combo.currentIndex() == 0:  # Range
                 start = self.array_start_spin.value()
                 end = self.array_end_spin.value()
                 array_spec = f"{start}-{end}"
             elif self.array_format_combo.currentIndex() == 1:  # List
-                array_spec = self.array_list_edit.text()
+                array_spec = self.array_list_edit.text().strip()
             elif self.array_format_combo.currentIndex() == 2:  # Range with step
                 start = self.array_start_spin.value()
                 end = self.array_end_spin.value()
                 step = self.array_step_spin.value()
                 array_spec = f"{start}-{end}:{step}"
-            if array_spec:
-                result["array"] = array_spec
-                if self.max_jobs_check.isChecked():
-                    max_jobs = self.max_jobs_spin.value()
-                    result["array_max_jobs"] = max_jobs
+            
+            if hasattr(self, 'max_jobs_check') and self.max_jobs_check.isChecked():
+                array_max_jobs = self.max_jobs_spin.value()
+        
         # Dependencies
-        dep_type = self.dep_type_combo.currentText().split(" - ")[0].strip()
-        dep_ids = [self.dep_id_display_combo.itemText(i) for i in range(self.dep_id_display_combo.count())]
-        dep_ids_str = ":".join(dep_ids)
-        if dep_type == "singleton":
-            result["dependency"] = "singleton"
-        elif dep_ids_str:
-            result["dependency"] = f"{dep_type}:{dep_ids_str}"
+        dependency = None
+        if hasattr(self, 'dep_type_combo'):
+            dep_type = self.dep_type_combo.currentText().split(" - ")[0].strip()
+            dep_ids = [self.dep_id_display_combo.itemText(i) for i in range(self.dep_id_display_combo.count())]
+            dep_ids_str = ":".join(dep_ids)
+            
+            if dep_type == "singleton":
+                dependency = "singleton"
+            elif dep_ids_str:
+                dependency = f"{dep_type}:{dep_ids_str}"
+        
         # Discord notifications
         discord_settings = self._get_discord_settings_from_config()
         
-        result["discord_notifications"] = discord_settings
-        return result
+        # Build comprehensive job details dictionary
+        job_details = {
+            # Core parameters
+            "job_name": job_name,
+            "command": command,
+            "partition": partition,
+            "account": account,
+            "time_limit": time_limit,
+            
+            # Resource allocation
+            "nodes": nodes,
+            "cpus_per_task": cpus_per_task,
+            "ntasks": ntasks,
+            "memory": memory,
+            "gpus": gpus,
+            "gres": gres,
+            
+            # Constraints and QoS
+            "constraint": constraint,
+            "qos": qos,
+            
+            # Node placement
+            "nodelist": selected_nodes,
+            
+            # Files and environment
+            "output_file": output_file,
+            "error_file": error_file,
+            "working_dir": working_dir,
+            "virtual_env": venv,
+            
+            # Job arrays
+            "array": array_spec,
+            "array_max_jobs": array_max_jobs,
+            
+            # Dependencies
+            "dependency": dependency,
+            
+            # Project and notifications
+            "project": self.selected_project,
+            "discord_notifications": discord_settings,
+            
+            # Additional parameters that could be added in advanced mode
+            "nice": None,
+            "exclusive": None,
+            "mail_type": None,
+            "mail_user": None,
+            "export_env": None,
+            "requeue": None,
+        }
+        
+        # Remove None values to keep the dictionary clean
+        job_details = {k: v for k, v in job_details.items() if v is not None}
+        
+        return job_details
     
     def _get_discord_settings_from_config(self):
         """Get Discord settings from application configuration"""
@@ -1167,7 +963,88 @@ class NewJobDialog(QDialog):
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
+
+    def preview_job_script(self):
+        """
+        Generate and display a preview of the sbatch script that would be created.
+        """
+        if not self.slurm_connection:
+            self.preview_text.setText("Error: No SLURM connection available for preview generation.")
+            return
         
+        try:
+            # Get enhanced job details
+            job_details = self.get_job_details()
+            
+            # Generate preview using the SlurmConnection preview method
+            discord_settings = job_details.get("discord_notifications", {})
+            include_discord = discord_settings.get("enabled", False)
+            
+            script_content = self.slurm_connection.preview_job_script(
+                job_details,
+                include_discord=include_discord,
+                discord_settings=discord_settings if include_discord else None
+            )
+            
+            self.preview_text.setText(script_content)
+            
+        except Exception as e:
+            error_message = f"Error generating preview: {str(e)}\n\nThis might be due to missing or invalid parameters."
+            self.preview_text.setText(error_message)
+
+    def _update_preview(self):
+        """Enhanced preview update using the new Job class system"""
+        try:
+            self.preview_job_script()
+        except Exception as e:
+            self.preview_text.setText(f"Error updating preview: {str(e)}")
+    
+    def validate_job_before_creation(self):
+        """
+        Validate job parameters before creation using the enhanced Job class validation.
+        
+        Returns:
+            Tuple[bool, List[str]]: (is_valid, list_of_issues)
+        """
+        try:
+            if not self.slurm_connection:
+                return False, ["No SLURM connection available"]
+            
+            # Get job details
+            job_details = self.get_job_details()
+            
+            # Create a temporary Job object for validation
+            temp_job = self.slurm_connection.create_job_from_details(job_details)
+            
+            # Validate
+            issues = temp_job.validate_parameters()
+            
+            return len(issues) == 0, issues
+            
+        except Exception as e:
+            return False, [f"Validation error: {str(e)}"]
+        
+    def accept(self):
+        """Enhanced accept method with validation"""
+        # Validate before accepting
+        is_valid, issues = self.validate_job_before_creation()
+        
+        if not is_valid:
+            from modules.toast_notify import show_warning_toast
+            issue_text = "\\n".join(f"• {issue}" for issue in issues[:5])  # Show first 5 issues
+            if len(issues) > 5:
+                issue_text += f"\\n... and {len(issues) - 5} more issues"
+                
+            show_warning_toast(
+                self, 
+                "Job Validation Failed", 
+                f"Please fix the following issues before creating the job:\n\n{issue_text}"
+            )
+            return
+        
+        # If validation passes, proceed with normal accept
+        super().accept()
+
 class ModifyJobDialog(NewJobDialog):
     """
     Dialog for modifying existing job parameters.
@@ -1182,33 +1059,26 @@ class ModifyJobDialog(NewJobDialog):
         self._update_header_for_modify()
         self._populate_fields_from_job()
 
-    def _update_header_for_modify(self):
-        for i in range(self.main_layout.count()):
-            item = self.main_layout.itemAt(i)
-            if item and item.layout():
-                layout = item.layout()
-                for j in range(layout.count()):
-                    widget = layout.itemAt(j).widget()
-                    if isinstance(widget, QLabel) and "New Job for Project" in widget.text():
-                        widget.setText(f"Modify Job: {self.job.name}")
-                        widget.setStyleSheet(f"color: {COLOR_ORANGE}; font-size: 14px; font-weight: bold;")
-                        break
-        self.create_button.setText("Save Changes")
-        self.create_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
-
     def _populate_fields_from_job(self):
-        # Fill all dialog fields with data from the existing job
+        """Populate dialog fields from the enhanced Job object"""
         job = self.job
+        
+        # Basic job information
         if job.name:
             self.job_name_edit.setText(job.name)
+        
+        # Resource allocation
         if job.partition:
             index = self.partition_combo.findText(job.partition)
             if index >= 0:
                 self.partition_combo.setCurrentIndex(index)
+        
         if job.account:
             index = self.account_combo.findText(job.account)
             if index >= 0:
                 self.account_combo.setCurrentIndex(index)
+        
+        # Time limit
         if job.time_limit:
             try:
                 time_parts = job.time_limit.split(':')
@@ -1218,10 +1088,16 @@ class ModifyJobDialog(NewJobDialog):
                     self.time_limit_edit.setTime(time)
             except (ValueError, AttributeError):
                 pass
+        
+        # Resource specifications
         if job.nodes:
             self.nodes_spin.setValue(job.nodes)
         if job.cpus:
             self.cpu_per_task_spin.setValue(job.cpus)
+        if job.ntasks:
+            self.ntasks_spin.setValue(job.ntasks)
+        
+        # Memory
         if job.memory:
             try:
                 memory_str = job.memory.upper()
@@ -1235,6 +1111,8 @@ class ModifyJobDialog(NewJobDialog):
                     self.memory_unit_combo.setCurrentText("MB")
             except (ValueError, AttributeError):
                 pass
+        
+        # Constraints
         if job.constraints:
             constraints_str = job.constraints.strip('"') if job.constraints else ""
             if constraints_str:
@@ -1244,24 +1122,25 @@ class ModifyJobDialog(NewJobDialog):
                     if item and item.text() in constraints:
                         item.setCheckState(Qt.CheckState.Checked)
                 self.constraint_combo._update_selected_text()
+        
+        # QoS
         if job.qos:
             index = self.qos_combo.findText(job.qos)
             if index >= 0:
                 self.qos_combo.setCurrentIndex(index)
-            else:
-                none_index = self.qos_combo.findText("None")
-                if none_index >= 0:
-                    self.qos_combo.setCurrentIndex(none_index)
+        
+        # GPU/GRES
         if job.gres and "gpu" in job.gres.lower():
             self.gpu_check.setChecked(True)
             self._toggle_gpu_selection(True)
+            
             try:
                 gpu_parts = job.gres.split(':')
-                if len(gpu_parts) == 2:
+                if len(gpu_parts) == 2:  # gpu:N
                     gpu_count = int(gpu_parts[1])
                     self.gpu_type_combo.setCurrentText("any")
                     self.gpu_count_spin.setValue(gpu_count)
-                elif len(gpu_parts) == 3:
+                elif len(gpu_parts) == 3:  # gpu:type:N
                     gpu_type = gpu_parts[1]
                     gpu_count = int(gpu_parts[2])
                     type_index = self.gpu_type_combo.findText(gpu_type)
@@ -1270,18 +1149,36 @@ class ModifyJobDialog(NewJobDialog):
                     self.gpu_count_spin.setValue(gpu_count)
             except (ValueError, IndexError, AttributeError):
                 pass
+        
+        # Node list
+        if hasattr(self, 'nodelist_combo') and job.nodelist:
+            node_list = job.nodelist.split(',')
+            for i in range(self.nodelist_combo.model.rowCount()):
+                item = self.nodelist_combo.model.item(i)
+                if item and item.text() in node_list:
+                    item.setCheckState(Qt.CheckState.Checked)
+            self.nodelist_combo._update_selected_text()
+        
+        # Files and directories
         if job.output_file:
             self.output_file_edit.setText(job.output_file)
         if job.error_file:
             self.error_file_edit.setText(job.error_file)
         if job.working_dir:
             self.working_dir_edit.setText(job.working_dir)
+        
+        # Command
         if job.command:
             self.command_text.setPlainText(job.command)
-        if job.array_spec:
+        
+        # Job arrays
+        if job.array_spec and hasattr(self, 'array_group'):
             self.array_group.setChecked(True)
+            
+            # Try to parse the array specification
             array_spec = job.array_spec
             if '-' in array_spec and ':' in array_spec:
+                # Range with step format
                 self.array_format_combo.setCurrentIndex(2)
                 try:
                     range_part, step = array_spec.split(':')
@@ -1292,6 +1189,7 @@ class ModifyJobDialog(NewJobDialog):
                 except ValueError:
                     pass
             elif '-' in array_spec:
+                # Range format
                 self.array_format_combo.setCurrentIndex(0)
                 try:
                     start, end = array_spec.split('-')
@@ -1300,14 +1198,19 @@ class ModifyJobDialog(NewJobDialog):
                 except ValueError:
                     pass
             else:
+                # List format
                 self.array_format_combo.setCurrentIndex(1)
                 self.array_list_edit.setText(array_spec)
+            
             self._update_array_inputs(self.array_format_combo.currentIndex())
-            if job.array_max_jobs:
+            
+            if job.array_max_jobs and hasattr(self, 'max_jobs_check'):
                 self.max_jobs_check.setChecked(True)
                 self.max_jobs_spin.setValue(job.array_max_jobs)
                 self._toggle_max_jobs(True)
-        if job.dependency:
+        
+        # Dependencies
+        if job.dependency and hasattr(self, 'dep_type_combo'):
             dep_parts = job.dependency.split(':')
             if len(dep_parts) >= 1:
                 dep_type = dep_parts[0]
@@ -1316,12 +1219,29 @@ class ModifyJobDialog(NewJobDialog):
                     if item_text.startswith(dep_type):
                         self.dep_type_combo.setCurrentIndex(i)
                         break
+                
                 if dep_type != "singleton" and len(dep_parts) > 1:
                     job_ids = dep_parts[1].split(',') if len(dep_parts) > 1 else []
                     for job_id in job_ids:
                         if job_id.strip():
                             self.dep_id_display_combo.addItem(job_id.strip())
+        
+        # Update preview after populating all fields
         self._update_preview()
+
+    def _update_header_for_modify(self):
+        for i in range(self.main_layout.count()):
+            item = self.main_layout.itemAt(i)
+            if item and item.layout():
+                layout = item.layout()
+                for j in range(layout.count()):
+                    widget = layout.itemAt(j).widget()
+                    if isinstance(widget, QLabel) and "New Job for Project" in widget.text():
+                        widget.setText(f"Modify Job: {self.job.name}")
+                        widget.setStyleSheet(f"color: {COLOR_ORANGE}; font-size: 14px; font-weight: bold;")
+                        break
+        self.create_button.setText("Save Changes")
+        self.create_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "ok.svg")))
 
     def get_job_details(self):
         job_name = self.job_name_edit.text()
@@ -1419,3 +1339,94 @@ class ModifyJobDialog(NewJobDialog):
         details["original_job_id"] = self.job.id
         details["is_modification"] = True
         return details
+    
+
+    def add_advanced_parameters_tab(self):
+        """
+        Add an advanced parameters tab for power users who want to access
+        all SLURM parameters supported by the enhanced Job class.
+        """
+        if hasattr(self, 'advanced_params_tab'):
+            return  # Already exists
+        
+        # Create advanced parameters tab
+        self.advanced_params_tab = QWidget()
+        self.tabs.addTab(self.advanced_params_tab, "Advanced Parameters")
+        
+        # Setup the advanced parameters UI
+        layout = QVBoxLayout(self.advanced_params_tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Create scroll area for advanced parameters
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        
+        # Hardware Configuration Group
+        hardware_group = QGroupBox("Hardware Configuration")
+        hardware_layout = QFormLayout(hardware_group)
+        
+        self.threads_per_core_spin = QSpinBox()
+        self.threads_per_core_spin.setRange(1, 8)
+        self.threads_per_core_spin.setValue(1)
+        hardware_layout.addRow("Threads per Core:", self.threads_per_core_spin)
+        
+        self.sockets_per_node_spin = QSpinBox()
+        self.sockets_per_node_spin.setRange(1, 8)
+        hardware_layout.addRow("Sockets per Node:", self.sockets_per_node_spin)
+        
+        self.cores_per_socket_spin = QSpinBox()
+        self.cores_per_socket_spin.setRange(1, 64)
+        hardware_layout.addRow("Cores per Socket:", self.cores_per_socket_spin)
+        
+        scroll_layout.addWidget(hardware_group)
+        
+        # Job Control Group
+        control_group = QGroupBox("Job Control")
+        control_layout = QFormLayout(control_group)
+        
+        self.nice_spin = QSpinBox()
+        self.nice_spin.setRange(-20, 19)
+        self.nice_spin.setValue(0)
+        control_layout.addRow("Nice Value:", self.nice_spin)
+        
+        self.exclusive_check = QCheckBox("Exclusive Node Access")
+        control_layout.addRow("", self.exclusive_check)
+        
+        self.requeue_check = QCheckBox("Allow Requeue")
+        control_layout.addRow("", self.requeue_check)
+        
+        scroll_layout.addWidget(control_group)
+        
+        # Notification Group
+        notification_group = QGroupBox("Email Notifications")
+        notification_layout = QFormLayout(notification_group)
+        
+        self.mail_user_edit = QLineEdit()
+        self.mail_user_edit.setPlaceholderText("user@example.com")
+        notification_layout.addRow("Email Address:", self.mail_user_edit)
+        
+        self.mail_type_combo = QComboBox()
+        self.mail_type_combo.addItems(["NONE", "BEGIN", "END", "FAIL", "ALL"])
+        notification_layout.addRow("Mail Type:", self.mail_type_combo)
+        
+        scroll_layout.addWidget(notification_group)
+        
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll)
+        
+        # Connect signals for preview updates
+        for widget in [self.threads_per_core_spin, self.sockets_per_node_spin, 
+                    self.cores_per_socket_spin, self.nice_spin, self.exclusive_check,
+                    self.requeue_check, self.mail_user_edit, self.mail_type_combo]:
+            if hasattr(widget, 'valueChanged'):
+                widget.valueChanged.connect(self._update_preview)
+            elif hasattr(widget, 'textChanged'):
+                widget.textChanged.connect(self._update_preview)
+            elif hasattr(widget, 'currentIndexChanged'):
+                widget.currentIndexChanged.connect(self._update_preview)
+            elif hasattr(widget, 'stateChanged'):
+                widget.stateChanged.connect(self._update_preview)
