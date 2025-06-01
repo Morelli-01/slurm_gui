@@ -2,10 +2,11 @@ from pathlib import Path
 import platform
 import subprocess
 from modules import project_store
+from modules.data_classes import Job, Project
 from modules.job_logs import JobLogsDialog
-from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
+from modules.toast_notify import *
 from slurm_connection import SlurmConnection
-from utils import create_separator, script_dir, settings_path, except_utility_path, plink_utility_path, tmux_utility_path
+from utils import script_dir, settings_path
 from modules.defaults import *
 from modules.project_store import ProjectStore
 from modules.jobs_group import JobsGroup
@@ -446,41 +447,25 @@ class ProjectGroup(QGroupBox):
                 project = self.parent.project_storer.get(proj_name)
 
                 if project and project.jobs:
-                    # Convert jobs to rows for display
-                    job_rows = [job.to_table_row() for job in project.jobs]
-
-                    # Update jobs UI
-                    self.parent.jobs_group.update_jobs(proj_name, job_rows)
+                    # Update jobs UI with Project and Job objects
+                    self.parent.jobs_group.update_jobs(project, project.jobs)
 
                     # Update project status visualization (using job counts)
                     if hasattr(self.projects_children.get(proj_name, None), 'status_bar'):
                         job_stats = project.get_job_stats()
-
-                        # Find status bar widgets and update counts
                         status_bar = self.projects_children[proj_name].status_bar
                         if hasattr(status_bar, 'children'):
                             widgets = status_bar.children()
-
-                            # This is a simplistic approach - in a real implementation,
-                            # you would have a more reliable way to map widgets to statuses
-                            if len(widgets) >= 5:  # Assuming the 4 status blocks + layout
-                                # Set counts if widgets are found (simplistic mapping)
-                                # widgets[1] is likely completed jobs block
+                            if len(widgets) >= 5:
                                 self._update_widget_count(
                                     widgets[1], job_stats.get("COMPLETED", 0))
-
-                                # widgets[2] is likely failed jobs block
                                 self._update_widget_count(
                                     widgets[2], job_stats.get("FAILED", 0))
-
-                                # widgets[3] is likely pending jobs block (includes NOT_SUBMITTED)
                                 pending_count = job_stats.get("PENDING", 0)
                                 not_submitted = sum(
                                     1 for job in project.jobs if job.status == "NOT_SUBMITTED")
                                 self._update_widget_count(
                                     widgets[3], pending_count + not_submitted)
-
-                                # widgets[4] is likely running jobs block
                                 self._update_widget_count(
                                     widgets[4], job_stats.get("RUNNING", 0))
         except Exception as e:
@@ -806,18 +791,21 @@ class JobsPanel(QWidget):
             show_error_toast(self, "Setup Error",
                              f"Failed to initialize project store: {str(e)}")
 
-    def _check_project_storer(self):
-        """Check if project_storer is available and show appropriate message"""
-        if not self.project_storer:
-            show_warning_toast(self, "No Connection",
-                               "Please establish SLURM connection first.")
-            return False
-        return True
+    @staticmethod
+    def require_project_storer(method):
+        """Decorator to ensure project_storer is available before calling the method."""
 
-    def open_new_job_dialog(self):
+        def wrapper(self, *args, **kwargs):
+            if not getattr(self, "project_storer", None):
+                show_warning_toast(self, "No Connection",
+                                   "Please establish SLURM connection first.")
+                return
+            return method(self, *args, **kwargs)
+        return wrapper
+
+    @require_project_storer
+    def open_new_job_dialog(self, *args, **kwargs):
         """Opens the dialog to create a new job for the selected project."""
-        if not self._check_project_storer():
-            return
 
         if self.current_project:
             dialog = NewJobDialog(
@@ -828,47 +816,16 @@ class JobsPanel(QWidget):
 
                 try:
                     # Create the job via the project storer WITHOUT submitting to SLURM
-                    job_id = self.project_storer.add_new_job(
-                        self.current_project, job_details)
+                    job: Job = self.project_storer.add_new_job(
+                        self.current_project.name, job_details)
 
-                    if job_id:
-                        # Parse GPU count from gres if available
-                        gpu_count = 0
-                        gres = job_details.get("gres")
-                        if gres and "gpu:" in gres:
-                            try:
-                                gpu_parts = gres.split(":")
-                                if len(gpu_parts) == 2:  # Format: gpu:N
-                                    gpu_count = int(gpu_parts[1])
-                                elif len(gpu_parts) == 3:  # Format: gpu:type:N
-                                    gpu_count = int(gpu_parts[2])
-                            except (ValueError, IndexError):
-                                pass
-
-                        # Get memory setting
-                        memory = job_details.get("memory", "1G")
-                        if not memory:
-                            memory_value = job_details.get("memory_spin", 1)
-                            memory_unit = job_details.get("memory_unit", "GB")
-                            memory = f"{memory_value}{memory_unit}"
-
-                        # Create a job row for the UI display
-                        job_row = [
-                            job_id,
-                            job_details.get("job_name", "Unnamed Job"),
-                            "NOT_SUBMITTED",  # Special status to indicate job needs to be submitted
-                            "00:00:00",  # Initial runtime is zero
-                            job_details.get("cpus_per_task", 1),  # CPU count
-                            gpu_count,  # GPU count parsed from gres
-                            memory,  # Memory
-                        ]
-
+                    if job:
                         # Add the job to the jobs group UI
                         self.jobs_group.add_single_job(
-                            self.current_project, job_row)
+                            self.current_project, job)
 
                         show_success_toast(self, "Job Created",
-                                           f"Job '{job_details.get('job_name')}' has been created!")
+                                           f"Job '{getattr(job, 'name', 'Unnamed Job')}' has been created!")
                     else:
                         show_warning_toast(
                             self,
@@ -889,12 +846,21 @@ class JobsPanel(QWidget):
                 "Please select a project first before creating a new job."
             )
 
-
-    def on_project_selected(self, project_name):
+    def on_project_selected(self, project_or_name):
         """Slot to update the currently selected project."""
-        self.current_project = project_name
-        # For debugging
-        print(f"Selected Project in JobsPanel: {self.current_project}")
+        # Accept either a Project object or a project name (str)
+        if isinstance(project_or_name, str):
+            if self.project_storer:
+                project = self.project_storer.get(project_or_name)
+            else:
+                project = None
+        else:
+            project = project_or_name
+        self.current_project = project
+        if self.current_project:
+            print(f"Selected Project in JobsPanel: {self.current_project.name}")
+        else:
+            print("Selected Project in JobsPanel: None")
 
     def resizeEvent(self, event):
         """Adjust the position of the floating button when the widget is resized."""
@@ -902,39 +868,6 @@ class JobsPanel(QWidget):
         self.new_jobs_button.move(self.width() - self.new_jobs_button.width() - 20,
                                   self.height() - self.new_jobs_button.height() - 20)
         super().resizeEvent(event)
-
-    def _update_table_row(self, table, row, job_data, project_name, job_id):
-        """Update a specific table row with new job data"""
-        actions_col = table.columnCount() - 1
-
-        # Update data columns (exclude actions column)
-        for col in range(actions_col):
-            if col < len(job_data):
-                item = table.item(row, col)
-                if item:
-                    item.setText(str(job_data[col]))
-
-                    # Apply status color if this is the status column (index 2)
-                    if col == 2:
-                        self.jobs_group._apply_state_color(item)
-
-        # Update action buttons based on new status
-        job_status = job_data[2] if len(job_data) > 2 else None
-        action_widget = self.jobs_group._create_actions_widget(
-            project_name, job_id, job_status)
-        table.setCellWidget(row, actions_col, action_widget)
-
-    def _show_system_notification(self, title: str, message: str):
-        """Show system desktop notification"""
-        try:
-            # Try to use system notifications
-            from PyQt6.QtWidgets import QSystemTrayIcon
-            if QSystemTrayIcon.isSystemTrayAvailable():
-                # This is a basic implementation
-                # You might want to create a proper system tray icon
-                pass
-        except ImportError:
-            pass
 
     def closeEvent(self, event):
         """Handle widget close event"""
@@ -947,83 +880,53 @@ class JobsPanel(QWidget):
         """Connect to project store signals for real-time updates"""
         if not self.project_storer:
             return
-
-        # Connect to job status changes using the signals object
+        # Connect to job status changes using the signals object (now object-based)
         self.project_storer.signals.job_status_changed.connect(
             self._on_job_status_changed)
         self.project_storer.signals.job_updated.connect(self._on_job_updated)
         self.project_storer.signals.project_stats_changed.connect(
             self._on_project_stats_changed)
 
-    def _on_job_status_changed(self, project_name: str, job_id: str, old_status: str, new_status: str):
+    def _on_job_status_changed(self, project: 'Project', job: 'Job', old_status: str, new_status: str):
         """Handle job status changes from project store with optimized notifications"""
-        print(f"Job {job_id} in {project_name}: {old_status} -> {new_status}")
+        print(f"Job {job.id} in {project.name}: {old_status} -> {new_status}")
+        self._update_single_job_from_store(project, job)
+        self._show_immediate_job_toast(project, job, old_status, new_status)
+        self._show_status_notification(project, job, old_status, new_status)
 
-        # Update the specific job row efficiently
-        self._update_single_job_from_store(project_name, job_id)
-
-        # Show immediate toast notification (optimized)
-        self._show_immediate_job_toast(
-            project_name, job_id, old_status, new_status)
-
-        # Show brief notification for important status changes (status bar)
-        self._show_status_notification(
-            project_name, job_id, old_status, new_status)
-
-    def _on_job_updated(self, project_name: str, job_id: str):
+    def _on_job_updated(self, project: 'Project', job: 'Job'):
         """Handle general job updates (timing, resources, etc.) - SIMPLIFIED VERSION"""
-        self._update_single_job_from_store(project_name, job_id)
+        self._update_single_job_from_store(project, job)
 
-    def _on_project_stats_changed(self, project_name: str, stats: dict):
+    def _on_project_stats_changed(self, project: 'Project', stats: dict):
         """Handle project statistics changes - SIMPLIFIED VERSION"""
-        self._update_project_status_display(project_name, stats)
+        self._update_project_status_display(project, stats)
 
-    def _update_single_job_from_store(self, project_name: str, job_id: str):
-        """Update a single job row from the project store - CORE EFFICIENT METHOD"""
+    def _update_single_job_from_store(self, project: 'Project', job: 'Job'):
         if not self.project_storer:
             return
-
-        # Get the updated job from store
-        project = self.project_storer.get(project_name)
-        if not project:
-            return
-
-        job = project.get_job(job_id)
-        if not job:
-            return
-
-        # Convert job to table row format
         job_row = job.to_table_row()
+        self.jobs_group.update_single_job_row(project, job)
 
-        # Update the specific row in the jobs table
-        self.jobs_group.update_single_job_row(
-            project_name, str(job_id), job_row)
-
-    def _show_status_notification(self, project_name: str, job_id: str, old_status: str, new_status: str):
+    def _show_status_notification(self, project: 'Project', job: 'Job', old_status: str, new_status: str):
         """Show brief notifications for important status changes"""
-        # Only show notifications for significant status changes
         important_changes = {
-            'COMPLETED': f'✅ Job {job_id} completed successfully!',
-            'FAILED': f'❌ Job {job_id} failed.',
-            'RUNNING': f'🏃 Job {job_id} started running.',
-            'CANCELLED': f'🛑 Job {job_id} was cancelled.'
+            'COMPLETED': f'✅ Job {job.id} completed successfully!',
+            'FAILED': f'❌ Job {job.id} failed.',
+            'RUNNING': f'🏃 Job {job.id} started running.',
+            'CANCELLED': f'🛑 Job {job.id} was cancelled.'
         }
-
         if new_status in important_changes:
             message = important_changes[new_status]
-
-            # Show in status bar if parent has one
             if hasattr(self.parent(), 'statusBar'):
                 self.parent().statusBar().showMessage(message, 3000)  # 3 seconds
 
-            # print(f"📢 {message}")
-
-    def _update_project_status_display(self, project_name: str, stats: dict):
+    def _update_project_status_display(self, project: 'Project', stats: dict):
         """Update project status display (status bars in project widgets) - SIMPLIFIED VERSION"""
-        if project_name not in self.project_group.projects_children:
+        if project.name not in self.project_group.projects_children:
             return
 
-        project_widget = self.project_group.projects_children[project_name]
+        project_widget = self.project_group.projects_children[project.name]
 
         # Update status counts in project widget if it has the method
         if hasattr(project_widget, 'update_status_counts'):
@@ -1081,11 +984,11 @@ class JobsPanel(QWidget):
         # Update submission details for later use
         job.info["submission_details"] = details
 
-    def _show_immediate_job_toast(self, project_name: str, job_id: str, old_status: str, new_status: str):
+    def _show_immediate_job_toast(self, project: 'Project', job: 'Job', old_status: str, new_status: str):
         """Show immediate toast notifications with minimal processing"""
 
         # Get job name quickly (with fallback)
-        job_name = self._get_job_name_fast(project_name, job_id)
+        job_name = self._get_job_name_fast(project, job)
 
         # Simplified notification config for better performance
         notifications = {
@@ -1133,20 +1036,20 @@ class JobsPanel(QWidget):
                 config['duration']
             ))
 
-    def _get_job_name_fast(self, project_name: str, job_id: str):
+    def _get_job_name_fast(self, project: 'Project', job: 'Job'):
         """Get job name with minimal overhead and fallback"""
         try:
             if self.project_storer:
-                project = self.project_storer.get(project_name)
-                if project:
-                    job = project.get_job(job_id)
-                    if job and job.name:
-                        return job.name
+                project_obj = self.project_storer.get(project.name)
+                if project_obj:
+                    job_obj = project_obj.get_job(job.id)
+                    if job_obj and job_obj.name:
+                        return job_obj.name
         except:
             pass
 
         # Fast fallback - just use job ID
-        return f"Job {job_id}"
+        return f"Job {job.id}"
 
     def _get_current_discord_settings(self):
         """Get current Discord settings from application configuration"""
@@ -1170,29 +1073,18 @@ class JobsPanel(QWidget):
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
 
-    def open_job_terminal(self, project_name, job_id):
+    @require_project_job
+    @require_project_storer
+    def open_job_terminal(self, project, job):
         """Open terminal on the node where the job is running"""
-        if not self._check_project_storer():
-            return
 
         try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                show_warning_toast(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
-                return
 
             if job.status != "RUNNING":
                 show_warning_toast(
                     self,
                     "Cannot Open Terminal",
-                    f"Job '{job_id}' is not running. Terminal access is only available for running jobs."
+                    f"Job '{job.id}' is not running. Terminal access is only available for running jobs."
                 )
                 return
 
@@ -1200,7 +1092,7 @@ class JobsPanel(QWidget):
                 show_warning_toast(
                     self,
                     "No Node Information",
-                    f"No node information available for job '{job_id}'. The job may not have been allocated to a node yet."
+                    f"No node information available for job '{job.id}'. The job may not have been allocated to a node yet."
                 )
                 return
 
@@ -1209,7 +1101,7 @@ class JobsPanel(QWidget):
 
             # Use the main application's terminal opening functionality
             # but connect directly to the compute node
-            self._open_node_terminal(node_name, job_id)
+            self._open_node_terminal(node_name, job.id)
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
@@ -1388,19 +1280,20 @@ class JobsPanel(QWidget):
                 "putty.exe",  # In PATH
                 r"C:\Program Files\PuTTY\putty.exe",
                 r"C:\Program Files (x86)\PuTTY\putty.exe",
-                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
+                os.path.join(script_dir, "src_static",
+                             "putty.exe"),  # Local copy
             ]
-            
+
             putty_path = None
             for path in putty_paths:
                 if shutil.which(path) or os.path.exists(path):
                     putty_path = path
                     break
-            
+
             if putty_path:
                 # Get connection details
                 head_node = self.slurm_connection.host
-                
+
                 # Create a simple batch script that will handle the chained SSH connection
                 batch_content = f'''@echo off
     title SSH {head_node} -> {node_name}
@@ -1414,68 +1307,57 @@ class JobsPanel(QWidget):
 
     "{putty_path}" -ssh -pw "{password}" {username}@{head_node}
     '''
-                
+
                 # Create temporary batch file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False) as f:
                     f.write(batch_content)
                     batch_path = f.name
-                
+
                 try:
                     # Execute the batch file
-                    subprocess.Popen(["cmd.exe", "/c", batch_path], shell=False)
-                    
+                    subprocess.Popen(
+                        ["cmd.exe", "/c", batch_path], shell=False)
+
                     show_success_toast(self, "Terminal Opened",
-                                    f"PuTTY session opened: {head_node} -> {node_name}\n"
-                                    f"Follow the instructions in the terminal window.")
-                    
+                                       f"PuTTY session opened: {head_node} -> {node_name}\n"
+                                       f"Follow the instructions in the terminal window.")
+
                     # Clean up batch file after delay
-                    QTimer.singleShot(30000, lambda: self._cleanup_temp_file(batch_path))
-                    
+                    QTimer.singleShot(
+                        30000, lambda: self._cleanup_temp_file(batch_path))
+
                 except Exception as e:
                     self._cleanup_temp_file(batch_path)
                     raise e
             else:
                 # PuTTY not found
                 show_error_toast(self, "PuTTY Not Found",
-                                "PuTTY is required for SSH connections on Windows.\n"
-                                "Please install PuTTY from https://www.putty.org/")
-                
+                                 "PuTTY is required for SSH connections on Windows.\n"
+                                 "Please install PuTTY from https://www.putty.org/")
+
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Windows terminal: {str(e)}")
-            
-    #------------------ Actions Buttons ------------------------
-    def submit_job(self, project_name, job_id):
+                             f"Failed to open Windows terminal: {str(e)}")
+
+    # ------------------ Actions Buttons ------------------------
+    @require_project_storer
+    def submit_job(self, project: Project, job: Job):
         """Submit job - Enhanced version with project_storer check"""
-        if not self._check_project_storer():
-            return
-
         try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                show_warning_toast(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
-                return
 
             if job.status != "NOT_SUBMITTED":
                 show_info_toast(
                     self,
                     "Already Submitted",
-                    f"Job '{job_id}' has already been submitted with status: {job.status}."
+                    f"Job '{job.id}' has already been submitted with status: {job.status}."
                 )
                 return
 
             # Store the old job ID for UI updates
-            old_job_id = str(job_id)
+            old_job_id = str(job.id)
 
             # Submit the job
-            new_job_id = self.project_storer.submit_job(project_name, job_id)
+            new_job_id = self.project_storer.submit_job(project, job)
 
             if new_job_id:
                 # Get the updated job with the new ID
@@ -1485,7 +1367,7 @@ class JobsPanel(QWidget):
 
                     # Update the UI to reflect the ID change efficiently
                     self.jobs_group.update_job_id(
-                        project_name, old_job_id, str(new_job_id), job_row)
+                        project, old_job_id, updated_job)
 
                 # Show success message
                 show_success_toast(
@@ -1501,102 +1383,74 @@ class JobsPanel(QWidget):
             import traceback
             traceback.print_exc()
 
-    def delete_job(self, project_name, job_id):
+    @require_project_storer
+    def delete_job(self, project: Project, job: Job):
         """Delete job - SIMPLIFIED VERSION with efficient UI update"""
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
+        
         try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
             if job.status not in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED", "CANCELLED"]:
-                QMessageBox.warning(self, "Error",
-                                    f"Job can't be deleted since it is {job.status} status\n"
-                                    f"Job '{job_id}' needs to be stopped before deleting.")
+                show_warning_toast(
+                    self,
+                    "Error",
+                    f"Job can't be deleted since it is {job.status} status\n"
+                    f"Job '{job.id}' needs to be stopped before deleting."
+                )
                 return
 
             # Remove the job from store
-            self.project_storer.remove_job(project_name, job_id)
+            self.project_storer.remove_job(project, job)
 
             # Remove from UI efficiently
-            self.jobs_group.remove_job(project_name, job_id)
+            self.jobs_group.remove_job(project, job)
 
-            print(f"Job {job_id} deleted successfully")
+            print(f"Job {job.id} deleted successfully")
 
         except Exception as e:
-            QMessageBox.critical(self, "Deletion Error",
-                                 f"An error occurred during job deletion: {str(e)}")
+            show_error_toast(self, "Deletion Error",
+                             f"An error occurred during job deletion: {str(e)}")
             import traceback
             traceback.print_exc()
 
-    def stop_job(self, project_name, job_id):
-        if not self.project_storer:
-            QMessageBox.warning(self, "Error", "Not connected to SLURM.")
-            return
-
+    @require_project_storer
+    def stop_job(self, project: Project, job: Job):
+        """Stop a running SLURM job, show warning if not stoppable."""
         try:
-            # Get job and validate
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
-                return
-
-            job = project.get_job(job_id)
-            if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
-                return
-
             if job.status in ["NOT_SUBMITTED", "COMPLETED", "FAILED", "STOPPED"]:
-                QMessageBox.warning(self, "Error",
-                                    f"Job can't be deleted since it is {job.status} status\n")
+                show_warning_toast(
+                    self,
+                    "Error",
+                    f"Job can't be stopped since it is {job.status} status\n"
+                )
                 return
 
             stdout, stderr = self.slurm_connection.run_command(
-                f"scancel {job_id}")
+                f"scancel {job.id}")
             if stderr:
-                QMessageBox.warning(
-                    self, "Error", f"Something went wrong with command:", f"scancel --full {job_id}")
+                show_error_toast(
+                    self, "Error", f"Something went wrong with command: scancel --full {job.id}")
                 return
-
         except Exception as e:
-            QMessageBox.critical(self, "Deletion Error",
-                                 f"An error occurred during job deletion: {str(e)}")
+            show_error_toast(self, "Stop Error",
+                             f"An error occurred during job stop: {str(e)}")
             import traceback
             traceback.print_exc()
 
-    def show_job_logs(self, project_name, job_id):
+    @require_project_storer
+    def show_job_logs(self, project: Project, job: Job):
         """Show the job logs dialog"""
-        if not self.project_storer:
-            QMessageBox.warning(
-                self, "Error", "Not connected to project store.")
-            return
 
         try:
             # Create and show the logs dialog
             dialog = JobLogsDialog(
-                project_name=project_name,
-                job_id=job_id,
+                project=project,
+                job=job,
                 project_store=self.project_storer,
                 parent=self
             )
             dialog.exec()
 
         except Exception as e:
-            QMessageBox.critical(
+            show_error_toast(
                 self,
                 "Error Opening Logs",
                 f"Failed to open job logs:\n{str(e)}"
@@ -1604,25 +1458,25 @@ class JobsPanel(QWidget):
             import traceback
             traceback.print_exc()
 
-    def duplicate_job(self, project_name, job_id):
-        """Duplicate an existing job with a new name - Fixed to carry over Discord settings"""
+    @require_project_storer
+    def duplicate_job(self, project: Project, job: Job):
+        """Duplicate an existing job with a new name - Fixed to carry over Discord settings and update UI"""
         if not self.project_storer:
-            QMessageBox.warning(
+            show_error_toast(
                 self, "Error", "Not connected to project store.")
             return
 
         try:
             # Get the original job
-            project = self.project_storer.get(project_name)
-            if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
+            project_obj = self.project_storer.get(project.name)
+            if not project_obj:
+                show_error_toast(
+                    self, "Error", f"Project '{project.name}' not found.")
                 return
 
-            original_job = project.get_job(job_id)
+            original_job = project_obj.get_job(job.id)
             if not original_job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
+                show_error_toast(self, "Error", f"Job '{job.id}' not found.")
                 return
 
             # Ask user for new job name
@@ -1665,62 +1519,41 @@ class JobsPanel(QWidget):
 
             # CRITICAL FIX: Copy Discord notification settings from original job
             if "discord_notifications" in original_job.info:
-                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy(
-                )
+                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy()
             else:
                 # If original job doesn't have Discord settings, get them from current application config
-                job_details["discord_notifications"] = self._get_current_discord_settings(
-                )
+                job_details["discord_notifications"] = self._get_current_discord_settings()
 
             # Create the duplicated job
-            new_job_id = self.project_storer.add_new_job(
-                project_name, job_details)
+            new_job_obj = self.project_storer.add_new_job(
+                project.name, job_details)
 
-            if new_job_id:
-                # Parse GPU count from gres if available
-                gpu_count = 0
-                if original_job.gres and "gpu:" in original_job.gres:
-                    try:
-                        gpu_parts = original_job.gres.split(":")
-                        if len(gpu_parts) == 2:  # Format: gpu:N
-                            gpu_count = int(gpu_parts[1])
-                        elif len(gpu_parts) == 3:  # Format: gpu:type:N
-                            gpu_count = int(gpu_parts[2])
-                    except (ValueError, IndexError):
-                        pass
-
-                # Create a job row for the UI display
-                job_row = [
-                    new_job_id,
-                    new_name.strip(),
-                    "NOT_SUBMITTED",  # New job starts as not submitted
-                    "00:00:00",  # Initial runtime is zero
-                    original_job.cpus,  # CPU count
-                    gpu_count,  # GPU count
-                    original_job.memory,  # Memory
-                ]
-
-                # Add the job to the jobs group UI
-                self.jobs_group.add_single_job(project_name, job_row)
-
-                # Update project status display
-                if project_name in self.project_group.projects_children:
-                    project_widget = self.project_group.projects_children[project_name]
-                    if hasattr(project_widget, 'update_status_counts'):
-                        job_stats = project.get_job_stats()
-                        project_widget.update_status_counts(job_stats)
-
-                show_success_toast(self, "Job Duplicated",
-                                   f"Job '{new_name}' duplicated successfully with Discord notifications!")
+            # Fetch the new job object from the project (handle both single and array jobs)
+            project_obj = self.project_storer.get(project.name)
+            if isinstance(new_job_obj, list):
+                # Array jobs: add all
+                for job_id in new_job_obj:
+                    new_job = project_obj.get_job(job_id)
+                    if new_job:
+                        self.jobs_group.add_single_job(project_obj, new_job)
             else:
-                QMessageBox.warning(
-                    self,
-                    "Duplication Failed",
-                    "Failed to duplicate job. Please check logs for more information."
-                )
+                # Single job
+                new_job = new_job_obj if hasattr(new_job_obj, 'id') else project_obj.get_job(new_job_obj.id if hasattr(new_job_obj, 'id') else new_job_obj)
+                if new_job:
+                    self.jobs_group.add_single_job(project_obj, new_job)
+
+            # Update project status display
+            if project.name in self.project_group.projects_children:
+                project_widget = self.project_group.projects_children[project.name]
+                if hasattr(project_widget, 'update_status_counts'):
+                    job_stats = project_obj.get_job_stats()
+                    project_widget.update_status_counts(job_stats)
+
+            show_success_toast(self, "Job Duplicated",
+                               f"Job '{new_name}' duplicated successfully with Discord notifications!")
 
         except Exception as e:
-            QMessageBox.critical(
+            show_error_toast(
                 self,
                 "Duplication Error",
                 f"An error occurred while duplicating the job: {str(e)}"
@@ -1728,25 +1561,25 @@ class JobsPanel(QWidget):
             import traceback
             traceback.print_exc()
 
-    def modify_job(self, project_name, job_id):
+    @require_project_storer
+    def modify_job(self, project: Project, job: Job):
         """Modify an existing job"""
         if not self.project_storer:
-            QMessageBox.warning(
+            show_error_toast(
                 self, "Error", "Not connected to project store.")
             return
 
         try:
             # Get the job to modify
-            project = self.project_storer.get(project_name)
+            project = self.project_storer.get(project.name)
             if not project:
-                QMessageBox.warning(
-                    self, "Error", f"Project '{project_name}' not found.")
+                show_error_toast(
+                    self, "Error", f"Project '{project.name}' not found.")
                 return
 
-            job = project.get_job(job_id)
+            job = project.get_job(job.id)
             if not job:
-                QMessageBox.warning(
-                    self, "Error", f"Job '{job_id}' not found.")
+                show_error_toast(self, "Error", f"Job '{job.id}' not found.")
                 return
 
             # Only allow modification of NOT_SUBMITTED jobs
@@ -1754,14 +1587,14 @@ class JobsPanel(QWidget):
                 show_warning_toast(
                     self,
                     "Cannot Modify Job",
-                    f"Job '{job_id}' cannot be modified because it has status '{job.status}'. Only jobs with status 'NOT_SUBMITTED' can be modified."
+                    f"Job '{job.id}' cannot be modified because it has status '{job.status}'. Only jobs with status 'NOT_SUBMITTED' can be modified."
                 )
                 return
 
             # Open the modify dialog
             dialog = ModifyJobDialog(
                 job=job,
-                project_name=project_name,
+                project_name=project.name,
                 slurm_connection=self.slurm_connection,
                 parent=self
             )
@@ -1781,19 +1614,19 @@ class JobsPanel(QWidget):
                     self._update_job_from_details(job, modified_details)
 
                     # Update the job in the store
-                    self.project_storer.add_job(project_name, job)
+                    self.project_storer.add_job(project.name, job)
 
                     # Update the UI
                     job_row = job.to_table_row()
                     self.jobs_group.update_single_job_row(
-                        project_name, str(job_id), job_row)
+                        project, job)
 
                     # Show success message
                     show_success_toast(
                         self, "Job Modified", f"Job '{job.name}' has been successfully modified.")
 
                 except Exception as e:
-                    QMessageBox.critical(
+                    show_error_toast(
                         self,
                         "Modification Error",
                         f"An error occurred while modifying the job: {str(e)}"
@@ -1802,12 +1635,11 @@ class JobsPanel(QWidget):
                     traceback.print_exc()
 
         except Exception as e:
-            QMessageBox.critical(
+            show_error_toast(
                 self,
                 "Modification Error",
                 f"An error occurred while opening the modify dialog: {str(e)}"
             )
             import traceback
             traceback.print_exc()
-    
-    #-----------------------------------------------------------
+    # -----------------------------------------------------------

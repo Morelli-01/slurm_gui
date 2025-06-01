@@ -10,886 +10,22 @@ import json
 
 # Forward import for type checking – real instance is passed at runtime
 from slurm_connection import SlurmConnection, determine_job_status, parse_duration
-from datetime import datetime
 from modules.defaults import *
+from modules.data_classes import *
 __all__ = [
     "Job",
     "Project",
     "ProjectStore",
 ]
 
-# ---------------------------------------------------------------------------
-# Model layer
-# ---------------------------------------------------------------------------
-
-
-def _clean_dict(d: Dict[str, Any]) -> Dict[str, Any]:
-    """Drop None values so the JSON stays compact."""
-    return {k: v for k, v in d.items() if v is not None}
-
-
-@dataclass
-class Job:
-
-    # Core identification
-    id: Union[int, str]  # SLURM job ID
-    name: str  # Job name
-    status: str = "PENDING"  # SLURM job status
-    command: str = ""  # The job command/script
-
-    # === RESOURCE ALLOCATION PARAMETERS ===
-    # Basic resources
-    partition: str = ""  # SLURM partition
-    account: str = ""  # SLURM account
-    time_limit: str = ""  # Time limit in HH:MM:SS format
-    nodes: int = 1  # Number of nodes
-    cpus: int = 1  # CPUs per task
-    ntasks: int = 1  # Number of tasks
-    ntasks_per_node: Optional[int] = None  # Tasks per node
-    ntasks_per_core: Optional[int] = None  # Tasks per core
-    ntasks_per_socket: Optional[int] = None  # Tasks per socket
-
-    # Memory
-    memory: str = ""  # Memory requirement (e.g., "8G")
-    memory_per_cpu: Optional[str] = None  # Memory per CPU
-    memory_per_gpu: Optional[str] = None  # Memory per GPU
-    memory_per_node: Optional[str] = None  # Memory per node
-
-    # GPUs and other resources
-    gpus: int = 0  # Number of GPUs
-    gres: Optional[str] = None  # Generic Resources string
-
-    # === CONSTRAINTS AND QOS ===
-    constraints: Optional[str] = None  # Node constraints
-    qos: Optional[str] = None  # Quality of Service
-    reservation: Optional[str] = None  # Reservation name
-
-    # === JOB PLACEMENT ===
-    nodelist: str = ""  # Specific nodes to use/avoid
-    exclude: Optional[str] = None  # Nodes to exclude
-
-    # === JOB TIMING AND DEPENDENCIES ===
-    time_used: Optional[timedelta] = None  # Time used so far
-    begin_time: Optional[str] = None  # When job should begin
-    deadline: Optional[str] = None  # Job deadline
-    dependency: Optional[str] = None  # Job dependency specification
-
-    # === JOB ARRAYS ===
-    array_spec: Optional[str] = None  # Job array specification
-    array_max_jobs: Optional[int] = None  # Maximum concurrent array jobs
-
-    # === INPUT/OUTPUT FILES ===
-    output_file: str = ""  # Path for job output
-    error_file: str = ""  # Path for job errors
-    input_file: Optional[str] = None  # Input file
-    working_dir: str = ""  # Working directory
-
-    # === JOB CONTROL ===
-    priority: int = 0  # Job priority
-    nice: Optional[int] = None  # Nice value
-    requeue: Optional[bool] = None  # Allow requeue
-    no_requeue: Optional[bool] = None  # Prevent requeue
-    reboot: Optional[bool] = None  # Reboot nodes before job
-
-    # === NOTIFICATIONS ===
-    mail_type: Optional[str] = None  # Email notification types
-    mail_user: Optional[str] = None  # Email address
-
-    # === ENVIRONMENT ===
-    export_env: Optional[str] = None  # Environment export settings
-    get_user_env: Optional[bool] = None  # Load user environment
-
-    # === ADVANCED FEATURES ===
-    exclusive: Optional[bool] = None  # Exclusive node access
-    overcommit: Optional[bool] = None  # Allow overcommit
-    oversubscribe: Optional[bool] = None  # Allow oversubscribe
-    threads_per_core: Optional[int] = None  # Threads per core
-    sockets_per_node: Optional[int] = None  # Sockets per node
-    cores_per_socket: Optional[int] = None  # Cores per socket
-
-    # Job control flags
-    wait: Optional[bool] = None  # Wait for job completion
-    wrap: Optional[str] = None  # Wrap command
-
-    # === STATUS AND TIMING ===
-    submission_time: Optional[datetime] = None  # When job was submitted
-    start_time: Optional[datetime] = None  # When job started running
-    end_time: Optional[datetime] = None  # When job completed/failed
-    reason: str = ""  # Status reason
-
-    # === EXTENSIBLE INFO ===
-    info: Dict[str, Any] = field(
-        default_factory=dict)  # Additional information
-
-    # .................................................................
-
-    def generate_sbatch_script(self,
-                               include_shebang: bool = True,
-                               include_discord: bool = False,
-                               discord_settings: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Dynamically generate a complete SLURM sbatch script from job parameters.
-
-        Args:
-            include_shebang: Whether to include #!/bin/bash shebang
-            include_discord: Whether to include Discord notification system
-            discord_settings: Discord configuration if include_discord is True
-
-        Returns:
-            str: Complete sbatch script content
-        """
-        script_lines = []
-
-        # Shebang
-        if include_shebang:
-            script_lines.append("#!/bin/bash")
-            script_lines.append("")
-
-        # Header comment
-        script_lines.extend([
-            "# ============================================",
-            f"# SLURM Job Script: {self.name}",
-            f"# Generated automatically by SlurmAIO",
-            f"# Job ID: {self.id}",
-            f"# Creation Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "# ============================================",
-            ""
-        ])
-
-        # === CORE JOB PARAMETERS ===
-        script_lines.append("# === Core Job Configuration ===")
-        script_lines.append(f'#SBATCH --job-name="{self.name}"')
-
-        if self.partition:
-            script_lines.append(
-                f"#SBATCH --partition={self.partition.replace('*', '')}")
-
-        if self.account:
-            script_lines.append(f"#SBATCH --account={self.account}")
-
-        if self.time_limit:
-            script_lines.append(f"#SBATCH --time={self.time_limit}")
-
-        # === RESOURCE ALLOCATION ===
-        script_lines.append("")
-        script_lines.append("# === Resource Allocation ===")
-
-        if self.nodes > 1:
-            script_lines.append(f"#SBATCH --nodes={self.nodes}")
-
-        if self.ntasks > 1:
-            script_lines.append(f"#SBATCH --ntasks={self.ntasks}")
-
-        if self.cpus > 1:
-            script_lines.append(f"#SBATCH --cpus-per-task={self.cpus}")
-
-        if self.ntasks_per_node:
-            script_lines.append(
-                f"#SBATCH --ntasks-per-node={self.ntasks_per_node}")
-
-        if self.ntasks_per_core:
-            script_lines.append(
-                f"#SBATCH --ntasks-per-core={self.ntasks_per_core}")
-
-        if self.ntasks_per_socket:
-            script_lines.append(
-                f"#SBATCH --ntasks-per-socket={self.ntasks_per_socket}")
-
-        # Memory allocation
-        if self.memory:
-            script_lines.append(f"#SBATCH --mem={self.memory}")
-        elif self.memory_per_cpu:
-            script_lines.append(f"#SBATCH --mem-per-cpu={self.memory_per_cpu}")
-        elif self.memory_per_gpu:
-            script_lines.append(f"#SBATCH --mem-per-gpu={self.memory_per_gpu}")
-        elif self.memory_per_node:
-            script_lines.append(
-                f"#SBATCH --mem-per-node={self.memory_per_node}")
-
-        # === ADVANCED RESOURCES ===
-        if self.gres:
-            script_lines.append(f"#SBATCH --gres={self.gres}")
-
-        if self.constraints and "None" not in str(self.constraints):
-            script_lines.append(f"#SBATCH --constraint={self.constraints}")
-
-        if self.qos:
-            script_lines.append(f"#SBATCH --qos={self.qos}")
-
-        if self.reservation:
-            script_lines.append(f"#SBATCH --reservation={self.reservation}")
-
-        # === JOB PLACEMENT ===
-        if self.nodelist and self.nodelist not in ["", "None"]:
-            script_lines.append(f"#SBATCH --nodelist={self.nodelist}")
-
-        if self.exclude:
-            script_lines.append(f"#SBATCH --exclude={self.exclude}")
-
-        # === TIMING AND DEPENDENCIES ===
-        if self.begin_time:
-            script_lines.append(f"#SBATCH --begin={self.begin_time}")
-
-        if self.deadline:
-            script_lines.append(f"#SBATCH --deadline={self.deadline}")
-
-        if self.dependency:
-            script_lines.append(f"#SBATCH --dependency={self.dependency}")
-
-        # === JOB ARRAYS ===
-        if self.array_spec:
-            array_line = f"#SBATCH --array={self.array_spec}"
-            if self.array_max_jobs:
-                array_line += f"%{self.array_max_jobs}"
-            script_lines.append(array_line)
-
-        # === INPUT/OUTPUT ===
-        script_lines.append("")
-        script_lines.append("# === Input/Output Configuration ===")
-
-        if self.output_file:
-            script_lines.append(
-                f"#SBATCH --output={self._normalize_path(self.output_file)}")
-        else:
-            script_lines.append("#SBATCH --output=slurm-%j.out")
-
-        if self.error_file:
-            script_lines.append(
-                f"#SBATCH --error={self._normalize_path(self.error_file)}")
-        else:
-            script_lines.append("#SBATCH --error=slurm-%j.err")
-
-        if self.input_file:
-            script_lines.append(
-                f"#SBATCH --input={self._normalize_path(self.input_file)}")
-
-        # === JOB CONTROL ===
-        if self.nice is not None:
-            script_lines.append(f"#SBATCH --nice={self.nice}")
-
-        if self.requeue is True:
-            script_lines.append("#SBATCH --requeue")
-        elif self.no_requeue is True:
-            script_lines.append("#SBATCH --no-requeue")
-
-        if self.reboot is True:
-            script_lines.append("#SBATCH --reboot")
-
-        if self.exclusive is True:
-            script_lines.append("#SBATCH --exclusive")
-
-        if self.overcommit is True:
-            script_lines.append("#SBATCH --overcommit")
-
-        if self.oversubscribe is True:
-            script_lines.append("#SBATCH --oversubscribe")
-
-        # === ADVANCED HARDWARE ===
-        if self.threads_per_core:
-            script_lines.append(
-                f"#SBATCH --threads-per-core={self.threads_per_core}")
-
-        if self.sockets_per_node:
-            script_lines.append(
-                f"#SBATCH --sockets-per-node={self.sockets_per_node}")
-
-        if self.cores_per_socket:
-            script_lines.append(
-                f"#SBATCH --cores-per-socket={self.cores_per_socket}")
-
-        # === NOTIFICATIONS ===
-        if self.mail_type:
-            script_lines.append(f"#SBATCH --mail-type={self.mail_type}")
-
-        if self.mail_user:
-            script_lines.append(f"#SBATCH --mail-user={self.mail_user}")
-
-        # === ENVIRONMENT ===
-        if self.export_env:
-            script_lines.append(f"#SBATCH --export={self.export_env}")
-
-        if self.get_user_env is True:
-            script_lines.append("#SBATCH --get-user-env")
-
-        # === JOB CONTROL FLAGS ===
-        if self.wait is True:
-            script_lines.append("#SBATCH --wait")
-
-        if self.wrap:
-            script_lines.append(f"#SBATCH --wrap='{self.wrap}'")
-            return "\n".join(script_lines)  # Return early for wrapped commands
-
-        # === DISCORD NOTIFICATION SYSTEM ===
-        if include_discord and discord_settings and discord_settings.get("enabled", False):
-            script_lines.extend(
-                self._get_discord_notification_script(discord_settings))
-
-        # === JOB EXECUTION SECTION ===
-        script_lines.extend([
-            "",
-            "# ============================================",
-            "# Job Execution",
-            "# ============================================",
-            "",
-            "# Record start time for duration calculation",
-            "SECONDS=0",
-            "",
-            f"echo \"Starting job '{self.name}' at $(date)\"",
-            "echo \"Job ID: $SLURM_JOB_ID\"",
-            "echo \"Node(s): $SLURM_NODELIST\"",
-            "echo \"Working Directory: $(pwd)\"",
-            "echo \"\"",
-            ""
-        ])
-
-        # Change working directory if specified
-        if self.working_dir:
-            script_lines.extend([
-                "# Change to working directory",
-                f"cd '{self.working_dir}' || {{ echo \"Failed to change to directory: {self.working_dir}\"; exit 1; }}",
-                "echo \"Changed to working directory: $(pwd)\"",
-                ""
-            ])
-
-        # Array job information
-        if self.array_spec:
-            script_lines.extend([
-                "# Job array information",
-                "if [ ! -z \"$SLURM_ARRAY_TASK_ID\" ]; then",
-                "    echo \"Job Array ID: $SLURM_ARRAY_JOB_ID\"",
-                "    echo \"Array Task ID: $SLURM_ARRAY_TASK_ID\"",
-                "    echo \"Array Task Count: $SLURM_ARRAY_TASK_COUNT\"",
-                "fi",
-                ""
-            ])
-
-        # Discord start notification
-        if include_discord and discord_settings and discord_settings.get("notify_start", True):
-            script_lines.extend([
-                "# Send job start notification",
-                "send_job_start_notification",
-                ""
-            ])
-
-        # Main command execution
-        script_lines.extend([
-            "# Your job command starts here",
-            "echo \"Executing main job command...\"",
-            "echo \"Command: " + self.command.replace('"', '\\"') + "\"",
-            "echo \"\"",
-            "",
-            self.command if self.command else "echo \"No command specified\"",
-            "",
-            "# Capture the exit code immediately after job execution",
-            "JOB_EXIT_CODE=$?",
-            "",
-            "echo \"\"",
-            "echo \"Job finished at $(date)\"",
-            "echo \"Exit code: $JOB_EXIT_CODE\"",
-            "echo \"Runtime: $(printf '%02d:%02d:%02d' $((SECONDS/3600)) $(((SECONDS%3600)/60)) $((SECONDS%60)))\""
-        ])
-
-        # Discord completion notification
-        if include_discord and discord_settings and discord_settings.get("notify_complete", True):
-            script_lines.extend([
-                "",
-                "# Send completion notification based on exit code",
-                "send_job_completion_notification $JOB_EXIT_CODE"
-            ])
-
-        # Final exit
-        script_lines.extend([
-            "",
-            "# Exit with the original job exit code",
-            "exit $JOB_EXIT_CODE"
-        ])
-
-        return "\n".join(script_lines)
-
-    def _normalize_path(self, path: str, home_dir: str = "") -> str:
-        """Normalize file paths - if relative, prepend home directory"""
-        if not path or path.startswith('/'):
-            return path
-
-        if home_dir:
-            return f"{home_dir}/{path}"
-        else:
-            return f"$HOME/{path}"
-
-    def _get_discord_notification_script(self, discord_settings: Dict[str, Any]) -> List[str]:
-        """Generate Discord notification script section"""
-        # This would contain the Discord webhook notification system
-        # Implementation details from the original _create_job_script method
-        return [
-            "",
-            "# =============================================================================",
-            "# Enhanced Discord Notification System",
-            "# =============================================================================",
-            "",
-            "# Discord webhook configuration",
-            f"DISCORD_WEBHOOK_URL=\"{discord_settings.get('webhook_url', '')}\"",
-            "",
-            "# Job information variables",
-            f'export JOB_NAME="{self.name}"',
-            f'export PARTITION="{self.partition}"',
-            f'export TIME_LIMIT="{self.time_limit}"',
-            f'export REQUESTED_MEMORY="{self.memory}"',
-            f'export REQUESTED_CPUS="{self.cpus}"',
-            f'export REQUESTED_NODES="{self.nodes}"',
-            "",
-            "# Enhanced Discord notification functions",
-            self._get_discord_functions(),
-            "",
-            "# Set up signal handlers for job cancellation",
-            "trap 'send_job_cancelled_notification; exit 130' INT TERM",
-            ""
-        ]
-
-    def _get_discord_functions(self) -> str:
-        """Get Discord notification functions"""
-        # Return the Discord notification function definitions
-        # This would be the same as in the original implementation
-        return """
-function send_enhanced_discord_notification {
-    local title="$1"
-    local description="$2"
-    local color="$3"
-    local thumbnail_url="$4"
-    local footer_text="$5"
-    
-    # Implementation details...
-    # (Same as original Discord notification system)
-}
-
-function send_job_start_notification {
-    send_enhanced_discord_notification \\
-        "🏃‍♂️ JOB STARTED: $JOB_NAME" \\
-        "🚀 **Job Started Successfully!**" \\
-        "3447003" \\
-        "https://cdn-icons-png.flaticon.com/512/2103/2103591.png" \\
-        "Started at $(date '+%H:%M:%S')"
-}
-
-function send_job_completion_notification {
-    local exit_code=$1
-    local duration_formatted=$(printf '%02d:%02d:%02d' $((SECONDS/3600)) $(((SECONDS%3600)/60)) $((SECONDS%60)))
-    
-    if [ $exit_code -eq 0 ]; then
-        send_enhanced_discord_notification \\
-            "✅ JOB COMPLETED: $JOB_NAME" \\
-            "✅ **Job Completed Successfully!**\\n\\n🏁 **Runtime:** $duration_formatted" \\
-            "5763719" \\
-            "https://cdn-icons-png.flaticon.com/512/190/190411.png" \\
-            "SUCCESS: Completed in $duration_formatted"
-    else
-        send_enhanced_discord_notification \\
-            "❌ JOB FAILED: $JOB_NAME" \\
-            "❌ **Job Failed!**\\n\\n🚨 **Exit Code:** $exit_code\\n⏱️ **Runtime:** $duration_formatted" \\
-            "15158332" \\
-            "https://cdn-icons-png.flaticon.com/512/564/564619.png" \\
-            "FAILED: Exit code $exit_code after $duration_formatted"
-    fi
-}
-
-function send_job_cancelled_notification {
-    local duration_formatted=$(printf '%02d:%02d:%02d' $((SECONDS/3600)) $(((SECONDS%3600)/60)) $((SECONDS%60)))
-    
-    send_enhanced_discord_notification \\
-        "🛑 JOB CANCELLED: $JOB_NAME" \\
-        "🛑 **Job Cancelled**\\n\\n⏱️ **Runtime Before Cancellation:** $duration_formatted" \\
-        "16776960" \\
-        "https://cdn-icons-png.flaticon.com/512/1828/1828843.png" \\
-        "CANCELLED: After $duration_formatted"
-}"""
-
-    def save_sbatch_script(self,
-                           filepath: Optional[str] = None,
-                           include_discord: bool = False,
-                           discord_settings: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Generate and save the sbatch script to a file.
-
-        Args:
-            filepath: Path to save the script (if None, creates a temp file)
-            include_discord: Whether to include Discord notifications
-            discord_settings: Discord configuration
-
-        Returns:
-            str: Path to the saved script file
-        """
-        script_content = self.generate_sbatch_script(
-            include_discord=include_discord,
-            discord_settings=discord_settings
-        )
-
-        if filepath is None:
-            # Create a temporary file
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix=f'_{self.name}.sh',
-                prefix='slurm_job_',
-                delete=False
-            ) as f:
-                f.write(script_content)
-                filepath = f.name
-        else:
-            with open(filepath, 'w') as f:
-                f.write(script_content)
-
-        # Make script executable
-        os.chmod(filepath, 0o755)
-        return filepath
-
-    def get_resource_summary(self) -> Dict[str, Any]:
-        """Get a summary of requested resources"""
-        return {
-            "nodes": self.nodes,
-            "cpus": self.cpus,
-            "gpus": self.gpus,
-            "memory": self.memory,
-            "time_limit": self.time_limit,
-            "partition": self.partition,
-            "qos": self.qos,
-            "array_tasks": len(self.array_spec.split(',')) if self.array_spec and ',' in self.array_spec else 1 if self.array_spec else 1
-        }
-
-    def validate_parameters(self) -> List[str]:
-        """
-        Validate job parameters and return list of issues found.
-
-        Returns:
-            List[str]: List of validation errors/warnings
-        """
-        issues = []
-
-        # Required parameters
-        if not self.name.strip():
-            issues.append("Job name is required")
-
-        if not self.command.strip() and not self.wrap:
-            issues.append("Job command is required")
-
-        # Resource validation
-        if self.nodes < 1:
-            issues.append("Number of nodes must be at least 1")
-
-        if self.cpus < 1:
-            issues.append("Number of CPUs must be at least 1")
-
-        if self.ntasks < 1:
-            issues.append("Number of tasks must be at least 1")
-
-        # Memory validation
-        if self.memory and not any(unit in self.memory.upper() for unit in ['K', 'M', 'G', 'T']):
-            issues.append(
-                "Memory specification should include unit (K, M, G, T)")
-
-        # Time limit validation
-        if self.time_limit:
-            try:
-                # Basic validation of time format
-                parts = self.time_limit.split(':')
-                if len(parts) not in [2, 3]:
-                    issues.append(
-                        "Time limit should be in format HH:MM:SS or MM:SS")
-            except:
-                issues.append("Invalid time limit format")
-
-        # Array validation
-        if self.array_spec:
-            if self.array_max_jobs and self.array_max_jobs < 1:
-                issues.append("Array max jobs must be at least 1")
-
-        return issues
-
-    # Keep all existing methods from the original Job class
-    def to_json(self) -> Dict[str, Any]:
-        """Convert Job to JSON-serializable dictionary with proper datetime/timedelta handling"""
-        d = {}
-
-        # Handle each field explicitly to ensure JSON compatibility
-        for field_name, field_value in self.__dict__.items():
-            if field_value is None:
-                continue  # Skip None values to keep JSON compact
-
-            # Handle datetime objects
-            if isinstance(field_value, datetime):
-                d[field_name] = field_value.isoformat()
-            # Handle timedelta objects
-            elif isinstance(field_value, timedelta):
-                d[field_name] = str(field_value)
-            # Handle dictionary (info field)
-            elif isinstance(field_value, dict):
-                cleaned_dict = self._clean_dict_for_json(field_value)
-                if cleaned_dict:
-                    d[field_name] = cleaned_dict
-            # Handle all other types
-            else:
-                try:
-                    json.dumps(field_value)
-                    d[field_name] = field_value
-                except (TypeError, ValueError):
-                    d[field_name] = str(field_value)
-
-        return d
-
-    @classmethod
-    def from_json(cls, data: Dict[str, Any]) -> "Job":
-        # Make a copy to avoid modifying the input
-        data_copy = data.copy()
-
-        # Handle special types
-        if "time_used" in data_copy and data_copy["time_used"]:
-            try:
-                parts = data_copy["time_used"].split(":")
-                if len(parts) == 3:
-                    hours, minutes, seconds = map(int, parts)
-                    data_copy["time_used"] = timedelta(
-                        hours=hours, minutes=minutes, seconds=seconds)
-                else:
-                    data_copy["time_used"] = None
-            except (ValueError, TypeError):
-                data_copy["time_used"] = None
-
-        # Handle date fields
-        for date_field in ["submission_time", "start_time", "end_time"]:
-            if date_field in data_copy and data_copy[date_field]:
-                try:
-                    data_copy[date_field] = datetime.fromisoformat(
-                        data_copy[date_field])
-                except (ValueError, TypeError):
-                    data_copy[date_field] = None
-
-        # Handle info dictionary
-        info = data_copy.pop("info", {}) or {}
-
-        # Create job with known fields
-        known_fields = {k: v for k, v in data_copy.items()
-                        if k in cls.__annotations__}
-        job = cls(**known_fields)
-
-        # Set info separately
-        job.info = info
-
-        return job
-
-    @classmethod
-    def from_slurm_dict(cls, slurm_dict: Dict[str, Any]) -> "Job":
-        """Create a Job instance from a dictionary returned by SlurmConnection with proper status handling"""
-
-        # Get the raw status and any exit code information
-        raw_status = slurm_dict.get("Status", "PENDING")
-        exit_code = slurm_dict.get("ExitCode")
-        raw_state = slurm_dict.get("RawState", raw_status)
-
-        # Determine refined status if we have exit code information
-        if exit_code and raw_status == "COMPLETED":
-            refined_status = determine_job_status(raw_state, exit_code)
-        else:
-            refined_status = raw_status
-
-        job = cls(
-            id=slurm_dict.get("Job ID", ""),
-            name=slurm_dict.get("Job Name", ""),
-            status=refined_status,  # Use refined status
-            partition=slurm_dict.get("Partition", ""),
-            account=slurm_dict.get("Account", ""),
-            priority=slurm_dict.get("Priority", 0),
-            nodelist=slurm_dict.get("Nodelist", ""),
-            reason=slurm_dict.get("Reason", ""),
-        )
-
-        # Handle time fields
-        if "Time Limit" in slurm_dict:
-            job.time_limit = slurm_dict["Time Limit"]
-
-        if "Time Used" in slurm_dict and isinstance(slurm_dict["Time Used"], list) and len(slurm_dict["Time Used"]) > 1:
-            # Use the timedelta value
-            job.time_used = slurm_dict["Time Used"][1]
-
-        # Handle resource fields
-        if "CPUs" in slurm_dict:
-            job.cpus = slurm_dict["CPUs"]
-
-        if "GPUs" in slurm_dict:
-            job.gpus = slurm_dict["GPUs"]
-
-        if "RAM" in slurm_dict:
-            job.memory = slurm_dict["RAM"]
-
-        # Store exit code and raw state for debugging
-        job.info["exit_code"] = exit_code
-        job.info["raw_state"] = raw_state
-        job.info["raw_status"] = raw_status
-
-        # Store the rest in info dictionary
-        for k, v in slurm_dict.items():
-            if k not in asdict(job):
-                job.info[k] = v
-
-        return job
-
-    def get_runtime_str(self) -> str:
-        """Return a formatted string of the job's runtime"""
-        if not self.time_used:
-            return "—"
-
-        total_seconds = int(self.time_used.total_seconds())
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-
-        return f"{hours:02}:{minutes:02}:{seconds:02}"
-
-    def to_table_row(self) -> List[Any]:
-        """
-        Return a list of values for display in a table row.
-        Format: [id, name, status, runtime, cpus, gpus, memory]
-        """
-        # Format runtime string (or use placeholder for NOT_SUBMITTED jobs)
-        runtime_str = "—" if self.status == "NOT_SUBMITTED" else self.get_runtime_str()
-
-        # Return formatted row data
-        return [
-            self.id,
-            self.name,
-            self.status,
-            runtime_str,
-            self.cpus,
-            self.gpus,
-            self.memory,
-        ]
-
-    def _clean_dict_for_json(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively clean a dictionary to make it JSON serializable"""
-        cleaned = {}
-
-        for key, value in data.items():
-            if value is None:
-                continue
-
-            if isinstance(value, datetime):
-                cleaned[key] = value.isoformat()
-            elif isinstance(value, timedelta):
-                cleaned[key] = str(value)
-            elif isinstance(value, dict):
-                nested_clean = self._clean_dict_for_json(value)
-                if nested_clean:
-                    cleaned[key] = nested_clean
-            elif isinstance(value, (list, tuple)):
-                # Handle lists/tuples that might contain non-serializable objects
-                cleaned_list = []
-                for item in value:
-                    if isinstance(item, datetime):
-                        cleaned_list.append(item.isoformat())
-                    elif isinstance(item, timedelta):
-                        cleaned_list.append(str(item))
-                    else:
-                        try:
-                            json.dumps(item)
-                            cleaned_list.append(item)
-                        except (TypeError, ValueError):
-                            cleaned_list.append(str(item))
-                if cleaned_list:
-                    cleaned[key] = cleaned_list
-            else:
-                try:
-                    # Test if the value is JSON serializable
-                    json.dumps(value)
-                    cleaned[key] = value
-                except (TypeError, ValueError):
-                    # If not serializable, convert to string
-                    cleaned[key] = str(value)
-
-        return cleaned
-
-
-@dataclass
-class Project:
-    name: str
-    jobs: List[Job] = field(default_factory=list)
-
-    # .................................................................
-    def add_job(self, job: Job) -> None:
-        """Add a job to the project"""
-        # Check if job already exists (by ID)
-        for i, existing_job in enumerate(self.jobs):
-            if existing_job.id == job.id:
-                # Update existing job
-                self.jobs[i] = job
-                return
-
-        # Add new job
-        self.jobs.append(job)
-
-    def get_job(self, job_id: Union[int, str]) -> Optional[Job]:
-        """Get a job by ID"""
-        for job in self.jobs:
-            if job.id == job_id:
-                return job
-        return None
-
-    def remove_job(self, job_id: Union[int, str]) -> None:
-        """Remove a job by ID"""
-        self.jobs = [j for j in self.jobs if j.id != job_id]
-
-    def get_job_stats(self) -> Dict[str, int]:
-        """Get counts of jobs by status with proper failed job detection"""
-        stats = {
-            "RUNNING": 0,
-            "PENDING": 0,
-            "COMPLETED": 0,
-            "FAILED": 0,
-            "CANCELLED": 0,
-            "SUSPENDED": 0,
-            "NOT_SUBMITTED": 0,
-            "TOTAL": len(self.jobs)
-        }
-
-        for job in self.jobs:
-            status = job.status.upper()
-            if status in stats:
-                stats[status] += 1
-            else:
-                # Handle other statuses by categorizing them
-                if status in ["COMPLETING"]:
-                    stats["RUNNING"] += 1
-                elif status in ["PREEMPTED", "STOPPED"]:
-                    stats["SUSPENDED"] += 1
-                elif status in ["TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "BOOT_FAIL"]:
-                    stats["FAILED"] += 1
-                elif status in ["REVOKED", "DEADLINE"]:
-                    stats["CANCELLED"] += 1
-                else:
-                    # Unknown status, log it for debugging
-                    print(f"Unknown job status encountered: {status}")
-
-        return stats
-    # .................................................................
-
-    def to_json(self) -> Dict[str, Any]:
-        """Serialize project to JSON-compatible dictionary"""
-        return {
-            "name": self.name,
-            "jobs": [j.to_json() for j in self.jobs],
-        }
-
-    @classmethod
-    def from_json(cls, name: str, data: Dict[str, Any]) -> "Project":
-        """Create Project from JSON data"""
-        jobs = [Job.from_json(j) for j in data.get("jobs", [])]
-        return cls(name=name, jobs=jobs)
-
 
 class ProjectStoreSignals(QObject):
     """Separate QObject to handle signals for ProjectStore"""
     job_status_changed = pyqtSignal(
-        str, str, str, str)  # project, job_id, old_status, new_status
-    job_updated = pyqtSignal(str, str)  # project, job_id
-    project_stats_changed = pyqtSignal(str, dict)  # project, stats_dict
+        Project, Job, str, str)  # project, job_id, old_status, new_status
+    job_updated = pyqtSignal(Project, Job)  # project, job_id
+    project_stats_changed = pyqtSignal(Project, dict)  # project, stats_dict
 
-# ---------------------------------------------------------------------------
-# Persistence facade (singleton)
-# ---------------------------------------------------------------------------
 
 
 class ProjectStore:
@@ -1063,41 +199,28 @@ class ProjectStore:
             return None
         return pj.get_job(job_id)
 
-    def remove_job(self, project: str, job_id: Union[int, str]) -> None:
+    def remove_job(self, project: str, job: Job) -> None:
         """Remove a job from a project"""
-        pj = self._projects.get(project)
+        pj = self._projects.get(project.name)
         if not pj:
             return
-        pj.remove_job(job_id)
+        pj.remove_job(job.id)
         self._write_to_settings()
 
     def add_new_job(self, project: str, job_details: Dict[str, Any]) -> Optional[str]:
-        """
-        Enhanced method to create a new job using the improved Job class.
-
-        Args:
-            project: Project name
-            job_details: Dictionary containing job parameters
-
-        Returns:
-            str: Job ID if successful, None otherwise
-        """
-        if not self.slurm or not self.slurm.check_connection():
-            raise ConnectionError("Not connected to SLURM")
-
         try:
             # Create Job object using SlurmConnection helper
-            job = self.slurm.create_job_from_details(job_details)
+            job = Job.create_job_from_details(job_details)
 
             # Handle job arrays by creating multiple Job objects
             if job.array_spec:
-                created_ids = self._create_array_jobs(
+                created_jobs = self._create_array_jobs(
                     project, job, job_details)
-                return created_ids[0] if created_ids else None
+                return created_jobs
             else:
                 # Single job
                 self.add_job(project, job)
-                return job.id
+                return job
 
         except Exception as e:
             import traceback
@@ -1174,7 +297,7 @@ class ProjectStore:
                 "%A", "%A_%a") if "%A" in error_file else error_file.replace(".log", "_%a.log")
 
         created_ids = []
-
+        created_jobs = []
         # Create individual Job objects for each array task
         for task_id in task_ids:
             # Create a copy of the base job for this array task
@@ -1238,11 +361,12 @@ class ProjectStore:
 
             # Add to project
             self.add_job(project, array_job)
+            created_jobs.append(array_job)
             created_ids.append(array_job.id)
 
-        return created_ids
+        return array_job
 
-    def submit_job(self, project: str, job_id: str) -> Optional[str]:
+    def submit_job(self, project: Project, job: Job) -> Optional[str]:
         """
         Enhanced submit method using the new Job-based submission system.
 
@@ -1255,15 +379,6 @@ class ProjectStore:
         """
         if not self.slurm or not self.slurm.check_connection():
             raise ConnectionError("Not connected to SLURM")
-
-        # Get the job from the project
-        project_obj = self.get(project)
-        if not project_obj:
-            raise ValueError(f"Project {project} not found")
-
-        job = project_obj.get_job(job_id)
-        if not job:
-            raise ValueError(f"Job {job_id} not found in project {project}")
 
         # Skip if job is already submitted
         if job.status != "NOT_SUBMITTED":
@@ -1448,16 +563,19 @@ class ProjectStore:
 
         # Emit UI update signals
         self.signals.job_status_changed.emit(
-            project_name, job_id, old_status, new_status)
-        self.signals.job_updated.emit(project_name, job_id)
+            project, job, old_status, new_status)
+        self.signals.job_updated.emit(project, job)
 
         # Update project statistics
         stats = project.get_job_stats()
-        self.signals.project_stats_changed.emit(project_name, stats)
+        self.signals.project_stats_changed.emit(project, stats)
 
-    def _on_job_details_updated(self, project_name: str, job_id: str, job_details: dict):
-        """Handle detailed job updates from monitor"""
-        self.signals.job_updated.emit(project_name, job_id)
+    def _on_job_details_updated(self, project_name, job_id):
+        # Look up Project and Job objects before emitting the signal
+        project = self.get(project_name) if hasattr(self, 'get') else None
+        job = project.get_job(job_id) if project and hasattr(project, 'get_job') else None
+        if project and job:
+            self.signals.job_updated.emit(project, job)
 
     def _on_jobs_batch_updated(self, updated_projects: dict):
         """Handle batch job updates from monitor"""
@@ -1468,7 +586,7 @@ class ProjectStore:
 
             # Update project statistics after batch changes
             stats = project.get_job_stats()
-            self.signals.project_stats_changed.emit(project_name, stats)
+            self.signals.project_stats_changed.emit(project, stats)
 
     def update_job_status(self, project: str, job_id: Union[int, str], status: str) -> None:
         """Update the status of a job (enhanced version)"""
@@ -1555,3 +673,25 @@ class ProjectStore:
     def __del__(self):
         """Cleanup when store is destroyed"""
         self.stop_job_monitoring()
+
+    def get_project_by_obj(self, project: Project) -> Project:
+        """Return the canonical Project object from the store (by name)."""
+        return self._projects.get(project.name, project)
+
+    def get_job_by_obj(self, project: Project, job: Job) -> Job:
+        """Return the canonical Job object from the store (by project and job id)."""
+        proj = self.get_project_by_obj(project)
+        return proj.get_job(job.id) if proj else job
+
+    def submit_job_obj(self, project: Project, job: Job) -> Optional[str]:
+        """Submit a job using Project and Job objects."""
+        return self.submit_job(project.name, job.id)
+
+    def get_job_script_preview_obj(self, project: Project, job: Job) -> str:
+        return self.get_job_script_preview(project.name, job.id)
+
+    def validate_job_obj(self, project: Project, job: Job) -> List[str]:
+        return self.validate_job(project.name, job.id)
+
+    def get_job_resource_summary_obj(self, project: Project, job: Job) -> Dict[str, Any]:
+        return self.get_job_resource_summary(project.name, job.id)

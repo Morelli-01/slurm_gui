@@ -13,6 +13,30 @@ from PyQt6.QtWidgets import (
 from modules.defaults import *
 from utils import script_dir
 
+# Add this decorator at the top of the JobsPanel class
+def require_project_job(method):
+    """
+    Decorator to validate and extract project and job objects.
+    Methods must have project_name and job_id as their first arguments after self.
+    """
+    def wrapper(self, project_name: str, job_id: str, *args, **kwargs):
+        if not self.project_storer:
+            show_warning_toast(self, "No Connection", "Please establish SLURM connection first.")
+            return None
+
+        project = self.project_storer.get(project_name)
+        if not project:
+            show_warning_toast(self, "Error", f"Project '{project_name}' not found.")
+            return None
+
+        job = project.get_job(job_id)
+        if not job:
+            show_warning_toast(self, "Error", f"Job '{job_id}' not found.")
+            return None
+
+        # Call the original method with project and job objects
+        return method(self, project, job, *args, **kwargs)
+    return wrapper
 
 class ToastType(Enum):
     INFO = "info"

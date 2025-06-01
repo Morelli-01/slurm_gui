@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTime, QDateTime, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon
 from utils import settings_path
+from modules.data_classes import *
 
 COLOR_BLUE = "#06b0d6"
 
@@ -1014,7 +1015,7 @@ class NewJobDialog(QDialog):
             job_details = self.get_job_details()
             
             # Create a temporary Job object for validation
-            temp_job = self.slurm_connection.create_job_from_details(job_details)
+            temp_job = Job.create_job_from_details(job_details)
             
             # Validate
             issues = temp_job.validate_parameters()

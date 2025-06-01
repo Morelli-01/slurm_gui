@@ -5,6 +5,8 @@ from PyQt6.QtCore import pyqtSignal
 import sys, os
 from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
 from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
+from datetime import datetime, timedelta
+
 COLOR_DARK_BORDER = "#6272a4"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +19,80 @@ BTN_GREEN = "btnGreen"
 BTN_RED = "btnRed"
 BTN_BLUE = "btnBlue"
 
+
+def parse_duration(s: str) -> timedelta:
+    """Parse a duration string in SLURM format to a timedelta object."""
+    days = 0
+    if '-' in s:
+        # Format: D-HH:MM:SS
+        day_part, time_part = s.split('-')
+        days = int(day_part)
+    else:
+        time_part = s
+
+    parts = [int(p) for p in time_part.split(':')]
+
+    if len(parts) == 2:        # MM:SS
+        h, m, s = 0, parts[0], parts[1]
+    elif len(parts) == 3:      # HH:MM:SS
+        h, m, s = parts
+    else:
+        raise ValueError(f"Invalid time format: {s}")
+
+    return timedelta(days=days, hours=h, minutes=m, seconds=s)
+
+
+def determine_job_status(state: str, exit_code: str = None) -> str:
+    """
+    Determine the actual job status based on SLURM state and exit code.
+
+    Args:
+        state: SLURM job state (e.g., 'COMPLETED', 'FAILED', etc.)
+        exit_code: Job exit code (e.g., '0:0', '1:0', etc.)
+
+    Returns:
+        str: Refined job status
+    """
+    # Handle basic state mapping
+    if state in ["COMPLETED"]:
+        # For completed jobs, check exit code to determine if truly successful
+        if exit_code:
+            try:
+                # Exit code format is usually "exit_status:signal"
+                exit_status = exit_code.split(':')[0]
+                exit_num = int(exit_status)
+
+                if exit_num == 0:
+                    return "COMPLETED"  # Successful completion
+                else:
+                    return "FAILED"     # Non-zero exit code = failure
+            except (ValueError, IndexError):
+                # If we can't parse exit code, assume success for COMPLETED state
+                return "COMPLETED"
+        else:
+            # No exit code available, trust the COMPLETED state
+            return "COMPLETED"
+
+    elif state in ["FAILED", "NODE_FAIL", "BOOT_FAIL", "OUT_OF_MEMORY"]:
+        return "FAILED"
+
+    elif state in ["CANCELLED", "TIMEOUT", "REVOKED", "DEADLINE"]:
+        return "CANCELLED"
+
+    elif state in ["RUNNING", "COMPLETING"]:
+        return "RUNNING"
+
+    elif state in ["PENDING"]:
+        return "PENDING"
+
+    elif state in ["SUSPENDED", "PREEMPTED"]:
+        return "SUSPENDED"
+
+    elif state in ["STOPPED"]:
+        return "STOPPED"
+
+    else:
+        return state  # Return original state if unknown
 
 
 def parse_memory_size(size_str):

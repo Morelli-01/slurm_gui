@@ -666,7 +666,6 @@ class ClusterStatusWidget(QWidget):
 
         self.themes = {
             THEME_DARK: get_dark_theme_stylesheet(),
-            THEME_LIGHT: get_light_theme_stylesheet(),
         }
         self.current_theme = THEME_DARK
         self.setStyleSheet(self.themes[self.current_theme])
@@ -712,40 +711,6 @@ class ClusterStatusWidget(QWidget):
         
         section_title = QLabel("Node Status")
         section_title.setFont(title_font)
-        section_title.setObjectName("sectionTitle")
-
-    def update_status(self, nodes_data, jobs_data):
-        """Fetches data from Slurm and updates all tabs."""
-
-        # Update content of each tab
-
-        self.node_status_tab.update_content(nodes_data, jobs_data)
-        self.cpu_usage_tab.update_content(nodes_data, jobs_data)
-        self.ram_usage_tab.update_content(nodes_data, jobs_data)
-
-
-        # Use the application's default font consistently
-        app_font = QApplication.instance().font()
-        
-        # For section titles, scale appropriately
-        title_font = QFont(app_font)
-        title_font.setPointSize(app_font.pointSize() + 8)  # Slightly larger
-        title_font.setWeight(QFont.Weight.Bold)
-        
-        section_title = QLabel("Node Status")
-        section_title.setFont(title_font)
-        section_title.setObjectName("sectionTitle")
-
-    def update_status(self, nodes_data, jobs_data):
-        """Fetches data from Slurm and updates all tabs."""
-
-        # Update content of each tab
-
-        self.node_status_tab.update_content(nodes_data, jobs_data)
-        self.cpu_usage_tab.update_content(nodes_data, jobs_data)
-        self.ram_usage_tab.update_content(nodes_data, jobs_data)
-
-
         section_title.setObjectName("sectionTitle")
 
     def update_status(self, nodes_data, jobs_data):

@@ -469,7 +469,7 @@ class SlurmJobManagerApp(QMainWindow):
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(logo_label)
 
-        logo_path = os.path.join(script_dir, "src_static", "icon3.png")
+        logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
         pixmap = QPixmap(logo_path)
         # Qt automatically handles DPI scaling for pixmaps
         scaled_pixmap = pixmap.scaled(logo_size, logo_size,
@@ -1135,7 +1135,7 @@ if __name__ == "__main__":
             print(f"Updated settings file at: {settings_path} with user input")
 
             window_icon_path = os.path.join(
-                script_dir, "src_static", "icon3.png")
+                script_dir, "src_static", "app_logo.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
             window.show()
@@ -1154,7 +1154,7 @@ if __name__ == "__main__":
                 app.setFont(font)
                 break
 
-        window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()
         window.show()

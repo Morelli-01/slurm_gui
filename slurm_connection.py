@@ -7,13 +7,14 @@ import os
 import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union, Any
+from modules.data_classes import Job
 from modules.new_job_dp import NewJobDialog
 import paramiko
 from PyQt6.QtCore import QObject, QSettings
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QThread, pyqtSignal
 from pathlib import Path
-from utils import settings_path, script_dir
+from utils import settings_path, script_dir, determine_job_status, parse_duration
 # Constants
 JOB_CODES = {
     "CD": "COMPLETED",
@@ -75,80 +76,6 @@ def require_connection(func):
         return func(self, *args, **kwargs)
     return wrapper
 
-
-def parse_duration(s: str) -> timedelta:
-    """Parse a duration string in SLURM format to a timedelta object."""
-    days = 0
-    if '-' in s:
-        # Format: D-HH:MM:SS
-        day_part, time_part = s.split('-')
-        days = int(day_part)
-    else:
-        time_part = s
-
-    parts = [int(p) for p in time_part.split(':')]
-
-    if len(parts) == 2:        # MM:SS
-        h, m, s = 0, parts[0], parts[1]
-    elif len(parts) == 3:      # HH:MM:SS
-        h, m, s = parts
-    else:
-        raise ValueError(f"Invalid time format: {s}")
-
-    return timedelta(days=days, hours=h, minutes=m, seconds=s)
-
-
-def determine_job_status(state: str, exit_code: str = None) -> str:
-    """
-    Determine the actual job status based on SLURM state and exit code.
-
-    Args:
-        state: SLURM job state (e.g., 'COMPLETED', 'FAILED', etc.)
-        exit_code: Job exit code (e.g., '0:0', '1:0', etc.)
-
-    Returns:
-        str: Refined job status
-    """
-    # Handle basic state mapping
-    if state in ["COMPLETED"]:
-        # For completed jobs, check exit code to determine if truly successful
-        if exit_code:
-            try:
-                # Exit code format is usually "exit_status:signal"
-                exit_status = exit_code.split(':')[0]
-                exit_num = int(exit_status)
-
-                if exit_num == 0:
-                    return "COMPLETED"  # Successful completion
-                else:
-                    return "FAILED"     # Non-zero exit code = failure
-            except (ValueError, IndexError):
-                # If we can't parse exit code, assume success for COMPLETED state
-                return "COMPLETED"
-        else:
-            # No exit code available, trust the COMPLETED state
-            return "COMPLETED"
-
-    elif state in ["FAILED", "NODE_FAIL", "BOOT_FAIL", "OUT_OF_MEMORY"]:
-        return "FAILED"
-
-    elif state in ["CANCELLED", "TIMEOUT", "REVOKED", "DEADLINE"]:
-        return "CANCELLED"
-
-    elif state in ["RUNNING", "COMPLETING"]:
-        return "RUNNING"
-
-    elif state in ["PENDING"]:
-        return "PENDING"
-
-    elif state in ["SUSPENDED", "PREEMPTED"]:
-        return "SUSPENDED"
-
-    elif state in ["STOPPED"]:
-        return "STOPPED"
-
-    else:
-        return state  # Return original state if unknown
 
 
 class SlurmConnection:
@@ -381,13 +308,13 @@ class SlurmConnection:
             return None
 
     @require_connection
-    def get_job_logs(self, job_id: str, preserve_progress_bars: bool = False) -> Tuple[str, str]:
+    def get_job_logs(self, job: 'Job', preserve_progress_bars: bool = False) -> Tuple[str, str]:
         """
         Get the output and error logs for a job with proper handling of progress bars.
         Enhanced to handle both relative and absolute log file paths.
         
         Args:
-            job_id: Job ID
+            job: Job object
             preserve_progress_bars: If True, keeps final progress bar state; if False, removes all progress bar lines
         Returns:
             Tuple[str, str]: (stdout, stderr) logs with proper formatting
@@ -440,21 +367,21 @@ class SlurmConnection:
         
         # Try multiple possible log file locations
         possible_stdout_files = [
-            f"{self.remote_home}/.logs/out_{job_id}.log",  # Default relative path
-            f"/tmp/out_{job_id}.log",  # Common temp location
-            f"out_{job_id}.log",  # Current directory
+            f"{self.remote_home}/.logs/out_{job.id}.log",  # Default relative path
+            f"/tmp/out_{job.id}.log",  # Common temp location
+            f"out_{job.id}.log",  # Current directory
         ]
         
         possible_stderr_files = [
-            f"{self.remote_home}/.logs/err_{job_id}.log",  # Default relative path
-            f"/tmp/err_{job_id}.log",  # Common temp location
-            f"err_{job_id}.log",  # Current directory
+            f"{self.remote_home}/.logs/err_{job.id}.log",  # Default relative path
+            f"/tmp/err_{job.id}.log",  # Common temp location
+            f"err_{job.id}.log",  # Current directory
         ]
         
         # Also check if job has custom output/error paths by querying SLURM
         try:
             # Get job details to find actual output/error file paths
-            job_details_cmd = f"scontrol show job {job_id}"
+            job_details_cmd = f"scontrol show job {job.id}"
             job_details_output, _ = self.run_command(job_details_cmd)
             
             # Parse output to find StdOut and StdErr paths
@@ -473,7 +400,7 @@ class SlurmConnection:
                         if custom_stderr not in possible_stderr_files:
                             possible_stderr_files.insert(0, custom_stderr)  # Try custom path first
         except Exception as e:
-            print(f"Warning: Could not query job details for {job_id}: {e}")
+            print(f"Warning: Could not query job details for {job.id}: {e}")
         
         stdout, stderr = "", ""
 
@@ -494,7 +421,7 @@ class SlurmConnection:
                     continue
             
             if not stdout_found:
-                stdout = f"[!] Output log for job {job_id} not found. Searched locations:\n" + \
+                stdout = f"[!] Output log for job {job.id} not found. Searched locations:\n" + \
                         "\n".join(f"  - {path}" for path in possible_stdout_files)
             
             # Try to find stderr file
@@ -511,14 +438,14 @@ class SlurmConnection:
                     continue
             
             if not stderr_found:
-                stderr = f"[!] Error log for job {job_id} not found. Searched locations:\n" + \
+                stderr = f"[!] Error log for job {job.id} not found. Searched locations:\n" + \
                         "\n".join(f"  - {path}" for path in possible_stderr_files)
             
             sftp.close()
         except Exception as e:
-            print(f"Error fetching logs for job {job_id}: {e}")
-            stdout = f"[!] Error accessing log files for job {job_id}: {e}"
-            stderr = f"[!] Error accessing log files for job {job_id}: {e}"
+            print(f"Error fetching logs for job {job.id}: {e}")
+            stdout = f"[!] Error accessing log files for job {job.id}: {e}"
+            stderr = f"[!] Error accessing log files for job {job.id}: {e}"
         
         return stdout, stderr    
 
@@ -1182,103 +1109,6 @@ class SlurmConnection:
         except Exception as e:
             raise RuntimeError(f"Job submission failed: {e}")
 
-    def create_job_from_details(self, job_details: Dict[str, Any]) -> 'Job':
-        """
-        Create an enhanced Job object from job details dictionary.
-        
-        Args:
-            job_details: Dictionary containing job parameters
-            
-        Returns:
-            Job: Enhanced Job object
-        """
-        from modules.project_store import Job  # Import here to avoid circular imports
-        
-        # Generate temporary ID for new jobs
-        import random
-        temp_id = f"NEW-{random.randint(1000, 9999)}"
-        
-        # Map common job details to Job class parameters
-        job_params = {
-            'id': temp_id,
-            'name': job_details.get('job_name', ''),
-            'status': 'NOT_SUBMITTED',
-            'command': job_details.get('command', ''),
-            'partition': job_details.get('partition', ''),
-            'account': job_details.get('account', ''),
-            'time_limit': job_details.get('time_limit', ''),
-            'nodes': job_details.get('nodes', 1),
-            'cpus': job_details.get('cpus_per_task', 1),
-            'ntasks': job_details.get('ntasks', 1),
-            'ntasks_per_node': job_details.get('ntasks_per_node'),
-            'memory': job_details.get('memory', ''),
-            'memory_per_cpu': job_details.get('memory_per_cpu'),
-            'memory_per_node': job_details.get('memory_per_node'),
-            'gpus': 0,  # Will be calculated from gres
-            'gres': job_details.get('gres'),
-            'constraints': job_details.get('constraint'),
-            'qos': job_details.get('qos'),
-            'reservation': job_details.get('reservation'),
-            'nodelist': ','.join(job_details.get('nodelist', [])) if isinstance(job_details.get('nodelist'), list) else job_details.get('nodelist', ''),
-            'exclude': job_details.get('exclude'),
-            'begin_time': job_details.get('begin_time'),
-            'deadline': job_details.get('deadline'),
-            'dependency': job_details.get('dependency'),
-            'array_spec': job_details.get('array'),
-            'array_max_jobs': job_details.get('array_max_jobs'),
-            'output_file': job_details.get('output_file', ''),
-            'error_file': job_details.get('error_file', ''),
-            'input_file': job_details.get('input_file'),
-            'working_dir': job_details.get('working_dir', ''),
-            'priority': job_details.get('priority', 0),
-            'nice': job_details.get('nice'),
-            'requeue': job_details.get('requeue'),
-            'no_requeue': job_details.get('no_requeue'),
-            'reboot': job_details.get('reboot'),
-            'mail_type': job_details.get('mail_type'),
-            'mail_user': job_details.get('mail_user'),
-            'export_env': job_details.get('export_env'),
-            'get_user_env': job_details.get('get_user_env'),
-            'exclusive': job_details.get('exclusive'),
-            'overcommit': job_details.get('overcommit'),
-            'oversubscribe': job_details.get('oversubscribe'),
-            'threads_per_core': job_details.get('threads_per_core'),
-            'sockets_per_node': job_details.get('sockets_per_node'),
-            'cores_per_socket': job_details.get('cores_per_socket'),
-            'wait': job_details.get('wait'),
-            'wrap': job_details.get('wrap'),
-        }
-        
-        # Parse GPU count from gres if available
-        if job_params['gres'] and "gpu:" in job_params['gres']:
-            try:
-                gpu_parts = job_params['gres'].split(":")
-                if len(gpu_parts) == 2:  # Format: gpu:N
-                    job_params['gpus'] = int(gpu_parts[1])
-                elif len(gpu_parts) == 3:  # Format: gpu:type:N
-                    job_params['gpus'] = int(gpu_parts[2])
-            except (ValueError, IndexError):
-                pass
-        
-        # Handle memory unit conversion if needed
-        if 'memory_spin' in job_details and 'memory_unit' in job_details:
-            memory_value = job_details.get('memory_spin', 1)
-            memory_unit = job_details.get('memory_unit', 'GB')
-            job_params['memory'] = f"{memory_value}{memory_unit.replace('B', '')}"
-        
-        # Clean None values
-        job_params = {k: v for k, v in job_params.items() if v is not None}
-        
-        # Create Job object
-        job = Job(**job_params)
-        
-        # Store additional info
-        job.info['submission_details'] = job_details
-        if 'discord_notifications' in job_details:
-            job.info['discord_notifications'] = job_details['discord_notifications']
-        
-        return job
-
     # Update the existing submit_job method to use the new Job-based approach
     def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
                 constraint: Optional[str] = None, qos: Optional[str] = None,
@@ -1316,7 +1146,7 @@ class SlurmConnection:
         }
         
         # Create Job object
-        job = self.create_job_from_details(job_details)
+        job = Job.create_job_from_details(job_details)
         
         # Submit using the new method
         return self.submit_job_from_object(job, discord_settings)
@@ -1335,7 +1165,7 @@ class SlurmConnection:
         Returns:
             str: Generated sbatch script content
         """
-        job = self.create_job_from_details(job_details)
+        job = Job.create_job_from_details(job_details)
         return job.generate_sbatch_script(
             include_discord=include_discord,
             discord_settings=discord_settings
