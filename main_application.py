@@ -8,32 +8,30 @@ if system == "Windows":
     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
     os.environ["QT_FONT_DPI"] = "96"
     print("Windows: Qt DPI scaling enabled")
-
-
-from PyQt6.QtGui import QFontDatabase, QFont
-import re
-from datetime import datetime
-from utils import script_dir, except_utility_path, plink_utility_path, tmux_utility_path, font_directory
-import sys
-import tempfile
-import threading
-import random
-import subprocess
-from modules.project_store import ProjectStore
-from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-from modules.settings_widget import SettingsWidget
-import shutil
-from pathlib import Path
-from utils import *
-from style import AppStyles
-import slurm_connection
-from modules.job_queue_widget import JobQueueWidget
-import modules.cluster_status_widget as cluster_status_widget
-from modules.job_panel import JobsPanel
-from modules.defaults import *
-from PyQt6.QtCore import Qt
 from threading import Thread
-import glob
+from PyQt6.QtCore import Qt
+from modules.defaults import *
+from modules.job_panel import JobsPanel
+import modules.cluster_status_widget as cluster_status_widget
+from modules.job_queue_widget import JobQueueWidget
+import slurm_connection
+from style import AppStyles
+from utils import *
+from pathlib import Path
+import shutil
+from modules.settings_widget import SettingsWidget
+from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from modules.project_store import ProjectStore
+import subprocess
+import random
+import threading
+import tempfile
+import sys
+from utils import script_dir
+from datetime import datetime
+import re
+from PyQt6.QtGui import QFontDatabase, QFont
+
 
 
 # --- Constants ---
@@ -149,7 +147,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.setMinimumSize(min_width, min_height)
 
         # Set window icon
-        window_icon_path = os.path.join(script_dir, "src_static", "icon3.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
         self.setWindowIcon(QIcon(window_icon_path))
 
         # Theme setup
@@ -411,14 +409,17 @@ class SlurmJobManagerApp(QMainWindow):
                 for line in maintenance_info.split('\n'):
                     if 'ReservationName=' in line:
                         name = line.split('ReservationName=')[1].split()[0]
-                        start_time =line.split(" ")[1].split("=")[1] 
-                        end_time =line.split(" ")[2].split("=")[1] 
-                        time_to_maintenance = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
-                        maintenance_details.append(f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
+                        start_time = line.split(" ")[1].split("=")[1]
+                        end_time = line.split(" ")[2].split("=")[1]
+                        time_to_maintenance = datetime.strptime(
+                            start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
+                        maintenance_details.append(
+                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
                         break
-                
+
                 if maintenance_details:
-                    self.maintenance_label.setText(f"⚠️ Maintenance: {', '.join(maintenance_details)}")
+                    self.maintenance_label.setText(
+                        f"⚠️ Maintenance: {', '.join(maintenance_details)}")
                     self.maintenance_label.show()
                 else:
                     self.maintenance_label.hide()
@@ -427,7 +428,7 @@ class SlurmJobManagerApp(QMainWindow):
         except Exception as e:
             print(f"Error checking maintenance status: {e}")
             self.maintenance_label.hide()
-        
+
         # Add connection check
         if not self.slurm_connection.check_connection():
             # Show error messages instead of updating with empty data
@@ -546,7 +547,7 @@ class SlurmJobManagerApp(QMainWindow):
         except Exception as e:
             show_error_toast(self, "Terminal Error",
                              f"Failed to open terminal: {str(e)}")
-    
+
     def _open_windows_terminal(self, host, username, password):
         """Open terminal on Windows using PuTTY for SSH connection"""
         try:
@@ -555,15 +556,16 @@ class SlurmJobManagerApp(QMainWindow):
                 "putty.exe",  # In PATH
                 r"C:\Program Files\PuTTY\putty.exe",
                 r"C:\Program Files (x86)\PuTTY\putty.exe",
-                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
+                os.path.join(script_dir, "src_static",
+                             "putty.exe"),  # Local copy
             ]
-            
+
             putty_path = None
             for path in putty_paths:
                 if shutil.which(path) or os.path.exists(path):
                     putty_path = path
                     break
-            
+
             if putty_path:
                 # Use PuTTY with saved session or direct connection
                 putty_cmd = [
@@ -572,55 +574,20 @@ class SlurmJobManagerApp(QMainWindow):
                     "-ssh",
                     "-pw", password
                 ]
-                
+
                 subprocess.Popen(putty_cmd)
                 show_success_toast(self, "Terminal Opened",
-                                f"PuTTY SSH session opened for {username}@{host}")
+                                   f"PuTTY SSH session opened for {username}@{host}")
             else:
                 # PuTTY not found - show error with installation suggestion
                 show_error_toast(self, "PuTTY Not Found",
-                                "PuTTY is required for SSH connections on Windows.\n"
-                                "Please install PuTTY from https://www.putty.org/")
+                                 "PuTTY is required for SSH connections on Windows.\n"
+                                 "Please install PuTTY from https://www.putty.org/")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open Windows terminal: {str(e)}")
-    def _create_expect_script(self, host, username, password):
-        """Create an expect script for automatic password authentication"""
-        script_content = f'''#!{except_utility_path}
-                            set timeout 30
-                            spawn ssh {username}@{host}
-                            expect {{
-                                "password:" {{
-                                    send "{password}\\r"
-                                    interact
-                                }}
-                                "yes/no" {{
-                                    send "yes\\r"
-                                    expect "password:"
-                                    send "{password}\\r"
-                                    interact
-                                }}
-                                timeout {{
-                                    puts "Connection timeout"
-                                    exit 1
-                                }}
-                                eof {{
-                                    puts "Connection failed"
-                                    exit 1
-                                }}
-                            }}
-                            '''
+                             f"Failed to open Windows terminal: {str(e)}")
 
-        # Create temporary expect script
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.exp', delete=False) as f:
-            f.write(script_content)
-            script_path = f.name
-
-        # Make script executable
-        os.chmod(script_path, 0o755)
-        return script_path
-    
     def _open_macos_terminal(self, host, username, password):
         """Open terminal on macOS using sshpass for automatic SSH login."""
         try:
@@ -628,7 +595,7 @@ class SlurmJobManagerApp(QMainWindow):
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
                 show_error_toast(self, "sshpass Not Found",
-                                "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
+                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
                 return
 
             # Build the sshpass command
@@ -636,16 +603,19 @@ class SlurmJobManagerApp(QMainWindow):
 
             # List of terminal emulators to try for macOS
             terminals = [
-                ["open", "-a", "Terminal", f"{ssh_cmd}"],  # Default Terminal.app
+                # Default Terminal.app
+                ["open", "-a", "Terminal", f"{ssh_cmd}"],
                 ["open", "-a", "iTerm", f"{ssh_cmd}"],     # iTerm2
-                ["osascript", "-e", f'tell application "Terminal" to do script "{ssh_cmd}"'],  # AppleScript fallback
+                # AppleScript fallback
+                ["osascript", "-e",
+                    f'tell application "Terminal" to do script "{ssh_cmd}"'],
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     show_success_toast(self, "Terminal Opened",
-                                    f"SSH session opened for {username}@{host}")
+                                       f"SSH session opened for {username}@{host}")
                     return
                 except FileNotFoundError:
                     continue
@@ -660,15 +630,15 @@ class SlurmJobManagerApp(QMainWindow):
                 '''
                 subprocess.Popen(["osascript", "-e", applescript])
                 show_success_toast(self, "Terminal Opened",
-                                f"SSH session opened for {username}@{host}")
+                                   f"SSH session opened for {username}@{host}")
             except Exception as e:
                 show_error_toast(self, "No Terminal Found",
-                                f"No supported terminal emulator found on this system: {str(e)}")
+                                 f"No supported terminal emulator found on this system: {str(e)}")
 
         except Exception as e:
             show_error_toast(self, "Terminal Error",
-                            f"Failed to open macOS terminal: {str(e)}")
-    
+                             f"Failed to open macOS terminal: {str(e)}")
+
     def _open_linux_terminal(self, host, username, password):
         """Open terminal on Linux using sshpass for automatic SSH login."""
         try:
@@ -720,28 +690,6 @@ class SlurmJobManagerApp(QMainWindow):
             print(
                 f"Warning: Could not clean up temporary file {file_path}: {e}")
 
-    def update_nav_styles(self, active_button=None):
-        """Updates the visual style of navigation buttons to show the active one."""
-        if active_button is None:
-            current_index = self.stacked_widget.currentIndex()
-            button_list = list(self.nav_buttons.values())
-            if 0 <= current_index < len(button_list):
-                active_button = button_list[current_index]
-
-        for name, btn in self.nav_buttons.items():
-            if btn == active_button:
-                btn.setObjectName("navButtonActive")
-                btn.setChecked(True)
-            else:
-                btn.setObjectName("navButton")
-                btn.setChecked(False)
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
-
-        # Style the terminal button separately (it's not a nav button)
-        if hasattr(self, 'terminal_button'):
-            self.terminal_button.style().unpolish(self.terminal_button)
-            self.terminal_button.style().polish(self.terminal_button)
     # --- Panel Creation Methods ---
 
     def create_jobs_panel(self):
@@ -763,7 +711,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.cluster_label.setStyleSheet("font-weight: bold;")
 
         self.maintenance_label = QLabel()
-        self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
+        self.maintenance_label.setStyleSheet(
+            "color: #FF0000;")  # Red color for warning
         self.maintenance_label.hide()  # Initially hidden
 
         header_layout.addWidget(self.cluster_label)
@@ -1033,11 +982,36 @@ class SlurmJobManagerApp(QMainWindow):
         print("Closing application.")
         event.accept()
 
+    #--------------------- Styles ------------------------
+
     def apply_theme(self):
         """Apply the current theme using centralized styles"""
         stylesheet = AppStyles.get_complete_stylesheet(self.current_theme)
         self.setStyleSheet(stylesheet)
 
+    def update_nav_styles(self, active_button=None):
+        """Updates the visual style of navigation buttons to show the active one."""
+        if active_button is None:
+            current_index = self.stacked_widget.currentIndex()
+            button_list = list(self.nav_buttons.values())
+            if 0 <= current_index < len(button_list):
+                active_button = button_list[current_index]
+
+        for name, btn in self.nav_buttons.items():
+            if btn == active_button:
+                btn.setObjectName("navButtonActive")
+                btn.setChecked(True)
+            else:
+                btn.setObjectName("navButton")
+                btn.setChecked(False)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
+        # Style the terminal button separately (it's not a nav button)
+        if hasattr(self, 'terminal_button'):
+            self.terminal_button.style().unpolish(self.terminal_button)
+            self.terminal_button.style().polish(self.terminal_button)
+    
 # --- Main Execution ---
 
 

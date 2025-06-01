@@ -27,13 +27,7 @@ class AppStyles:
             'bg_hover': COLOR_DARK_BG_HOVER,
             'border': COLOR_DARK_BORDER,
         },
-        THEME_LIGHT: {
-            'bg': COLOR_LIGHT_BG,
-            'fg': COLOR_LIGHT_FG,
-            'bg_alt': COLOR_LIGHT_BG_ALT,
-            'bg_hover': COLOR_LIGHT_BG_HOVER,
-            'border': COLOR_LIGHT_BORDER,
-        }
+
     }
 
 
@@ -798,13 +792,3 @@ class AppStyles:
         stylesheet += cls.get_job_action_container_styles()
 
         return stylesheet
-
-
-def get_dark_theme_stylesheet():
-    """Get dark theme stylesheet - for backward compatibility"""
-    return AppStyles.get_complete_stylesheet(THEME_DARK)
-
-
-def get_light_theme_stylesheet():
-    """Get light theme stylesheet - for backward compatibility"""
-    return AppStyles.get_complete_stylesheet(THEME_LIGHT)

@@ -14,9 +14,6 @@ REFRESH_INTERVAL_MS = 10000  # Refresh every 10 seconds
 def get_dark_theme_stylesheet():
     return AppStyles.get_cluster_status_styles(THEME_DARK)
 
-def get_light_theme_stylesheet():
-    return AppStyles.get_cluster_status_styles(THEME_LIGHT)
-
 def sort_nodes_data(nodes_data: list[dict]):
     # Function to extract numeric part from total_mem string (removing 'M' suffix)
     new_nodes_data = []
