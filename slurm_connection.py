@@ -1454,7 +1454,28 @@ class JobStatusMonitor(QThread):
                     'new_status': new_status,
                     'details': slurm_job
                 })
-
+                if new_status in ['RUNNING', 'COMPLETING']:
+                    self.job_details_updated.emit(project_name, job_id, slurm_job)
+            else:
+            # Job not found in SLURM data - set status to COMPLETED
+                if job['status'] in ['RUNNING', 'PENDING', 'COMPLETING']:
+                    print(f"Job {job_id} not found in squeue, setting status to COMPLETED")
+                    
+                    # Update in project store
+                    self.project_store.update_job_status(project_name, job_id, 'COMPLETED')
+                    
+                    # Emit status update signal
+                    self.job_status_updated.emit(project_name, job_id, 'COMPLETED')
+                    
+                    # Track for batch UI update
+                    if project_name not in updated_projects:
+                        updated_projects[project_name] = []
+                    updated_projects[project_name].append({
+                        'job_id': job_id,
+                        'old_status': job['status'],
+                        'new_status': 'COMPLETED',
+                        'details': {}
+                    })
         # Emit batch update signal if there were changes
         if updated_projects:
             self.jobs_batch_updated.emit(updated_projects)
@@ -1496,14 +1517,15 @@ class JobStatusMonitor(QThread):
             stdout, stderr = self.slurm_connection.run_command(cmd)
 
             if stderr:
-                print(f"Warning in sacct command: {stderr}")
+                raise Exception(f"{stderr}")
 
             return self._parse_sacct_output(stdout)
 
         except Exception as e:
             print(f"Error fetching job details with sacct: {e}")
-            return {}
-
+            print("proceeding with squeue")
+            return self._fetch_job_details_backup(job_ids)
+    
     def _parse_sacct_output(self, output):
         """Parse sacct command output"""
         job_details = {}
@@ -1537,6 +1559,84 @@ class JobStatusMonitor(QThread):
 
         return job_details
 
+    def _fetch_job_details_backup(self, job_ids):
+        """
+        Backup method to fetch job details using squeue command when sacct fails.
+        Returns job details in the same format as _fetch_job_details for compatibility.
+        """
+        if not job_ids:
+            return {}
+
+        # Create comma-separated list of job IDs
+        job_ids_str = ','.join(str(jid) for jid in job_ids)
+
+        # Use squeue command as backup - format similar to _fetch_squeue but with specific job IDs
+        cmd = f"squeue -j {job_ids_str} -o '%i|%j|%T|%M|%N|%u|%a|%r' --noheader"
+
+        try:
+            stdout, stderr = self.slurm_connection.run_command(cmd)
+
+            if stderr:
+                print(f"Warning in backup squeue command: {stderr}")
+
+            return self._parse_squeue_backup_output(stdout)
+
+        except Exception as e:
+            print(f"Error in backup job details fetch with squeue: {e}")
+            return {}
+    
+    def _parse_squeue_backup_output(self, output):
+        """
+        Parse squeue backup output and convert to format compatible with sacct output.
+        Maps squeue fields to sacct-like structure for consistency.
+        """
+        job_details = {}
+        
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+                
+            fields = line.split('|')
+            if len(fields) < 8:
+                continue
+
+            job_id = fields[0].split('.')[0]  # Remove array/step suffixes
+            
+            # Map squeue status codes to full status names
+            status_code = fields[2]
+            status_map = {
+                'R': 'RUNNING',
+                'PD': 'PENDING', 
+                'CG': 'COMPLETING',
+                'CD': 'COMPLETED',
+                'CA': 'CANCELLED',
+                'F': 'FAILED',
+                'TO': 'TIMEOUT',
+                'S': 'SUSPENDED'
+            }
+            
+            mapped_status = status_map.get(status_code, status_code)
+
+            # Create job info in format compatible with sacct parsing
+            job_info = {
+                'JobID': job_id,
+                'JobName': fields[1],
+                'State': mapped_status,
+                'ExitCode': '',  # Not available in squeue
+                'Start': '',     # Not available in squeue  
+                'End': '',       # Not available in squeue
+                'Elapsed': fields[3],  # Time used
+                'AllocCPUS': '',       # Not directly available
+                'ReqMem': '',          # Not directly available
+                'MaxRSS': '',          # Not available in squeue
+                'NodeList': fields[4] if fields[4] != '(None assigned)' else '',
+                'Reason': fields[7] if mapped_status == 'PENDING' else ''
+            }
+
+            job_details[job_id] = job_info
+
+        return job_details
+    
     def _update_job_details(self, project_name, job_id, slurm_job):
         """Update additional job details from SLURM data"""
         job = self.project_store.get_job(project_name, job_id)
@@ -1559,6 +1659,9 @@ class JobStatusMonitor(QThread):
                 pass
 
         # Update elapsed time
+        if job.status == 'RUNNING' and job.start_time and not job.time_used:
+            job.time_used = datetime.now() - job.start_time
+
         if slurm_job.get('Elapsed'):
             try:
                 job.time_used = parse_duration(slurm_job['Elapsed'])
