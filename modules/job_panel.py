@@ -120,9 +120,11 @@ class ProjectWidget(QGroupBox):
 
         # Project title label inside the box
         self.title_label = QLabel(project_name)
-        self.title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        self.title_label.setObjectName("projectWidgetTitle")
+        # self.title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        
         self.title_label.setContentsMargins(15, 0, 0, 10)
-        self.title_label.setStyleSheet("color: #f8f8f2;")
+        # self.title_label.setStyleSheet("color: #f8f8f2;")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         # Top section with title only
@@ -174,6 +176,10 @@ class ProjectWidget(QGroupBox):
                 background-color: {bg_color};
                 color: {text_color};
                 margin-left: 5px;
+            }}
+            QLabel#projectWidgetTitle {{
+                font-size: 18pt;
+                font-weight: bold;
             }}
         """
         if self._is_selected:
@@ -414,6 +420,7 @@ class ProjectGroup(QGroupBox):
         self.scroll_content_layout.addStretch(1)
 
         self.add_button = QPushButton("New Project")
+        self.add_button.setMinimumWidth(325)
         self.add_button.setIcon(
             QIcon(os.path.join(script_dir, "src_static", "plus.png")))
         self.add_button.setObjectName(BTN_GREEN)
@@ -518,6 +525,7 @@ class ProjectGroup(QGroupBox):
         if self.project_counter == 1:
             self.handle_project_selection(project_name)
 
+    
     def handle_project_selection(self, project_name):
         """Handles the selection of a project widget."""
         # Deselect the previously selected widget
