@@ -50,9 +50,9 @@ class CheckableComboBox(QComboBox):
         self.setEditText(", ".join(checked) if checked else "")
 
 class NewJobDialog(QDialog):
-    def __init__(self, selected_project, slurm_connection=None, parent=None):
+    def __init__(self, selected_project:Project, slurm_connection=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"New Job for Project: {selected_project}")
+        self.setWindowTitle(f"New Job for Project: {selected_project.name}")
         self.setMinimumSize(800, 600)
         self.selected_project = selected_project
         self.slurm_connection = slurm_connection
@@ -75,7 +75,7 @@ class NewJobDialog(QDialog):
 
         # Header
         header_layout = QHBoxLayout()
-        header_label = QLabel(f"New Job for Project: {selected_project}")
+        header_label = QLabel(f"New Job for Project: {selected_project.name}")
         header_label.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         header_label.setStyleSheet(f"color: {COLOR_BLUE};")
         header_layout.addWidget(header_label)
@@ -186,7 +186,7 @@ class NewJobDialog(QDialog):
         
         self.account_combo = QComboBox()
         if hasattr(self, 'accounts'):
-            self.account_combo.addItems(["None"] + self.accounts)
+            self.account_combo.addItems(["None"] + self.accounts if len(self.accounts)==0 else self.accounts)
         self.account_combo.setEditable(True)
         partition_account_layout.addWidget(QLabel("Account*:"))
         partition_account_layout.addWidget(self.account_combo)
@@ -946,21 +946,20 @@ class NewJobDialog(QDialog):
     def _get_discord_settings_from_config(self):
         """Get Discord settings from application configuration"""
         try:
-            
             settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
             settings.beginGroup("NotificationSettings")
-            
+
             discord_config = {
                 "enabled": settings.value("discord_enabled", False, type=bool),
+                "webhook_url": settings.value("discord_webhook_url", "", type=str),
                 "notify_start": True,  # Default behaviors
                 "notify_complete": True,
                 "notify_failed": True,
                 "message_prefix": f"[{self.selected_project}]"
             }
-            
+
             settings.endGroup()
             return discord_config
-            
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
@@ -1317,21 +1316,20 @@ class ModifyJobDialog(NewJobDialog):
     def _get_discord_settings_from_config(self):
         """Get Discord settings from application configuration"""
         try:
-            
             settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
             settings.beginGroup("NotificationSettings")
-            
+
             discord_config = {
                 "enabled": settings.value("discord_enabled", False, type=bool),
+                "webhook_url": settings.value("discord_webhook_url", "", type=str),
                 "notify_start": True,  # Default behaviors
                 "notify_complete": True,
                 "notify_failed": True,
                 "message_prefix": f"[{self.selected_project}]"
             }
-            
+
             settings.endGroup()
             return discord_config
-            
         except Exception as e:
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}

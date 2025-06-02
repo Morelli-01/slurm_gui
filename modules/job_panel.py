@@ -1073,8 +1073,6 @@ class JobsPanel(QWidget):
             print(f"Error loading Discord settings: {e}")
             return {"enabled": False}
 
-    @require_project_job
-    @require_project_storer
     def open_job_terminal(self, project, job):
         """Open terminal on the node where the job is running"""
 
