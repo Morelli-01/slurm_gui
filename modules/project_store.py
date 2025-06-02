@@ -398,7 +398,7 @@ class ProjectStore:
             discord_settings = job.info.get("discord_notifications", {})
 
             # Submit job using the enhanced method
-            new_job_id = self.slurm.submit_job_from_object(
+            new_job_id = self.slurm.submit_job(
                 job, discord_settings)
 
             if new_job_id:

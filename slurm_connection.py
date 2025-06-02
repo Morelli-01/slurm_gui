@@ -701,7 +701,7 @@ class SlurmConnection:
 
         return job_details
 
-    def submit_job_from_object(self, job: 'Job', discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def submit_job(self, job: 'Job', discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Submit a job using the enhanced Job object.
         
@@ -764,47 +764,6 @@ class SlurmConnection:
         except Exception as e:
             raise RuntimeError(f"Job submission failed: {e}")
 
-    # Update the existing submit_job method to use the new Job-based approach
-    def submit_job(self, job_name: str, partition: str, time_limit: str, command: str, account: str,
-                constraint: Optional[str] = None, qos: Optional[str] = None,
-                gres: Optional[str] = None, nodes: int = 1, ntasks: int = 1,
-                output_file: str = ".logs/out_%A.log", error_file: str = ".logs/err_%A.log", 
-                memory: str = "1G", cpus: int = 1, discord_settings: Optional[Dict[str, Any]] = None,
-                array_spec: Optional[str] = None, array_max_jobs: Optional[int] = None,
-                **additional_params) -> Optional[str]:
-        """
-        Submit a job to the SLURM scheduler using the enhanced Job class.
-        
-        This method now creates a Job object internally and uses the new submission system.
-        Maintains backward compatibility with existing code.
-        """
-        
-        # Create job details dictionary
-        job_details = {
-            'job_name': job_name,
-            'partition': partition,
-            'time_limit': time_limit,
-            'command': command,
-            'account': account,
-            'constraint': constraint,
-            'qos': qos,
-            'gres': gres,
-            'nodes': nodes,
-            'ntasks': ntasks,
-            'output_file': output_file,
-            'error_file': error_file,
-            'memory': memory,
-            'cpus_per_task': cpus,
-            'array': array_spec,
-            'array_max_jobs': array_max_jobs,
-            **additional_params  # Include any additional parameters
-        }
-        
-        # Create Job object
-        job = Job.create_job_from_details(job_details)
-        
-        # Submit using the new method
-        return self.submit_job_from_object(job, discord_settings)
 
     def preview_job_script(self, job_details: Dict[str, Any], 
                         include_discord: bool = False,
