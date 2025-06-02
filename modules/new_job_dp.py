@@ -1051,10 +1051,10 @@ class ModifyJobDialog(NewJobDialog):
     Inherits from NewJobDialog and pre-fills fields with existing job data.
     """
 
-    def __init__(self, job, project_name, slurm_connection=None, parent=None):
+    def __init__(self, job, project, slurm_connection=None, parent=None):
         self.job = job
-        self.project_name = project_name
-        super().__init__(project_name, slurm_connection, parent)
+        self.project = project
+        super().__init__(project, slurm_connection, parent)
         self.setWindowTitle(f"Modify Job: {job.name}")
         self._update_header_for_modify()
         self._populate_fields_from_job()

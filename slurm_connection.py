@@ -1060,12 +1060,6 @@ class SlurmConnection:
             if validation_issues:
                 raise ValueError(f"Job validation failed: {'; '.join(validation_issues)}")
             
-            # Generate the sbatch script using the job's method
-            script_content = job.generate_sbatch_script(
-                include_discord=bool(discord_settings and discord_settings.get("enabled", False)),
-                discord_settings=discord_settings
-            )
-            
             # Save script to temporary file
             script_path = job.save_sbatch_script(
                 include_discord=bool(discord_settings and discord_settings.get("enabled", False)),

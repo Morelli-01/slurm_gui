@@ -405,6 +405,9 @@ class Job:
         """Generate Discord notification script section"""
         # This would contain the Discord webhook notification system
         # Implementation details from the original _create_job_script method
+        webhook_url = discord_settings.get('discord_webhook_url') or discord_settings.get('webhook_url', '')
+        if not webhook_url:
+            return [] 
         return [
             "",
             "# =============================================================================",
@@ -412,7 +415,7 @@ class Job:
             "# =============================================================================",
             "",
             "# Discord webhook configuration",
-            f"DISCORD_WEBHOOK_URL=\"{discord_settings.get('webhook_url', '')}\"",
+            f"DISCORD_WEBHOOK_URL=\"{webhook_url}\"",
             "",
             "# Job information variables",
             f'export JOB_NAME="{self.name}"',
@@ -429,12 +432,11 @@ class Job:
             "trap 'send_job_cancelled_notification; exit 130' INT TERM",
             ""
         ]
-
+    
     def _get_discord_functions(self) -> str:
         """Get Discord notification functions"""
-        # Return the Discord notification function definitions
-        # This would be the same as in the original implementation
-        return """
+        # Return the bash functions as a properly unindented string for sbatch script
+        return '''
 function send_enhanced_discord_notification {
     local title="$1"
     local description="$2"
@@ -442,51 +444,170 @@ function send_enhanced_discord_notification {
     local thumbnail_url="$4"
     local footer_text="$5"
     
-    # Implementation details...
-    # (Same as original Discord notification system)
+    # Get current timestamp in ISO format
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    
+    # Export parameters as environment variables for Python script
+    export DISCORD_TITLE="$title"
+    export DISCORD_DESCRIPTION="$description"
+    export DISCORD_COLOR="$color"
+    export DISCORD_THUMBNAIL="$thumbnail_url"
+    export DISCORD_FOOTER="$footer_text"
+    export DISCORD_TIMESTAMP="$timestamp"
+    
+    # Build the enhanced embed payload
+    local embed_payload=$(python3 <<'EOF'
+import json, os
+
+# Get parameters from environment variables
+title = os.environ.get("DISCORD_TITLE", "SLURM Job Update")
+description = os.environ.get("DISCORD_DESCRIPTION", "")
+color = int(os.environ.get("DISCORD_COLOR", "3447003"))
+thumbnail_url = os.environ.get("DISCORD_THUMBNAIL", "")
+footer_text = os.environ.get("DISCORD_FOOTER", "SlurmAIO Job Monitor")
+timestamp = os.environ.get("DISCORD_TIMESTAMP", "")
+
+# Get environment variables
+job_id = os.environ.get("SLURM_JOB_ID", "Unknown")
+job_name = os.environ.get("JOB_NAME", "Unknown")
+node = os.environ.get("SLURM_NODELIST", "Unknown")
+partition = os.environ.get("PARTITION", "Unknown")
+time_limit = os.environ.get("TIME_LIMIT", "Unknown")
+memory = os.environ.get("REQUESTED_MEMORY", "Unknown")
+cpus = os.environ.get("REQUESTED_CPUS", "Unknown")
+nodes = os.environ.get("REQUESTED_NODES", "Unknown")
+hostname = os.environ.get("HOSTNAME", "Unknown")
+start_time = os.environ.get("START_TIME", "Unknown")
+account = os.environ.get("SLURM_JOB_ACCOUNT", "Unknown")
+
+# Build rich embed
+embed = {
+    "username": "SlurmAIO",
+    "embeds": [{
+        "title": title,
+        "description": description,
+        "color": color,
+        "timestamp": timestamp,
+        "fields": [
+            {
+                "name": "🎯 Job Details",
+                "value": "**ID:** `" + job_id + "`\\n**Name:** `" + job_name + "`\\n**Partition:** `" + partition + "`",
+                "inline": True
+            },
+            {
+                "name": "💻 Resources", 
+                "value": "**CPUs:** " + cpus + "\\n**Memory:** " + memory + "\\n**Nodes:** " + nodes,
+                "inline": True
+            },
+            {
+                "name": "📍 Location",
+                "value": "**Cluster:** `" + hostname + "`\\n**Node(s):** `" + node + "`\\n**Account:** `" + account + "`",
+                "inline": True
+            },
+            {
+                "name": "⏱️ Timing",
+                "value": "**Time Limit:** " + time_limit + "\\n**Started:** " + start_time,
+                "inline": False
+            }
+        ],
+        "footer": {
+            "text": footer_text + " • SlurmAIO",
+            "icon_url": "https://cdn-icons-png.flaticon.com/512/2103/2103633.png"
+        },
+        "author": {
+            "name": "SlurmAIO", 
+            "icon_url": "https://cdn-icons-png.flaticon.com/512/9131/9131529.png"
+        }
+    }]
+}
+
+if thumbnail_url:
+    embed["embeds"][0]["thumbnail"] = {"url": thumbnail_url}
+
+print(json.dumps(embed))
+EOF
+    )
+    
+    local curl_response=$(curl -H "Content-Type: application/json" \
+        -X POST \
+        -d "$embed_payload" \
+        "$DISCORD_WEBHOOK_URL" \
+        -w "%{http_code}" \
+        --silent --show-error 2>&1)
+    
+    if [[ "$curl_response" == *"204"* ]]; then
+        echo "Discord notification sent successfully"
+    else
+        echo "Failed to send Discord notification: $curl_response"
+    fi
 }
 
 function send_job_start_notification {
-    send_enhanced_discord_notification \\
-        "🏃‍♂️ JOB STARTED: $JOB_NAME" \\
-        "🚀 **Job Started Successfully!**" \\
-        "3447003" \\
-        "https://cdn-icons-png.flaticon.com/512/2103/2103591.png" \\
+    export DISCORD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    
+    local description=""
+    
+    send_enhanced_discord_notification \
+        "🏃‍♂️ JOB STARTED: $JOB_NAME" \
+        "$description" \
+        "3447003" \
+        "https://cdn-icons-png.flaticon.com/512/2103/2103591.png" \
         "Started at $(date '+%H:%M:%S')"
 }
 
 function send_job_completion_notification {
     local exit_code=$1
-    local duration_formatted=$(printf '%02d:%02d:%02d' $((SECONDS/3600)) $(((SECONDS%3600)/60)) $((SECONDS%60)))
+    local end_time=$(date '+%Y-%m-%d %H:%M:%S')
+    local duration=$((SECONDS))
+    local duration_formatted=$(printf '%02d:%02d:%02d' $((duration/3600)) $(((duration%3600)/60)) $((duration%60)))
+    
+    export DISCORD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
     
     if [ $exit_code -eq 0 ]; then
-        send_enhanced_discord_notification \\
-            "✅ JOB COMPLETED: $JOB_NAME" \\
-            "✅ **Job Completed Successfully!**\\n\\n🏁 **Runtime:** $duration_formatted" \\
-            "5763719" \\
-            "https://cdn-icons-png.flaticon.com/512/190/190411.png" \\
+        local description ="**Final Status:** Completed Successfully\n"
+        description+="⏱️ **Total Runtime:** $duration_formatted\n" 
+        description+="🏁 **Finished At:** $end_time\n\n"
+        
+        send_enhanced_discord_notification \
+            "✅ JOB COMPLETED: $JOB_NAME" \
+            "$description" \
+            "5763719" \
+            "https://cdn-icons-png.flaticon.com/512/190/190411.png" \
             "SUCCESS: Completed in $duration_formatted"
     else
-        send_enhanced_discord_notification \\
-            "❌ JOB FAILED: $JOB_NAME" \\
-            "❌ **Job Failed!**\\n\\n🚨 **Exit Code:** $exit_code\\n⏱️ **Runtime:** $duration_formatted" \\
-            "15158332" \\
-            "https://cdn-icons-png.flaticon.com/512/564/564619.png" \\
+        description+="💥 Your SLURM job **$JOB_NAME** encountered an error during execution.\n\n"
+        description+="📊 **Final Status:** Failed\n"
+        description+="🚨 **Exit Code:** $exit_code\n"
+        
+        send_enhanced_discord_notification \
+            "❌ JOB FAILED: $JOB_NAME" \
+            "$description" \
+            "15158332" \
+            "https://cdn-icons-png.flaticon.com/512/564/564619.png" \
             "FAILED: Exit code $exit_code after $duration_formatted"
     fi
 }
 
 function send_job_cancelled_notification {
-    local duration_formatted=$(printf '%02d:%02d:%02d' $((SECONDS/3600)) $(((SECONDS%3600)/60)) $((SECONDS%60)))
+    local cancel_time=$(date '+%Y-%m-%d %H:%M:%S')
+    local duration=$((SECONDS))
+    local duration_formatted=$(printf '%02d:%02d:%02d' $((duration/3600)) $(((duration%3600)/60)) $((duration%60)))
     
-    send_enhanced_discord_notification \\
-        "🛑 JOB CANCELLED: $JOB_NAME" \\
-        "🛑 **Job Cancelled**\\n\\n⏱️ **Runtime Before Cancellation:** $duration_formatted" \\
-        "16776960" \\
-        "https://cdn-icons-png.flaticon.com/512/1828/1828843.png" \\
+    export DISCORD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    
+    description+="⚠️ Your SLURM job **$JOB_NAME** was cancelled before completion.\n\n"
+    description+="📊 **Final Status:** Cancelled\n"
+    description+="🛑 **Cancelled At:** $cancel_time\n\n"
+    description+="🤔 **Possible Reasons:** Time limits, resource constraints, or manual cancellation"
+    
+    send_enhanced_discord_notification \
+        "🛑 JOB CANCELLED: $JOB_NAME" \
+        "$description" \
+        "16776960" \
+        "https://cdn-icons-png.flaticon.com/512/1828/1828843.png" \
         "CANCELLED: After $duration_formatted"
-}"""
-
+}
+'''
     def save_sbatch_script(self,
                            filepath: Optional[str] = None,
                            include_discord: bool = False,
@@ -587,7 +708,6 @@ function send_job_cancelled_notification {
 
         return issues
 
-    # Keep all existing methods from the original Job class
     def to_json(self) -> Dict[str, Any]:
         """Convert Job to JSON-serializable dictionary with proper datetime/timedelta handling"""
         d = {}

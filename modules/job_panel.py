@@ -1592,7 +1592,7 @@ class JobsPanel(QWidget):
             # Open the modify dialog
             dialog = ModifyJobDialog(
                 job=job,
-                project_name=project.name,
+                project=project,
                 slurm_connection=self.slurm_connection,
                 parent=self
             )
