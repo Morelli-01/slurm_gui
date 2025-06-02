@@ -284,17 +284,26 @@ class ProjectStore:
         if not task_ids:
             task_ids = [0]  # Fallback
 
-        # Modify output/error files for arrays
+        # Modify output/error files for arrays ONLY if user did not specify %a or %A_%a
+        def needs_array_placeholder(path):
+            # Accepts %a or %A_%a or %A.%a or %A-%a as valid
+            return not any(p in path for p in ["%a", "%A_%a", "%A.%a", "%A-%a"])
+
         output_file = base_job.output_file
         error_file = base_job.error_file
 
-        if "%a" not in output_file:
-            output_file = output_file.replace(
-                "%A", "%A_%a") if "%A" in output_file else output_file.replace(".log", "_%a.log")
+        # Only modify if user did not specify a valid array placeholder
+        if needs_array_placeholder(output_file):
+            if "%A" in output_file:
+                output_file = output_file.replace("%A", "%A_%a")
+            else:
+                output_file = output_file.replace(".log", "_%a.log")
 
-        if "%a" not in error_file:
-            error_file = error_file.replace(
-                "%A", "%A_%a") if "%A" in error_file else error_file.replace(".log", "_%a.log")
+        if needs_array_placeholder(error_file):
+            if "%A" in error_file:
+                error_file = error_file.replace("%A", "%A_%a")
+            else:
+                error_file = error_file.replace(".log", "_%a.log")
 
         created_ids = []
         created_jobs = []

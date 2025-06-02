@@ -933,7 +933,7 @@ class SlurmJobManagerApp(QMainWindow):
         # Load appearance settings (jobs queue options)
         self.settings.beginGroup("AppearenceSettings")
         if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
-            for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
+            for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:]):
                 value = self.settings.value(
                     obj.objectName(), 'false', type=bool)
                 obj.setCheckState(
