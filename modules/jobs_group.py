@@ -404,14 +404,28 @@ class JobsGroup(QWidget):
             if item:
                 self._job_row_indices[project.name][item.text()] = row
 
-    def show_project(self, project_name: str) -> None:
-        """Show the specified project's table"""
+    def show_project(self, project_or_name) -> None:
+        """Show the specified project's table
+        
+        Args:
+            project_or_name: Can be either a Project object or a project name string
+        """
+        if isinstance(project_or_name, Project):
+            project = project_or_name
+            project_name = project.name
+        else:
+            project_name = project_or_name
+            project = None
+            
         if project_name not in self._indices:
             self.add_project(project_name)
+            
         idx = self._indices[project_name]
         if self._stack.currentIndex() != idx:
             self._stack.setCurrentIndex(idx)
-            self.current_projectChanged.emit(project_name)
+            # If we have the project object, emit it, otherwise emit None
+            # The signal is typed to expect a Project object
+            self.current_projectChanged.emit(project)
 
     def remove_project(self, project_name: str):
         """Remove a project and its table"""

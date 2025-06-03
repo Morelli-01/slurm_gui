@@ -730,6 +730,10 @@ class JobsPanel(QWidget):
     def _show_connection_required_message(self):
         """Show a message indicating that SLURM connection is required"""
         try:
+            # Clear any existing connection required message
+            if "connection_required" in self.project_group.projects_children:
+                return
+                
             # Add a temporary project to show the message
             temp_project = ProjectWidget(
                 "⚠️ Connection Required", self.project_group, storer=None)
@@ -753,6 +757,10 @@ class JobsPanel(QWidget):
 
             # Show message in jobs area too
             self.jobs_group.show_connection_error("connection_required")
+            
+            # Clear current project and update UI
+            self.current_project = None
+            self._update_ui_for_project_selection()
 
             print("Showing connection required message")
 
@@ -765,15 +773,17 @@ class JobsPanel(QWidget):
         Enhanced version with proper cleanup and reinitialization.
         """
         try:
-            # Remove connection required message if it exists
+            # Clear any existing connection required message
             if "connection_required" in self.project_group.projects_children:
                 temp_widget = self.project_group.projects_children["connection_required"]
-                self.project_group.scroll_content_layout.removeWidget(
-                    temp_widget)
+                self.project_group.scroll_content_layout.removeWidget(temp_widget)
                 temp_widget.hide()
                 temp_widget.deleteLater()
                 del self.project_group.projects_children["connection_required"]
 
+            # Clear current project reference
+            self.current_project = None
+            
             # Create/recreate the ProjectStore instance with the current connection
             if self.project_storer:
                 # Stop existing monitoring
@@ -786,6 +796,9 @@ class JobsPanel(QWidget):
 
             # Start loading projects
             self.project_group.start()
+            
+            # Update UI to reflect no project is selected initially
+            self._update_ui_for_project_selection()
 
             print("Project store setup completed successfully")
 
@@ -794,10 +807,16 @@ class JobsPanel(QWidget):
             import traceback
             traceback.print_exc()
             self.project_storer = None
-
+            
+            # Show connection required message
+            self._show_connection_required_message()
+            
             # Show error message
-            show_error_toast(self, "Setup Error",
-                             f"Failed to initialize project store: {str(e)}")
+            show_error_toast(
+                self, 
+                "Setup Error",
+                f"Failed to initialize project store: {str(e)}"
+            )
 
     @staticmethod
     def require_project_storer(method):
@@ -814,61 +833,102 @@ class JobsPanel(QWidget):
     @require_project_storer
     def open_new_job_dialog(self, *args, **kwargs):
         """Opens the dialog to create a new job for the selected project."""
-
-        if self.current_project:
-            dialog = NewJobDialog(
-                selected_project=self.current_project, slurm_connection=self.slurm_connection)
-
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                job_details = dialog.get_job_details()
-
-                try:
-                    # Create the job via the project storer WITHOUT submitting to SLURM
-                    job: Job = self.project_storer.add_new_job(
-                        self.current_project.name, job_details)
-
-                    if job:
-                        # Add the job to the jobs group UI
-                        self.jobs_group.add_single_job(
-                            self.current_project, job)
-
-                        show_success_toast(self, "Job Created",
-                                           f"Job '{getattr(job, 'name', 'Unnamed Job')}' has been created!")
-                    else:
-                        show_warning_toast(
-                            self,
-                            "Creation Failed",
-                            "Failed to create job. Please check logs for more information."
-                        )
-                except Exception as e:
-                    show_error_toast(
-                        self,
-                        "Job Creation Error",
-                        f"An error occurred while creating the job: {str(e)}"
-                    )
-
-        else:
+        # Validate project is selected and exists
+        if not self.current_project:
             show_warning_toast(
                 self,
                 "No Project Selected",
                 "Please select a project first before creating a new job."
             )
+            return
+            
+        # Verify the project still exists in the storer
+        if not self.project_storer.get(self.current_project.name):
+            show_error_toast(
+                self,
+                "Project Not Found",
+                "The selected project no longer exists. Please select a different project."
+            )
+            self.current_project = None
+            self._update_ui_for_project_selection()
+            return
+
+        try:
+            dialog = NewJobDialog(
+                selected_project=self.current_project, 
+                slurm_connection=self.slurm_connection
+            )
+
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                job_details = dialog.get_job_details()
+                if not job_details:
+                    return  # User cancelled or closed the dialog
+
+                # Create the job via the project storer WITHOUT submitting to SLURM
+                job: Job = self.project_storer.add_new_job(
+                    self.current_project.name, job_details)
+
+                if job:
+                    # Add the job to the jobs group UI
+                    self.jobs_group.add_single_job(self.current_project, job)
+                    show_success_toast(
+                        self, 
+                        "Job Created",
+                        f"Job '{getattr(job, 'name', 'Unnamed Job')}' has been created!"
+                    )
+                else:
+                    show_warning_toast(
+                        self,
+                        "Creation Failed",
+                        "Failed to create job. Please check logs for more information."
+                    )
+        except Exception as e:
+            show_error_toast(
+                self,
+                "Job Creation Error",
+                f"An error occurred while creating the job: {str(e)}"
+            )
+            print(f"Error in job creation: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_project_selected(self, project_or_name):
         """Slot to update the currently selected project."""
-        # Accept either a Project object or a project name (str)
-        if isinstance(project_or_name, str):
-            if self.project_storer:
-                project = self.project_storer.get(project_or_name)
+        try:
+            # Accept either a Project object or a project name (str)
+            if isinstance(project_or_name, str):
+                if self.project_storer:
+                    project = self.project_storer.get(project_or_name)
+                else:
+                    project = None
             else:
-                project = None
-        else:
-            project = project_or_name
-        self.current_project = project
+                project = project_or_name
+                
+            self.current_project = project
+            
+            # Update UI based on project selection
+            self._update_ui_for_project_selection()
+            
+            if self.current_project:
+                print(f"Selected Project in JobsPanel: {self.current_project.name}")
+            else:
+                print("Deselected project in JobsPanel")
+                
+        except Exception as e:
+            print(f"Error in project selection: {e}")
+            show_error_toast(self, "Project Selection Error", 
+                           f"Failed to select project: {str(e)}")
+    
+    def _update_ui_for_project_selection(self):
+        """Update UI elements based on the current project selection."""
+        # Enable/disable the new job button based on project selection
+        self.new_jobs_button.setEnabled(self.current_project is not None)
+        
+        # Update tooltip to guide the user
         if self.current_project:
-            print(f"Selected Project in JobsPanel: {self.current_project.name}")
+            self.new_jobs_button.setToolTip(f"Create a new job in '{self.current_project.name}'")
         else:
-            print("Selected Project in JobsPanel: None")
+            self.new_jobs_button.setToolTip("Please select a project first")
 
     def resizeEvent(self, event):
         """Adjust the position of the floating button when the widget is resized."""
