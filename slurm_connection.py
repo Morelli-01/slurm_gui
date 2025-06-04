@@ -701,6 +701,7 @@ class SlurmConnection:
 
         return job_details
 
+    @require_connection
     def submit_job(self, job: 'Job', discord_settings: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """
         Submit a job using the enhanced Job object.
@@ -712,8 +713,6 @@ class SlurmConnection:
         Returns:
             str: Job ID if submission successful, None otherwise
         """
-        if not self.check_connection():
-            raise ConnectionError("SSH connection not established.")
         
         try:
             # Validate job parameters

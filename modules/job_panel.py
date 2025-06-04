@@ -1020,8 +1020,19 @@ class JobsPanel(QWidget):
         job.output_file = details.get("output_file", job.output_file)
         job.error_file = details.get("error_file", job.error_file)
         job.working_dir = details.get("working_dir", job.working_dir)
+    
+        job.virtual_env = details.get("virtual_env", job.virtual_env)
 
         # Update GPU count from GRES if available
+        nodelist = details.get("nodelist")
+        if nodelist:
+            if isinstance(nodelist, list):
+                job.nodelist = ",".join(nodelist)
+            else:
+                job.nodelist = str(nodelist)
+        else:
+            job.nodelist = ""
+
         if job.gres and "gpu:" in job.gres:
             try:
                 gpu_parts = job.gres.split(":")
@@ -1046,7 +1057,7 @@ class JobsPanel(QWidget):
             job.dependency = details["dependency"]
         else:
             job.dependency = None
-
+        job.ntasks = details.get("ntasks", job.ntasks)
         if "discord_notifications" in details:
             job.info["discord_notifications"] = details["discord_notifications"]
         # Update submission details for later use
@@ -1527,30 +1538,17 @@ class JobsPanel(QWidget):
     @require_project_storer
     def duplicate_job(self, project: Project, job: Job):
         """Duplicate an existing job with a new name - Fixed to carry over Discord settings and update UI"""
-        if not self.project_storer:
-            show_error_toast(
-                self, "Error", "Not connected to project store.")
-            return
+
 
         try:
             # Get the original job
-            project_obj = self.project_storer.get(project.name)
-            if not project_obj:
-                show_error_toast(
-                    self, "Error", f"Project '{project.name}' not found.")
-                return
-
-            original_job = project_obj.get_job(job.id)
-            if not original_job:
-                show_error_toast(self, "Error", f"Job '{job.id}' not found.")
-                return
 
             # Ask user for new job name
             new_name, ok = QInputDialog.getText(
                 self,
                 "Duplicate Job",
-                f"Enter name for duplicated job (original: '{original_job.name}'):",
-                text=f"{original_job.name}_copy"
+                f"Enter name for duplicated job (original: '{job.name}'):",
+                text=f"{job.name}_copy"
             )
 
             if not ok or not new_name.strip():
@@ -1559,61 +1557,61 @@ class JobsPanel(QWidget):
             # Create job details from the original job - INCLUDING Discord settings
             job_details = {
                 "job_name": new_name.strip(),
-                "partition": original_job.partition,
-                "time_limit": original_job.time_limit,
-                "command": original_job.command,
-                "account": original_job.account,
-                "constraint": original_job.constraints,
-                "qos": original_job.qos,
-                "gres": original_job.gres,
-                "nodes": original_job.nodes,
-                "cpus_per_task": original_job.cpus,
-                "memory": original_job.memory,
-                "output_file": original_job.output_file,
-                "error_file": original_job.error_file,
-                "working_dir": original_job.working_dir,
+                "partition": job.partition,
+                "time_limit": job.time_limit,
+                "command": job.command,
+                "account": job.account,
+                "constraint": job.constraints,
+                "qos": job.qos,
+                "gres": job.gres,
+                "nodes": job.nodes,
+                "cpus_per_task": job.cpus,
+                "memory": job.memory,
+                "output_file": job.output_file,
+                "error_file": job.error_file,
+                "working_dir": job.working_dir,
                 # --- CLONE ADVANCED FIELDS ---
-                "virtual_env": original_job.virtual_env,
-                "ntasks": getattr(original_job, "ntasks", None),
-                "ntasks_per_node": getattr(original_job, "ntasks_per_node", None),
-                "ntasks_per_core": getattr(original_job, "ntasks_per_core", None),
-                "ntasks_per_socket": getattr(original_job, "ntasks_per_socket", None),
-                "memory_per_cpu": getattr(original_job, "memory_per_cpu", None),
-                "memory_per_node": getattr(original_job, "memory_per_node", None),
-                "memory_per_gpu": getattr(original_job, "memory_per_gpu", None),
-                "nodelist": getattr(original_job, "nodelist", None),
-                "exclude": getattr(original_job, "exclude", None),
-                "priority": getattr(original_job, "priority", None),
-                "nice": getattr(original_job, "nice", None),
-                "requeue": getattr(original_job, "requeue", None),
-                "no_requeue": getattr(original_job, "no_requeue", None),
-                "reboot": getattr(original_job, "reboot", None),
-                "mail_type": getattr(original_job, "mail_type", None),
-                "mail_user": getattr(original_job, "mail_user", None),
-                "export_env": getattr(original_job, "export_env", None),
-                "get_user_env": getattr(original_job, "get_user_env", None),
-                "exclusive": getattr(original_job, "exclusive", None),
-                "overcommit": getattr(original_job, "overcommit", None),
-                "oversubscribe": getattr(original_job, "oversubscribe", None),
-                "threads_per_core": getattr(original_job, "threads_per_core", None),
-                "sockets_per_node": getattr(original_job, "sockets_per_node", None),
-                "cores_per_socket": getattr(original_job, "cores_per_socket", None),
-                "wait": getattr(original_job, "wait", None),
-                "wrap": getattr(original_job, "wrap", None),
+                "virtual_env": job.virtual_env,
+                "ntasks": getattr(job, "ntasks", None),
+                "ntasks_per_node": getattr(job, "ntasks_per_node", None),
+                "ntasks_per_core": getattr(job, "ntasks_per_core", None),
+                "ntasks_per_socket": getattr(job, "ntasks_per_socket", None),
+                "memory_per_cpu": getattr(job, "memory_per_cpu", None),
+                "memory_per_node": getattr(job, "memory_per_node", None),
+                "memory_per_gpu": getattr(job, "memory_per_gpu", None),
+                "nodelist": getattr(job, "nodelist", None),
+                "exclude": getattr(job, "exclude", None),
+                "priority": getattr(job, "priority", None),
+                "nice": getattr(job, "nice", None),
+                "requeue": getattr(job, "requeue", None),
+                "no_requeue": getattr(job, "no_requeue", None),
+                "reboot": getattr(job, "reboot", None),
+                "mail_type": getattr(job, "mail_type", None),
+                "mail_user": getattr(job, "mail_user", None),
+                "export_env": getattr(job, "export_env", None),
+                "get_user_env": getattr(job, "get_user_env", None),
+                "exclusive": getattr(job, "exclusive", None),
+                "overcommit": getattr(job, "overcommit", None),
+                "oversubscribe": getattr(job, "oversubscribe", None),
+                "threads_per_core": getattr(job, "threads_per_core", None),
+                "sockets_per_node": getattr(job, "sockets_per_node", None),
+                "cores_per_socket": getattr(job, "cores_per_socket", None),
+                "wait": getattr(job, "wait", None),
+                "wrap": getattr(job, "wrap", None),
             }
 
             # Add optional array and dependency settings if they exist
-            if original_job.array_spec:
-                job_details["array"] = original_job.array_spec
-                if original_job.array_max_jobs:
-                    job_details["array_max_jobs"] = original_job.array_max_jobs
+            if job.array_spec:
+                job_details["array"] = job.array_spec
+                if job.array_max_jobs:
+                    job_details["array_max_jobs"] = job.array_max_jobs
 
-            if original_job.dependency:
-                job_details["dependency"] = original_job.dependency
+            if job.dependency:
+                job_details["dependency"] = job.dependency
 
             # CRITICAL FIX: Copy Discord notification settings from original job
-            if "discord_notifications" in original_job.info:
-                job_details["discord_notifications"] = original_job.info["discord_notifications"].copy()
+            if "discord_notifications" in job.info:
+                job_details["discord_notifications"] = job.info["discord_notifications"].copy()
             else:
                 # If original job doesn't have Discord settings, get them from current application config
                 job_details["discord_notifications"] = self._get_current_discord_settings()
@@ -1623,24 +1621,23 @@ class JobsPanel(QWidget):
                 project.name, job_details)
 
             # Fetch the new job object from the project (handle both single and array jobs)
-            project_obj = self.project_storer.get(project.name)
             if isinstance(new_job_obj, list):
                 # Array jobs: add all
                 for job_id in new_job_obj:
-                    new_job = project_obj.get_job(job_id)
+                    new_job = project.get_job(job_id)
                     if new_job:
-                        self.jobs_group.add_single_job(project_obj, new_job)
+                        self.jobs_group.add_single_job(project, new_job)
             else:
                 # Single job
-                new_job = new_job_obj if hasattr(new_job_obj, 'id') else project_obj.get_job(new_job_obj.id if hasattr(new_job_obj, 'id') else new_job_obj)
+                new_job = new_job_obj if hasattr(new_job_obj, 'id') else project.get_job(new_job_obj.id if hasattr(new_job_obj, 'id') else new_job_obj)
                 if new_job:
-                    self.jobs_group.add_single_job(project_obj, new_job)
+                    self.jobs_group.add_single_job(project, new_job)
 
             # Update project status display
             if project.name in self.project_group.projects_children:
                 project_widget = self.project_group.projects_children[project.name]
                 if hasattr(project_widget, 'update_status_counts'):
-                    job_stats = project_obj.get_job_stats()
+                    job_stats = project.get_job_stats()
                     project_widget.update_status_counts(job_stats)
 
             show_success_toast(self, "Job Duplicated",
@@ -1681,23 +1678,24 @@ class JobsPanel(QWidget):
                 modified_details = dialog.get_job_details()
 
                 try:
+                    # Preserve existing Discord notifications if not in modified details
                     if "discord_notifications" in job.info and "discord_notifications" not in modified_details:
-                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy(
-                        )
+                        modified_details["discord_notifications"] = job.info["discord_notifications"].copy()
                     elif "discord_notifications" not in modified_details:
                         # Get current Discord settings from application
-                        modified_details["discord_notifications"] = self._get_current_discord_settings(
-                        )
-                    # Update the job in the project store
+                        modified_details["discord_notifications"] = self._get_current_discord_settings()
+                    
+                    # Update the job with the new details
                     self._update_job_from_details(job, modified_details)
 
-                    # Update the job in the store
+                    # FIX: Properly update the job in the store using project name instead of project object
                     self.project_storer.add_job(project.name, job)
+                    
+                    # FIX: Force write to ensure changes are saved
+                    self.project_storer._write_to_settings()
 
                     # Update the UI
-                    job_row = job.to_table_row()
-                    self.jobs_group.update_single_job_row(
-                        project, job)
+                    self.jobs_group.update_single_job_row(project, job)
 
                     # Show success message
                     show_success_toast(
@@ -1720,4 +1718,5 @@ class JobsPanel(QWidget):
             )
             import traceback
             traceback.print_exc()
-    # -----------------------------------------------------------
+    
+        # -----------------------------------------------------------

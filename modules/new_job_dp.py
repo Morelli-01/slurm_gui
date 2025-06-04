@@ -16,41 +16,100 @@ from modules.data_classes import *
 
 COLOR_BLUE = "#06b0d6"
 
-
 class CheckableComboBox(QComboBox):
     selection_changed = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.model = self.model()
         self.view().pressed.connect(self.handle_item_pressed)
-        self.setEditable(False)
+        self.setEditable(True)  # Keep editable to show selected text
+        self.lineEdit().setReadOnly(True)  # But make it read-only
         self._checked_items = set()
 
     def add_item(self, text):
         self.addItem(text)
-        idx = self.model.index(self.count() - 1, 0)
-        self.model.setData(idx, Qt.CheckState.Unchecked,
-                           Qt.ItemDataRole.CheckStateRole)
+        idx = self.model().index(self.count() - 1, 0)
+        self.model().setData(idx, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
     def handle_item_pressed(self, index):
-        state = self.model.data(index, Qt.ItemDataRole.CheckStateRole)
-        new_state = Qt.CheckState.Unchecked if state == Qt.CheckState.Checked else Qt.CheckState.Checked
-        self.model.setData(index, new_state, Qt.ItemDataRole.CheckStateRole)
+        item = self.model().itemFromIndex(index)
+        if item is None:
+            return
+            
+        # Toggle the check state
+        current_state = item.checkState()
+        new_state = Qt.CheckState.Unchecked if current_state == Qt.CheckState.Checked else Qt.CheckState.Checked
+        item.setCheckState(new_state)
+        
+        # Update our internal tracking
+        item_text = item.text()
+        if new_state == Qt.CheckState.Checked:
+            self._checked_items.add(item_text)
+        else:
+            self._checked_items.discard(item_text)
+        
+        # Update the display text
+        self._update_selected_text()
+        
+        # Emit signal
         self.selection_changed.emit()
 
     def get_checked_items(self):
+        """Get list of checked items"""
         checked = []
         for i in range(self.count()):
-            idx = self.model.index(i, 0)
-            if self.model.data(idx, Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked:
-                checked.append(self.itemText(i))
+            item = self.model().item(i)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                checked.append(item.text())
         return checked
 
-    def _update_selected_text(self):
-        checked = self.get_checked_items()
-        self.setEditText(", ".join(checked) if checked else "")
+    def set_checked_items(self, items_to_check):
+        """Set which items should be checked"""
+        self._checked_items.clear()
+        
+        # First uncheck all items
+        for i in range(self.count()):
+            item = self.model().item(i)
+            if item:
+                item.setCheckState(Qt.CheckState.Unchecked)
+        
+        # Then check the specified items
+        for item_text in items_to_check:
+            for i in range(self.count()):
+                item = self.model().item(i)
+                if item and item.text() == item_text:
+                    item.setCheckState(Qt.CheckState.Checked)
+                    self._checked_items.add(item_text)
+                    break
+        
+        self._update_selected_text()
 
+    def _update_selected_text(self):
+        """Update the display text to show selected items"""
+        checked = self.get_checked_items()
+        if checked:
+            # Show first few items, add "..." if too many
+            if len(checked) <= 2:
+                display_text = ", ".join(checked)
+            else:
+                display_text = f"{checked[0]}, {checked[1]}, ... (+{len(checked)-2} more)"
+        else:
+            display_text = ""
+        
+        self.setEditText(display_text)
+
+    def clear_selection(self):
+        """Clear all selections"""
+        self.set_checked_items([])
+
+    def showPopup(self):
+        """Override to prevent the popup from changing selection on show"""
+        super().showPopup()
+
+    def hidePopup(self):
+        """Override to update text when popup closes"""
+        super().hidePopup()
+        self._update_selected_text()
 
 class NewJobDialog(QDialog):
     def __init__(self, selected_project: Project, slurm_connection=None, parent=None):
@@ -875,11 +934,12 @@ class NewJobDialog(QDialog):
         memory = f"{self.memory_spin.value()}{self.memory_unit_combo.currentText().replace('B', '')}"
 
         # Constraints and QoS
-        selected_constraints = self.constraint_combo.get_checked_items()
-        constraint = "|".join(
-            selected_constraints) if selected_constraints else None
-        qos = self.qos_combo.currentText() if self.qos_combo.currentText() != "None" else None
+        selected_constraints = []
+        if hasattr(self, 'constraint_combo'):
+            selected_constraints = self.constraint_combo.get_checked_items()
 
+        constraint = "|".join(selected_constraints) if selected_constraints else None
+        qos = self.qos_combo.currentText() if self.qos_combo.currentText() != "None" else None
         # GPU/GRES configuration
         gres = None
         gpus = 0
@@ -890,9 +950,11 @@ class NewJobDialog(QDialog):
             gres = f"gpu:{gpu_count}" if gpu_type == "any" else f"gpu:{gpu_type}:{gpu_count}"
 
         # Node selection
-        selected_nodes = self.nodelist_combo.get_checked_items() if hasattr(self,
-                                                                            'nodelist_combo') else []
-        nodelist = ",".join(selected_nodes) if selected_nodes else None
+        selected_nodes = []
+        if hasattr(self, 'nodelist_combo'):
+            selected_nodes = self.nodelist_combo.get_checked_items()
+
+        nodelist = selected_nodes if selected_nodes else None  # Keep as list for job_details
 
         # Files and directories
         output_file = self.output_file_edit.text().strip()
@@ -900,11 +962,11 @@ class NewJobDialog(QDialog):
         working_dir = self.working_dir_edit.text().strip()
 
         # Virtual environment
-        venv_path = getattr(self, 'venv_combo', None)
-        if venv_path and hasattr(venv_path, 'currentText'):
-            venv = venv_path.currentText() if venv_path.currentText() != "None" else None
-        else:
-            venv = None
+        venv = None
+        if hasattr(self, 'venv_combo') and self.venv_combo:
+            current_venv = self.venv_combo.currentText().strip()
+            if current_venv and current_venv != "None":
+                venv = current_venv
 
         # Job arrays
         array_spec = None
@@ -1171,27 +1233,44 @@ class ModifyJobDialog(NewJobDialog):
 
         # Constraints
         if job.constraints:
-            constraints_str = job.constraints.strip('"').strip() if job.constraints else ""
+            constraints_str = job.constraints.strip().strip('"') if job.constraints else ""
             if constraints_str:
-                constraints = [c.strip() for c in constraints_str.split('|')]
-                # Uncheck all first
-                for i in range(self.constraint_combo.count()):
-                    idx = self.constraint_combo.model.index(i, 0)
-                    self.constraint_combo.model.setData(idx, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
-                # Check only those present
-                for i in range(self.constraint_combo.count()):
-                    item_text = self.constraint_combo.itemText(i)
-                    if item_text in constraints:
-                        idx = self.constraint_combo.model.index(i, 0)
-                        self.constraint_combo.model.setData(idx, Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
-                self.constraint_combo._update_selected_text()
+                # Split by | for OR constraints or by & for AND constraints
+                if '|' in constraints_str:
+                    constraints = [c.strip() for c in constraints_str.split('|')]
+                elif '&' in constraints_str:
+                    constraints = [c.strip() for c in constraints_str.split('&')]
+                else:
+                    constraints = [constraints_str.strip()]
+                
+                # Set the checked items
+                self.constraint_combo.set_checked_items(constraints)
+
         # Virtual environment
         if hasattr(self, 'venv_combo') and hasattr(job, 'virtual_env') and job.virtual_env:
-            idx = self.venv_combo.findText(job.virtual_env, Qt.MatchFlag.MatchFixedString)
-            if idx == -1:
-                self.venv_combo.addItem(job.virtual_env)
-                idx = self.venv_combo.findText(job.virtual_env, Qt.MatchFlag.MatchFixedString)
-            self.venv_combo.setCurrentIndex(idx)
+            # Check if the virtual environment path is already in the combo box
+            venv_path = job.virtual_env
+            existing_index = -1
+            
+            # Search for existing item
+            for i in range(self.venv_combo.count()):
+                if self.venv_combo.itemText(i) == venv_path:
+                    existing_index = i
+                    break
+            
+            if existing_index >= 0:
+                # Item already exists, select it
+                self.venv_combo.setCurrentIndex(existing_index)
+            else:
+                # Item doesn't exist, add it and select it
+                self.venv_combo.addItem(venv_path)
+                new_index = self.venv_combo.findText(venv_path, Qt.MatchFlag.MatchExactly)
+                self.venv_combo.setCurrentIndex(new_index)
+        elif hasattr(self, 'venv_combo'):
+            # No virtual environment set, select "None"
+            none_index = self.venv_combo.findText("None", Qt.MatchFlag.MatchExactly)
+            if none_index >= 0:
+                self.venv_combo.setCurrentIndex(none_index)
 
         # QoS
         if job.qos:
@@ -1221,20 +1300,16 @@ class ModifyJobDialog(NewJobDialog):
                 pass
 
         # Node list
-        if hasattr(self, 'nodelist_combo'):
-            # Uncheck all first
-            for i in range(self.nodelist_combo.model.rowCount()):
-                item = self.nodelist_combo.model.item(i)
-                if item:
-                    item.setCheckState(Qt.CheckState.Unchecked)
-            if hasattr(job, 'nodelist') and job.nodelist:
-                node_list = [n.strip() for n in job.nodelist.split(',') if n.strip()]
-                for i in range(self.nodelist_combo.model.rowCount()):
-                    item = self.nodelist_combo.model.item(i)
-                    if item and item.text() in node_list:
-                        item.setCheckState(Qt.CheckState.Checked)
-            self.nodelist_combo._update_selected_text()
+        if hasattr(self, 'nodelist_combo') and hasattr(job, 'nodelist') and job.nodelist:
+            nodelist_str = job.nodelist.strip() if job.nodelist else ""
+            if nodelist_str and nodelist_str not in ["", "None", "(null)"]:
+                # Split by comma for multiple nodes
+                nodes = [n.strip() for n in nodelist_str.split(',') if n.strip()]
+                
+                # Set the checked items
+                self.nodelist_combo.set_checked_items(nodes)
 
+                
         # Files and directories
         if job.output_file:
             self.output_file_edit.setText(job.output_file)
