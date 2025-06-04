@@ -108,10 +108,6 @@ class JobQueueWidget(QGroupBox):
             header.setStretchLastSection(False)
 
         header.setSectionsClickable(True)
-        try:
-            header.sortIndicatorChanged.disconnect(self._on_sort_indicator_changed)
-        except TypeError as e:
-            pass
         header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
 
     def _on_sort_indicator_changed(self, logical_index: int, order: Qt.SortOrder):

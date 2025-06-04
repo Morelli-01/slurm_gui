@@ -765,25 +765,7 @@ class SlurmConnection:
             raise RuntimeError(f"Job submission failed: {e}")
 
 
-    def preview_job_script(self, job_details: Dict[str, Any], 
-                        include_discord: bool = False,
-                        discord_settings: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Generate a preview of the sbatch script without submitting.
-        
-        Args:
-            job_details: Dictionary containing job parameters
-            include_discord: Whether to include Discord notifications
-            discord_settings: Discord notification settings
-            
-        Returns:
-            str: Generated sbatch script content
-        """
-        job = Job.create_job_from_details(job_details)
-        return job.generate_sbatch_script(
-            include_discord=include_discord,
-            discord_settings=discord_settings
-        )
+
 
     
 class JobStatusMonitor(QThread):

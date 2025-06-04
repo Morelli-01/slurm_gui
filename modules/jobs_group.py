@@ -416,16 +416,29 @@ class JobsGroup(QWidget):
         else:
             project_name = project_or_name
             project = None
-            
+
         if project_name not in self._indices:
             self.add_project(project_name)
-            
+
         idx = self._indices[project_name]
         if self._stack.currentIndex() != idx:
             self._stack.setCurrentIndex(idx)
-            # If we have the project object, emit it, otherwise emit None
-            # The signal is typed to expect a Project object
+
+        # Always try to emit a valid Project object if possible
+        if project is None:
+            # Try to find the Project object from current jobs
+            # _project_jobs[project_name] is a dict of job_id: Job, but we want the Project
+            # If jobs exist, get the Project from any job
+            jobs = self._project_jobs.get(project_name, {})
+            if jobs:
+                # Try to get the Project from the first job
+                first_job = next(iter(jobs.values()))
+                if hasattr(first_job, 'project') and first_job.project is not None:
+                    project = first_job.project
+        # Only emit if we have a Project object
+        if project is not None:
             self.current_projectChanged.emit(project)
+        # If still None, do not emit (prevents TypeError)
 
     def remove_project(self, project_name: str):
         """Remove a project and its table"""

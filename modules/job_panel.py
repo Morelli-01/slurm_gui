@@ -1572,6 +1572,34 @@ class JobsPanel(QWidget):
                 "output_file": original_job.output_file,
                 "error_file": original_job.error_file,
                 "working_dir": original_job.working_dir,
+                # --- CLONE ADVANCED FIELDS ---
+                "virtual_env": original_job.virtual_env,
+                "ntasks": getattr(original_job, "ntasks", None),
+                "ntasks_per_node": getattr(original_job, "ntasks_per_node", None),
+                "ntasks_per_core": getattr(original_job, "ntasks_per_core", None),
+                "ntasks_per_socket": getattr(original_job, "ntasks_per_socket", None),
+                "memory_per_cpu": getattr(original_job, "memory_per_cpu", None),
+                "memory_per_node": getattr(original_job, "memory_per_node", None),
+                "memory_per_gpu": getattr(original_job, "memory_per_gpu", None),
+                "nodelist": getattr(original_job, "nodelist", None),
+                "exclude": getattr(original_job, "exclude", None),
+                "priority": getattr(original_job, "priority", None),
+                "nice": getattr(original_job, "nice", None),
+                "requeue": getattr(original_job, "requeue", None),
+                "no_requeue": getattr(original_job, "no_requeue", None),
+                "reboot": getattr(original_job, "reboot", None),
+                "mail_type": getattr(original_job, "mail_type", None),
+                "mail_user": getattr(original_job, "mail_user", None),
+                "export_env": getattr(original_job, "export_env", None),
+                "get_user_env": getattr(original_job, "get_user_env", None),
+                "exclusive": getattr(original_job, "exclusive", None),
+                "overcommit": getattr(original_job, "overcommit", None),
+                "oversubscribe": getattr(original_job, "oversubscribe", None),
+                "threads_per_core": getattr(original_job, "threads_per_core", None),
+                "sockets_per_node": getattr(original_job, "sockets_per_node", None),
+                "cores_per_socket": getattr(original_job, "cores_per_socket", None),
+                "wait": getattr(original_job, "wait", None),
+                "wrap": getattr(original_job, "wrap", None),
             }
 
             # Add optional array and dependency settings if they exist
@@ -1630,23 +1658,7 @@ class JobsPanel(QWidget):
     @require_project_storer
     def modify_job(self, project: Project, job: Job):
         """Modify an existing job"""
-        if not self.project_storer:
-            show_error_toast(
-                self, "Error", "Not connected to project store.")
-            return
-
         try:
-            # Get the job to modify
-            project = self.project_storer.get(project.name)
-            if not project:
-                show_error_toast(
-                    self, "Error", f"Project '{project.name}' not found.")
-                return
-
-            job = project.get_job(job.id)
-            if not job:
-                show_error_toast(self, "Error", f"Job '{job.id}' not found.")
-                return
 
             # Only allow modification of NOT_SUBMITTED jobs
             if job.status != "NOT_SUBMITTED":

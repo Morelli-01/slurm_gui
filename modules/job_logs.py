@@ -503,6 +503,9 @@ class JobLogsDialog(QDialog):
         if job.working_dir:
             script_lines.append(f"\ncd {job.working_dir}")
 
+        if job.virtual_env:
+            script_lines.append(f"source {job.virtual_env}")
+
         # Add job array information if it's an array job
         if job.array_spec:
             script_lines.extend([
@@ -510,6 +513,7 @@ class JobLogsDialog(QDialog):
                 "echo \"Running array job ${SLURM_ARRAY_JOB_ID}, task ID ${SLURM_ARRAY_TASK_ID}\"",
                 ""
             ])
+
 
         # Add the command
         script_lines.append("# Job command")

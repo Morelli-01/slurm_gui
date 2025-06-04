@@ -14,6 +14,7 @@ from utils import determine_job_status
 
 
 @dataclass
+
 class Job:
 
     # Core identification
@@ -101,6 +102,10 @@ class Job:
     start_time: Optional[datetime] = None  # When job started running
     end_time: Optional[datetime] = None  # When job completed/failed
     reason: str = ""  # Status reason
+
+
+    # === VIRTUAL ENVIRONMENT ===
+    virtual_env: Optional[str] = None  # Path to Python virtual environment (venv)
 
     # === EXTENSIBLE INFO ===
     info: Dict[str, Any] = field(
@@ -327,12 +332,26 @@ class Job:
             ""
         ])
 
+
         # Change working directory if specified
         if self.working_dir:
             script_lines.extend([
                 "# Change to working directory",
                 f"cd '{self.working_dir}' || {{ echo \"Failed to change to directory: {self.working_dir}\"; exit 1; }}",
                 "echo \"Changed to working directory: $(pwd)\"",
+                ""
+            ])
+
+        # Activate virtual environment if specified
+        if self.virtual_env:
+            script_lines.extend([
+                f"# Activate Python virtual environment",
+                f"if [ -f '{self.virtual_env}/bin/activate' ]; then",
+                f"    source '{self.virtual_env}/bin/activate'",
+                f"    echo 'Activated virtual environment: {self.virtual_env}'",
+                f"else",
+                f"    echo 'Warning: Virtual environment not found at {self.virtual_env}/bin/activate'",
+                f"fi",
                 ""
             ])
 
@@ -608,6 +627,7 @@ function send_job_cancelled_notification {
         "CANCELLED: After $duration_formatted"
 }
 '''
+    
     def save_sbatch_script(self,
                            filepath: Optional[str] = None,
                            include_discord: bool = False,
@@ -973,6 +993,7 @@ function send_job_cancelled_notification {
             'cores_per_socket': job_details.get('cores_per_socket'),
             'wait': job_details.get('wait'),
             'wrap': job_details.get('wrap'),
+            'virtual_env': job_details.get('virtual_env'),
         }
         
         # Parse GPU count from gres if available
