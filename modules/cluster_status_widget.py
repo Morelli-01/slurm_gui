@@ -209,6 +209,9 @@ class NodeStatusTab(QWidget):
                     self.node_status_grid_layout.addWidget(QLabel(""), row_index + 1 + r + row_offset, 0)
 
             block_states = []
+            stud_used=0
+            prod_used=0
+            total_used=0
             # Prioritize unavailable states
             if "DRAIN" in state or "DOWN" in state or "UNKNOWN" in state:
                 block_states = ["unavailable"] * total_gpus

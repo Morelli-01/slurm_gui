@@ -19,7 +19,8 @@ from style import AppStyles
 from utils import *
 from pathlib import Path
 import shutil
-from modules.settings_widget import SettingsWidget
+# from modules.settings_widget import SettingsWidget
+from controllers.settings_controller import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import subprocess
