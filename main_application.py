@@ -437,8 +437,7 @@ class SlurmJobManagerApp(QMainWindow):
             # Show error messages instead of updating with empty data
             # Will trigger connection error display
             self.job_queue_widget.update_queue_status([])
-            self.cluster_status_overview_widget.update_status(
-                None, [])  # Will trigger connection error display
+            self.cluster_status_overview_widget.update_status(None, [])  # Will trigger connection error display
 
             # Update jobs panels to show connection error
             if hasattr(self, 'jobs_panel') and self.jobs_panel.jobs_group:

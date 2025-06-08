@@ -7,13 +7,12 @@ from views.cluster_status_view import ClusterStatusView
 class ClusterStatusController(QObject):
     """Controller: Coordinates between model and view"""
     
-    def __init__(self, slurm_connection=None, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         
         # Create MVC components
         self.model = ClusterStatusModel()
         self.view = ClusterStatusView()
-        self.slurm_connection = slurm_connection
         
         # Connect model signals to view updates
         self._connect_signals()

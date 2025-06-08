@@ -183,15 +183,6 @@ class Cluster:
     nodes: Dict[str, Node] = field(default_factory=dict)
     jobs: List[Dict[str, Any]] = field(default_factory=list)
 
-    def refresh(self) -> None:
-        """Fetch latest nodes and jobs from the connection."""
-        if not self.connection:
-            return
-
-        nodes_data = self.connection._fetch_nodes_infos()
-        jobs_data = self.connection._fetch_squeue()
-        self.update_from_data(nodes_data, jobs_data)
-
     def update_from_data(
         self, nodes_data: List[Dict[str, Any]], jobs_data: List[Dict[str, Any]]
     ) -> None:

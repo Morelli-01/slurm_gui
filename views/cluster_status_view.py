@@ -50,9 +50,9 @@ class ClusterStatusView(QWidget):
             return
         
         # Update each tab with its specific data
-        self.node_status_tab.update_content(processed_data.get('node_status', {}))
-        self.cpu_usage_tab.update_content(processed_data.get('cpu_usage', {}))
-        self.ram_usage_tab.update_content(processed_data.get('ram_usage', {}))
+        self.node_status_tab.update_content(processed_data.get('node_data', {}))
+        self.cpu_usage_tab.update_content(processed_data.get('node_data', {}))
+        self.ram_usage_tab.update_content(processed_data.get('node_data', {}))
     
     def _show_connection_error(self):
         """Show connection error in all tabs"""
@@ -149,7 +149,6 @@ class NodeStatusTabView(QWidget):
             return
 
         nodes = node_status_data['nodes']
-        max_gpu_count = node_status_data.get('max_gpu_count', 0)
 
         # Clear existing grid layout content
         for i in reversed(range(self.node_status_grid_layout.count())):
@@ -163,8 +162,8 @@ class NodeStatusTabView(QWidget):
         
         for row_index, node_data in enumerate(nodes):
             # Add partition separator if needed
-            if prev_partition != node_data.get("partition", ""):
-                prev_partition = node_data["partition"]
+            if prev_partition != node_data.get("Partitions", ""):
+                prev_partition = node_data["Partitions"]
                 
                 # Create and add partition separator
                 separator_container = QWidget()
@@ -198,7 +197,7 @@ class NodeStatusTabView(QWidget):
                 row_offset += 1
 
             # Add node data
-            node_name = node_data['node_name']
+            node_name = node_data['NodeName']
             block_states = node_data['block_states']
             tooltips = node_data['tooltips']
             total_gpus = node_data['total_gpus']
@@ -321,8 +320,8 @@ class CpuUsageTabView(QWidget):
         
         for row_index, node_data in enumerate(nodes):
             # Add partition separator if needed
-            if prev_partition != node_data.get("partition", ""):
-                prev_partition = node_data["partition"]
+            if prev_partition != node_data.get("Partitions", ""):
+                prev_partition = node_data["Partitions"]
                 
                 separator_container = QWidget()
                 separator_layout = QHBoxLayout(separator_container)
@@ -355,7 +354,8 @@ class CpuUsageTabView(QWidget):
                 row_offset += 1
 
             # Add node usage data
-            node_name = node_data['node_name']
+            
+            node_name = node_data['NodeName']
             total_cpu = node_data['total_cpu']
             alloc_cpu = node_data['alloc_cpu']
             cpu_usage_percent = node_data['cpu_usage_percent']
@@ -461,8 +461,8 @@ class RamUsageTabView(QWidget):
         
         for row_index, node_data in enumerate(nodes):
             # Add partition separator if needed
-            if prev_partition != node_data.get("partition", ""):
-                prev_partition = node_data["partition"]
+            if prev_partition != node_data.get("Partitions", ""):
+                prev_partition = node_data["Partitions"]
                 
                 separator_container = QWidget()
                 separator_layout = QHBoxLayout(separator_container)
@@ -495,7 +495,7 @@ class RamUsageTabView(QWidget):
                 row_offset += 1
 
             # Add node usage data
-            node_name = node_data['node_name']
+            node_name = node_data['NodeName']
             total_mem_mb = node_data['total_mem_mb']
             alloc_mem_mb = node_data['alloc_mem_mb']
             ram_usage_percent = node_data['ram_usage_percent']

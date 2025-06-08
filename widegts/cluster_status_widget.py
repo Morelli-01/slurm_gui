@@ -16,7 +16,7 @@ class ClusterStatusWidget(QWidget):
         super().__init__(parent)
         
         # Create MVC controller which manages model and view
-        self.controller = ClusterStatusController(slurm_connection, self)
+        self.controller = ClusterStatusController(self)
         self.cluster = Cluster(slurm_connection)
 
         # Setup layout to contain the view
@@ -37,8 +37,7 @@ class ClusterStatusWidget(QWidget):
             # Use provided data to update the internal cluster representation
             self.cluster.update_from_data(nodes_data, jobs_data)
         else:
-            # Fallback to fetching directly
-            self.cluster.refresh()
+            return
 
         # Always pass the enriched dataclass data to the controller
         nodes_data = self.cluster.as_dicts()
