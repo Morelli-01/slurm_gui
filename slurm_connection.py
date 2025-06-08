@@ -144,7 +144,12 @@ class SlurmConnection:
 
         try:
             self.client.connect(
-                self.host, username=self.user, password=self.password)
+                self.host, 
+                username=self.user,
+                password=self.password,
+                allow_agent=False,
+                look_for_keys=False,
+                timeout=30)
             self.connected_status = True
             print(f"Connected to {self.host}")
 

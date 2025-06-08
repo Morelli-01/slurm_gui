@@ -922,13 +922,14 @@ class JobsPanel(QWidget):
     def _update_ui_for_project_selection(self):
         """Update UI elements based on the current project selection."""
         # Enable/disable the new job button based on project selection
-        self.new_jobs_button.setEnabled(self.current_project is not None)
-        
-        # Update tooltip to guide the user
-        if self.current_project:
-            self.new_jobs_button.setToolTip(f"Create a new job in '{self.current_project.name}'")
-        else:
-            self.new_jobs_button.setToolTip("Please select a project first")
+        if hasattr(self, "new_jobs_button"):
+            self.new_jobs_button.setEnabled(self.current_project is not None)
+            
+            # Update tooltip to guide the user
+            if self.current_project:
+                self.new_jobs_button.setToolTip(f"Create a new job in '{self.current_project.name}'")
+            else:
+                self.new_jobs_button.setToolTip("Please select a project first")
 
     def resizeEvent(self, event):
         """Adjust the position of the floating button when the widget is resized."""

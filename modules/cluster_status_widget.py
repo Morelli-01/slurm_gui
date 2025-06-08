@@ -219,15 +219,29 @@ class NodeStatusTab(QWidget):
                 stud_used = 0
                 prod_used = 0
                 for job in filtered_jobs:
-                    # Ensure job["Account"] is a string before checking for keywords
                     if isinstance(job.get("Account"), str):
-                        for k in STUDENTS_JOBS_KEYWORD:
-                            if k in job["Account"]:
-                                # Ensure job["GPUs"] is convertible to int
-                                try:
-                                    stud_used += int(job.get("GPUs", 0))
-                                except ValueError:
-                                    print(f"Warning: Could not convert job['GPUs'] to int for job {job.get('JobID')}")
+                        job_gpus = 0
+                        try:
+                            job_gpus = int(job.get("GPUs", 0))
+                        except ValueError:
+                            print(f"Warning: Could not convert job['GPUs'] to int for job {job.get('JobID')}")
+                            continue
+                            
+                        # Check if it's a student job
+                        is_student_job = any(k in job["Account"] for k in STUDENTS_JOBS_KEYWORD)
+                        
+                        if is_student_job:
+                            stud_used += job_gpus
+                        else:
+                            prod_used += job_gpus
+
+                # Ensure stud_used does not exceed used_gpus
+                stud_used = min(stud_used, used_gpus)
+                prod_used = used_gpus - stud_used
+                # Ensure total used does not exceed total_gpus
+                total_used = min(stud_used + prod_used, total_gpus)
+                stud_used = min(stud_used, total_used)
+                prod_used = min(prod_used, total_used - stud_used)
 
                 total_cpu = int(node_info.get("total_cpu", 1))
                 alloc_cpu = int(node_info.get("alloc_cpu", 0))
@@ -255,8 +269,9 @@ class NodeStatusTab(QWidget):
                 # Ensure the total number of blocks matches total_gpus
                 current_blocks = []
                 current_blocks.extend(["stud_used"] * stud_used)
-                current_blocks.extend(["prod_used"] * (used_gpus - stud_used))
+                current_blocks.extend(["prod_used"] * prod_used)
 
+                # Calculate remaining GPUs based on actual SLURM allocation
                 remaining_gpus = total_gpus - used_gpus
                 if remaining_gpus > 0:
                     if available_state:
@@ -266,8 +281,7 @@ class NodeStatusTab(QWidget):
                     elif high_constraint_state:
                         current_blocks.extend(["high-constraint"] * remaining_gpus)
                     else:
-                        # Fallback if none of the above states apply to remaining GPUs
-                        current_blocks.extend(["available"] * remaining_gpus)  # Assume available if no constraints
+                        current_blocks.extend(["available"] * remaining_gpus)
 
                 block_states = current_blocks
 
@@ -276,8 +290,7 @@ class NodeStatusTab(QWidget):
                 block_states = ["reserved"] * total_gpus
             elif "DOWN" in state or "NOT_RESPONDING" in state:
                 block_states = ["unavailable"] * total_gpus
-            elif "MIXED" in state:
-                # For MIXED state, show used GPUs first (both prod and stud), then available ones
+            else:
                 current_blocks = []
                 current_blocks.extend(["stud_used"] * stud_used)
                 current_blocks.extend(["prod_used"] * (used_gpus - stud_used))
@@ -285,14 +298,6 @@ class NodeStatusTab(QWidget):
                 if remaining_gpus > 0:
                     current_blocks.extend(["available"] * remaining_gpus)
                 block_states = current_blocks
-            elif "ALLOCATED" in state:
-                block_states = ["prod_used"] * total_gpus
-            elif "IDLE" in state:
-                block_states = ["available"] * total_gpus
-            else:
-                # Handle any other potential states
-                print(f"Warning: Unhandled node state for {node_name}: {state}")
-                block_states = ["unavailable"] * total_gpus  # Default to unavailable
 
             block_size = 16
             i = 0  # Counter for blocks in the current row
