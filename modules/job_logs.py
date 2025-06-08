@@ -1,9 +1,9 @@
 from modules.defaults import *
-from slurm_connection import SlurmConnection
 from utils import script_dir
 from style import AppStyles
 from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 from modules.data_classes import Project, Job
+from widgets.slurm_connection_widget import SlurmConnection
 
 
 class ContinuousLogFetcherThread(QThread):

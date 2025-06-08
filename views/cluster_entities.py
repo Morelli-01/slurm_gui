@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from slurm_connection import SlurmConnection
 from modules.defaults import STUDENTS_JOBS_KEYWORD
 from utils import parse_memory_size
+from widgets.slurm_connection_widget import SlurmConnection
 
 @dataclass
 class Node:

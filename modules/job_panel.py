@@ -5,7 +5,7 @@ from modules import project_store
 from modules.data_classes import Job, Project
 from modules.job_logs import JobLogsDialog
 from modules.toast_notify import *
-from slurm_connection import SlurmConnection
+from widgets.slurm_connection_widget import SlurmConnection
 from utils import script_dir, settings_path
 from modules.defaults import *
 from modules.project_store import ProjectStore

@@ -1,7 +1,8 @@
 import os
 import platform
 
-from widegts.cluster_status_widget import ClusterStatusWidget
+from controllers.slurm_connection_controller import SlurmWorker
+from widgets.cluster_status_widget import ClusterStatusWidget
 system = platform.system()
 if system == "Windows":
     # Windows: Use Qt's built-in high DPI handling
@@ -16,13 +17,13 @@ from modules.defaults import *
 from modules.job_panel import JobsPanel
 # import modules.cluster_status_widget as cluster_status_widget
 from modules.job_queue_widget import JobQueueWidget
-import slurm_connection
+# import slurm_connection
 from style import AppStyles
 from utils import *
 from pathlib import Path
 import shutil
 # from modules.settings_widget import SettingsWidget
-from widegts.settings_widget import SettingsWidget
+from widgets.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import subprocess
@@ -35,6 +36,7 @@ from datetime import datetime
 import re
 from PyQt6.QtGui import QFontDatabase, QFont
 
+from widgets.slurm_connection_widget import SlurmConnection
 
 
 # --- Constants ---
@@ -129,10 +131,10 @@ class SlurmJobManagerApp(QMainWindow):
         super().__init__()
 
         # Initialize SLURM connection
-        self.slurm_connection = slurm_connection.SlurmConnection(settings_path)
-        self.slurm_worker = slurm_connection.SlurmWorker(self.slurm_connection)
-        self.slurm_worker.connected.connect(self.set_connection_status)
-        self.slurm_worker.data_ready.connect(self.update_ui_with_data)
+        self.slurm_connection = SlurmConnection(settings_path)
+        self.slurm_worker = SlurmWorker(self.slurm_connection)
+        self.slurm_connection.data_fetched.connect(self.update_ui_with_data)
+        self.slurm_connection.error_occurred.connect(self.handle_connection_error)
 
         # Attempt to connect immediately
         try:
@@ -141,7 +143,7 @@ class SlurmJobManagerApp(QMainWindow):
             print(f"Initial connection failed: {e}")
             show_error_toast(self, "Connection Error",
                              f"Failed to connect to the cluster: {e}. Please check settings.")
-
+            
         self.setWindowTitle(APP_TITLE)
 
         # Set window size - Qt 6 handles DPI scaling automatically
@@ -298,6 +300,11 @@ class SlurmJobManagerApp(QMainWindow):
             show_error_toast(self, "Recovery Error",
                              f"Failed to restore project data after reconnection: {str(e)}")
 
+    def handle_connection_error(self, error_message: str):
+        """Handle connection errors from the new MVC structure"""
+        print(f"Connection error: {error_message}")
+        show_error_toast(self, "Connection Error", error_message)
+        
     def _reload_projects_after_reconnection(self):
         """Reload all projects and their jobs after connection recovery"""
         try:
@@ -396,10 +403,12 @@ class SlurmJobManagerApp(QMainWindow):
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
     def refresh_all(self):
-        self.slurm_worker.start()
-        t = Thread(target=self.set_connection_status(
-            self.slurm_connection.is_connected()))
-        t.start()
+        self.slurm_connection.fetch_data_async()
+
+        # self.slurm_worker.start()
+        # t = Thread(target=self.set_connection_status(
+        #     self.slurm_connection.is_connected()))
+        # t.start()
 
     def update_ui_with_data(self, nodes_data, queue_jobs):
         """Updates the UI with new data from SLURM."""

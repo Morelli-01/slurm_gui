@@ -9,9 +9,10 @@ import json
 
 
 # Forward import for type checking – real instance is passed at runtime
-from slurm_connection import SlurmConnection, determine_job_status, parse_duration
 from modules.defaults import *
 from modules.data_classes import *
+from utils import parse_duration
+from widgets.slurm_connection_widget import SlurmConnection
 __all__ = [
     "Job",
     "Project",
@@ -44,11 +45,11 @@ class ProjectStore:
     # ------------------------------------------------------------------
     # initialisation & helpers
     # ------------------------------------------------------------------
-    def _init(self, slurm: SlurmConnection, remote_path: Optional[str]):
+    def _init(self, slurm_connection_widget, remote_path: Optional[str] = None):
         # if not slurm.check_connection():
         #     raise RuntimeError("SlurmConnection must be *connected* before using ProjectStore")
         self.signals = ProjectStoreSignals()
-        self.slurm = slurm
+        self.slurm = slurm_connection_widget
         self._projects: Dict[str, Project] = {}
         # Where to put the INI on the cluster
         if remote_path is None:
@@ -504,32 +505,28 @@ class ProjectStore:
     # ------------------------------------------------------------------
 
     def _start_job_monitoring(self):
-        """Start the background job status monitoring"""
-        from slurm_connection import JobStatusMonitor
+        """Start job monitoring with MVC integration"""
 
-        # Stop existing monitor if any
         if self.job_monitor is not None:
             self.job_monitor.stop()
             self.job_monitor.wait()
 
-        # Only start monitoring if we have a valid connection
         if not self.slurm or not self.slurm.check_connection():
             print("Cannot start job monitoring - no SLURM connection")
             return
 
-        self.job_monitor = JobStatusMonitor(
-            self.slurm, self, update_interval=5)
+        # Pass the MVC widget instead of raw connection
+        # self.job_monitor = JobStatusMonitor(
+        #     self.slurm, self, update_interval=5)
 
-        # Connect signals
-        self.job_monitor.job_status_updated.connect(
-            self._on_job_status_updated)
-        self.job_monitor.job_details_updated.connect(
-            self._on_job_details_updated)
-        self.job_monitor.jobs_batch_updated.connect(
-            self._on_jobs_batch_updated)
+        # Connect signals - same as before
+        self.job_monitor.job_status_updated.connect(self._on_job_status_updated)
+        self.job_monitor.job_details_updated.connect(self._on_job_details_updated)
+        self.job_monitor.jobs_batch_updated.connect(self._on_jobs_batch_updated)
 
         self.job_monitor.start()
         print("Started job status monitoring")
+        
 
     def stop_job_monitoring(self):
         """Stop the background job status monitoring"""
