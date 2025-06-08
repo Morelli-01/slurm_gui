@@ -1,5 +1,7 @@
 import os
 import platform
+
+from widegts.cluster_status_widget import ClusterStatusWidget
 system = platform.system()
 if system == "Windows":
     # Windows: Use Qt's built-in high DPI handling
@@ -12,7 +14,7 @@ from threading import Thread
 from PyQt6.QtCore import Qt
 from modules.defaults import *
 from modules.job_panel import JobsPanel
-import modules.cluster_status_widget as cluster_status_widget
+# import modules.cluster_status_widget as cluster_status_widget
 from modules.job_queue_widget import JobQueueWidget
 import slurm_connection
 from style import AppStyles
@@ -20,7 +22,7 @@ from utils import *
 from pathlib import Path
 import shutil
 # from modules.settings_widget import SettingsWidget
-from controllers.settings_controller import SettingsWidget
+from widegts.settings_widget import SettingsWidget
 from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import subprocess
@@ -758,7 +760,7 @@ class SlurmJobManagerApp(QMainWindow):
         overview_group.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        self.cluster_status_overview_widget = cluster_status_widget.ClusterStatusWidget(
+        self.cluster_status_overview_widget = ClusterStatusWidget(
             slurm_connection=self.slurm_connection)
         overview_layout.addWidget(self.cluster_status_overview_widget,
                                   alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
