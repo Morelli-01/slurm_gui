@@ -705,7 +705,9 @@ class SlurmJobManagerApp(QMainWindow):
 
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
-        self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
+        # self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
+        self.jobs_panel = QFrame()
+        
         self.stacked_widget.addWidget(self.jobs_panel)
 
     def create_cluster_panel(self):

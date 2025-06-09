@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from modules.defaults import STUDENTS_JOBS_KEYWORD
 from utils import parse_memory_size
 from widgets.slurm_connection_widget import SlurmConnection
+import os
 
 @dataclass
 class Node:
@@ -100,9 +101,10 @@ class Node:
         for job in stud_jobs + prod_jobs:
             num = int(job.get("GPUs", 0))
             user = job.get("User", "unknown")
+            job_id = job.get("Job ID", None)
             for i in range(num):
                 if idx + i < self.total_gpus:
-                    tooltips[idx + i] = user
+                    tooltips[idx + i] = f"{user}{os.linesep}Job: {job_id}"
             idx += num
 
         return tooltips
