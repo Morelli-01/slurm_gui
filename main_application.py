@@ -17,6 +17,7 @@ from modules.defaults import *
 from modules.job_panel import JobsPanel
 # import modules.cluster_status_widget as cluster_status_widget
 from modules.job_queue_widget import JobQueueWidget
+# from widgets.job_queue_widget import JobQueueWidget 
 # import slurm_connection
 from style import AppStyles
 from utils import *
@@ -719,9 +720,8 @@ class SlurmJobManagerApp(QMainWindow):
         # Header with refresh button
         header_layout = QHBoxLayout()
         self.cluster_label = QLabel("Cluster Status Overview")
+        self.cluster_label.setObjectName("sectionTitle")
         # Use device-independent font size - Qt handles DPI scaling
-        self.cluster_label.setFont(QFont("Inter", 16))
-        self.cluster_label.setStyleSheet("font-weight: bold;")
 
         self.maintenance_label = QLabel()
         self.maintenance_label.setStyleSheet(

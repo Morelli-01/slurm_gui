@@ -12,6 +12,7 @@ from PyQt6.QtCore import (Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyM
                           QPoint, QEasingCurve)
 import os, sys, threading, shutil, json, tempfile
 import time
+from typing import Dict, List, Any, Optional, Set
 
 JOB_QUEUE_FIELDS = [
     "Job ID", "Job Name", "User",

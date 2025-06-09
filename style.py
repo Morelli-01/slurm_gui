@@ -773,6 +773,53 @@ class AppStyles:
         """
     
     @classmethod
+    def get_job_queue_style(self):
+        return f"""
+            QGroupBox {{
+                border: 2px solid {COLOR_DARK_BORDER};
+                border-radius: 8px;
+                margin-top: 10px;
+                font-size: 20px;
+                font-weight: bold;
+                color: {COLOR_DARK_FG};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                background-color: {COLOR_DARK_BG};
+                color: {COLOR_DARK_FG};
+                margin-left: 5px;
+            }}
+            TableWidget {{
+                background-color: {COLOR_DARK_BG};
+                color: {COLOR_DARK_FG};
+                selection-background-color: {COLOR_DARK_BG_HOVER};
+                selection-color: {COLOR_DARK_FG};
+                border: 1px solid {COLOR_DARK_BORDER};
+                border-radius: 5px;
+                gridline-color: {COLOR_DARK_BORDER};
+                font-size: 16px;
+            }}
+            QHeaderView::section {{
+                background-color: {COLOR_DARK_BG_ALT};
+                color: {COLOR_DARK_FG};
+                padding: 5px;
+                border: 1px solid {COLOR_DARK_BORDER};
+                border-bottom: 2px solid {COLOR_BLUE};
+                font-weight: bold;
+            }}
+            QTableWidget::item {{
+                padding: 5px;
+            }}
+            QTableWidget::item:selected {{
+                background-color: {COLOR_DARK_BG_HOVER};
+                color: {COLOR_DARK_FG};
+            }}
+
+        """
+
+    @classmethod
     def get_complete_stylesheet(cls, theme=THEME_DARK):
         """Get complete stylesheet for the application"""
         stylesheet = ""
@@ -790,5 +837,6 @@ class AppStyles:
         stylesheet += cls.get_cluster_status_styles(theme)
         stylesheet += cls.get_dialog_styles(theme)
         stylesheet += cls.get_job_action_container_styles()
+        stylesheet += cls.get_job_queue_style()
 
         return stylesheet
