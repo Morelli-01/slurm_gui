@@ -16,13 +16,12 @@ from PyQt6.QtCore import Qt
 from modules.defaults import *
 from modules.job_panel import JobsPanel
 from widgets.job_queue_widget import JobQueueWidget 
-# import slurm_connection
 from style import AppStyles
 from utils import *
 from pathlib import Path
 import shutil
 from widgets.settings_widget import SettingsWidget
-from modules.toast_notify import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 from modules.project_store import ProjectStore
 import subprocess
 import random

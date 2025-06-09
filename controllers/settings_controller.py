@@ -1,7 +1,7 @@
 from datetime import datetime
 from models.settings_model import SettingsModel
 from modules.defaults import *
-from modules.toast_notify import *
+from widgets.toast_widget import *
 from views.settings_view import SettingsView
 
 # CONTROLLER

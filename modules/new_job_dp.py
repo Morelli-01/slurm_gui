@@ -3,7 +3,7 @@ from modules.defaults import *
 from modules.remote_directory_panel import RemoteDirectoryDialog
 from utils import create_separator, script_dir
 from style import AppStyles
-from modules.toast_notify import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
+from widgets.toast_widget import show_error_toast, show_info_toast, show_success_toast, show_warning_toast
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QTabWidget, QGroupBox, QLabel, QLineEdit, QSpinBox,
@@ -1148,7 +1148,7 @@ class NewJobDialog(QDialog):
         is_valid, issues = self.validate_job_before_creation()
 
         if not is_valid:
-            from modules.toast_notify import show_warning_toast
+            from widgets.toast_widget import show_warning_toast
             # Show first 5 issues
             issue_text = "\\n".join(f"• {issue}" for issue in issues[:5])
             if len(issues) > 5:
