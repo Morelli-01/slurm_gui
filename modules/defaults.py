@@ -52,19 +52,6 @@ NODE_STATE_DOWN = "DOWN"
 NODE_STATE_DRAIN = "DRAIN"
 NODE_STATE_UNKNOWN = "UNKNOWN"
 
-
-# Colors (Catppuccin Macchiato inspired for Dark, simple Light)
-# COLOR_DARK_BG = "#1e1e2f"
-# COLOR_DARK_FG = "#f8f8f2"
-# COLOR_DARK_BG_ALT = "#2e2e3f"
-# COLOR_DARK_BG_HOVER = "#3e3e5f"
-# COLOR_DARK_BORDER = "#44475a"
-# COLOR_GREEN = "#50fa7b"  # Brighter Green
-# COLOR_RED = "#ff5555"   # Brighter Red
-# COLOR_BLUE = "#2196F3"  # Brighter Blue
-# COLOR_ORANGE = "#ffb86c"  # Brighter Orange
-# COLOR_GRAY = "#6272a4"   # Gray (Unknown/Offline) - Was Blue
-
 # general colors
 
 COLOR_LIGHT_BG = "#eff1f5"  # Light Background

@@ -16,8 +16,7 @@ from PyQt6.QtCore import Qt
 from modules.defaults import *
 from modules.job_panel import JobsPanel
 # import modules.cluster_status_widget as cluster_status_widget
-from modules.job_queue_widget import JobQueueWidget
-# from widgets.job_queue_widget import JobQueueWidget 
+from widgets.job_queue_widget import JobQueueWidget 
 # import slurm_connection
 from style import AppStyles
 from utils import *
