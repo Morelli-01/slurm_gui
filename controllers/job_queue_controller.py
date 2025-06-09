@@ -3,149 +3,145 @@ from modules.defaults import *
 from views.job_queue_view import JobQueueView
 
 
-
 class JobQueueController:
-    """Controller: Coordinates between model and view, handles user interactions"""
+    """Controller: Manages interaction between model and view"""
     
     def __init__(self, parent_widget):
         self.parent = parent_widget
         self.model = JobQueueModel()
-        
-        # Setup view
         self.table = QTableWidget()
         self.view = JobQueueView(self.table)
         
-        # Setup table with initial columns
-        self.view.setup_columns(self.model.get_visible_fields())
-        
-        # Connect signals
-        self._connect_signals()
-        
-        # Enable sorting
-        self.table.setSortingEnabled(True)
-        self.table.horizontalHeader().sortIndicatorChanged.connect(self._on_sort_changed)
+        # Connect sorting signal exactly like original
+        header = self.table.horizontalHeader()
+        header.setSectionsClickable(True)
+        header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
     
-    def _connect_signals(self):
-        """Connect table signals to controller methods"""
-        # Add any additional signal connections here if needed
-        pass
+    def _on_sort_indicator_changed(self, logical_index: int, order: Qt.SortOrder):
+        """Handle sort indicator changes exactly like original"""
+        if 0 <= logical_index < len(self.model.visible_fields):
+            self.model._sorted_by_field_name = self.model.visible_fields[logical_index]
+            self.model._sorted_by_order = order
+        else:
+            self.model._sorted_by_field_name = None
+            self.model._sorted_by_order = None
     
-    def get_table_widget(self) -> QTableWidget:
-        """Get the table widget for embedding in parent"""
-        return self.table
-    
-    def update_jobs(self, new_jobs: List[Dict[str, Any]]):
-        """Update jobs with efficient incremental updates"""
-        if not new_jobs and hasattr(self.parent, 'slurm_connection'):
-            # Check for connection issues
-            if (hasattr(self.parent, 'slurm_connection') and 
-                self.parent.slurm_connection and 
-                not self.parent.slurm_connection.check_connection()):
+    def update_queue_status(self, jobs_data: List[Dict[str, Any]]):
+        """Update queue status with efficiency improvements but same behavior"""
+        # Check connection exactly like original
+        if not jobs_data and hasattr(self.parent, 'slurm_connection'):
+            if self.parent.slurm_connection and not self.parent.slurm_connection.check_connection():
                 self.view.show_connection_error()
                 return
         
-        # Get changes from model
-        changes = self.model.update_jobs(new_jobs)
+        # Always do full rebuild for now to maintain exact original behavior
+        # TODO: Implement incremental updates after ensuring exact compatibility
+        changes = self.model.update_jobs(jobs_data)
         
-        # Determine if we need full rebuild or can do incremental updates
-        visible_fields = self.model.get_visible_fields()
-        current_columns = [self.table.horizontalHeaderItem(i).text() 
-                          for i in range(self.table.columnCount())] if self.table.columnCount() > 0 else []
+        self.view.setup_columns(self.model.visible_fields)
+        self.view.populate_table_full(jobs_data, self.model.visible_fields)
         
-        needs_column_rebuild = current_columns != visible_fields
+        # Apply sorting exactly like original
+        applied_user_sort = False
+        if self.model._sorted_by_field_name and self.model._sorted_by_order is not None:
+            if self.model._sorted_by_field_name in self.model.visible_fields:
+                try:
+                    column_index_to_sort = self.model.visible_fields.index(self.model._sorted_by_field_name)
+                    self.table.sortItems(column_index_to_sort, self.model._sorted_by_order)
+                    applied_user_sort = True
+                except ValueError:
+                    pass
         
-        if needs_column_rebuild or len(changes['added']) + len(changes['removed']) > len(new_jobs) * 0.5:
-            # Rebuild if columns changed or too many changes (>50% of data)
-            self._full_rebuild()
-        else:
-            # Incremental update
-            self._incremental_update(changes, visible_fields)
-        
-        # Apply current filter and sorting
-        self._apply_display_state()
-    
-    def _full_rebuild(self):
-        """Completely rebuild the table"""
-        self.table.setSortingEnabled(False)
-        
-        visible_fields = self.model.get_visible_fields()
-        self.view.setup_columns(visible_fields)
-        self.view.clear_table()
-        
-        # Add all filtered jobs
-        for job in self.model.get_filtered_jobs():
-            self.view.add_job_row(job, visible_fields)
-        
-        self.table.setSortingEnabled(True)
-    
-    def _incremental_update(self, changes: Dict[str, Any], visible_fields: List[str]):
-        """Apply incremental updates to the table"""
-        self.table.setSortingEnabled(False)
-        
-        # Remove jobs
-        for removed in reversed(changes['removed']):  # Remove from bottom up
-            job_id = removed['job_id']
-            row = self.view.find_job_row(job_id)
-            if row >= 0:
-                self.view.remove_job_row(row)
-        
-        # Update existing jobs
-        for updated in changes['updated']:
-            job_id = updated['job_id']
-            row = self.view.find_job_row(job_id)
-            if row >= 0:
-                self.view.update_job_row(row, updated['new'], visible_fields)
-        
-        # Add new jobs
-        for added in changes['added']:
-            self.view.add_job_row(added, visible_fields)
-        
-        self.table.setSortingEnabled(True)
-    
-    def _apply_display_state(self):
-        """Apply current sorting and filtering state"""
-        # Apply sorting if set
-        if self.model.sort_field and self.model.sort_field in self.model.get_visible_fields():
+        if not applied_user_sort:
+            # Default sorting exactly like original
             try:
-                column_index = self.model.get_visible_fields().index(self.model.sort_field)
-                self.table.sortItems(column_index, self.model.sort_order)
+                user_column_index = self.model.visible_fields.index("User")
+                self.table.sortItems(user_column_index, Qt.SortOrder.AscendingOrder)
             except ValueError:
                 pass
-        else:
-            # Default sorting: Status descending, then User ascending
             try:
-                if "Status" in self.model.get_visible_fields():
-                    status_col = self.model.get_visible_fields().index("Status")
-                    self.table.sortItems(status_col, Qt.SortOrder.DescendingOrder)
-                elif "User" in self.model.get_visible_fields():
-                    user_col = self.model.get_visible_fields().index("User")
-                    self.table.sortItems(user_col, Qt.SortOrder.AscendingOrder)
+                status_column_index = self.model.visible_fields.index("Status")
+                self.table.sortItems(status_column_index, Qt.SortOrder.DescendingOrder)
             except ValueError:
                 pass
+        
+        # Re-apply filters exactly like original
+        if self.model.jobs_filter_text:
+            self._filter_table(self.model.jobs_filter_text)
+        elif self.model.jobs_filter_list:
+            self._filter_table_by_list(self.model.jobs_filter_list)
     
-    def _on_sort_changed(self, logical_index: int, order: Qt.SortOrder):
-        """Handle sort indicator changes"""
-        visible_fields = self.model.get_visible_fields()
-        if 0 <= logical_index < len(visible_fields):
-            field_name = visible_fields[logical_index]
-            self.model.set_sort(field_name, order)
+    def _filter_table(self, filter_text: str):
+        """Filter table by text exactly like original"""
+        filter_text = str(filter_text).lower()
+        self.model.jobs_filter_text = filter_text
+        self.model.jobs_filter_list = []  # Clear list filter when text filter is used
+        
+        def text_filter_func(job_data_dict):
+            if not filter_text:  # If filter_text is empty, all rows are visible
+                return True
+            
+            # Check all fields exactly like original
+            for field_key in JOB_QUEUE_FIELDS:
+                field_value_obj = job_data_dict.get(field_key)
+                if field_value_obj is not None:
+                    field_value_str_lower = str(field_value_obj).lower()
+                    if filter_text in field_value_str_lower:
+                        return True
+            return False
+        
+        self.view.apply_filter_to_rows(self.model.current_jobs_data, text_filter_func)
     
-    def filter_by_text(self, filter_text: str):
-        """Apply text filter"""
-        self.model.set_text_filter(filter_text)
-        self._full_rebuild()  # Rebuild to apply filter
+    def _filter_table_by_list(self, filter_list: List[str]):
+        """Filter table by list exactly like original"""
+        if not isinstance(filter_list, list):
+            processed_filter_list = []
+        else:
+            processed_filter_list = [str(f).lower() for f in filter_list if f and str(f).strip()]
+        
+        self.model.jobs_filter_list = processed_filter_list
+        self.model.jobs_filter_text = ""  # Clear text filter when list filter is used
+        
+        def list_filter_func(job_data_dict):
+            if not processed_filter_list:  # If filter list is empty, all rows are visible
+                return True
+            
+            # Check all fields exactly like original
+            for field_key in JOB_QUEUE_FIELDS:
+                field_value_obj = job_data_dict.get(field_key)
+                if field_value_obj is not None:
+                    field_value_str_lower = str(field_value_obj).lower()
+                    for filter_item_lower in processed_filter_list:
+                        if filter_item_lower in field_value_str_lower:
+                            return True
+            return False
+        
+        self.view.apply_filter_to_rows(self.model.current_jobs_data, list_filter_func)
     
-    def filter_by_list(self, filter_list: List[str]):
-        """Apply list filter"""
-        self.model.set_list_filter(filter_list)
-        self._full_rebuild()  # Rebuild to apply filter
-    
-    def filter_by_negative_keywords(self, negative_list: List[str]):
-        """Apply negative filter"""
-        self.model.set_negative_filter(negative_list)
-        self._full_rebuild()  # Rebuild to apply filter
-    
-    def reload_settings(self):
-        """Reload settings and update display"""
-        self.model.reload_field_settings()
-        self._full_rebuild()
+    def _filter_table_by_negative_keywords(self, negative_keyword_list: List[str]):
+        """Filter table by negative keywords exactly like original"""
+        if not isinstance(negative_keyword_list, list):
+            processed_negative_list = []
+        else:
+            processed_negative_list = [str(f).lower() for f in negative_keyword_list if f and str(f).strip()]
+        
+        self.model.jobs_negative_filter_list = processed_negative_list
+        self.model.jobs_filter_text = ""
+        self.model.jobs_filter_list = []
+        
+        def negative_filter_func(job_data_dict):
+            if not processed_negative_list:
+                return True
+            
+            # Check all fields exactly like original
+            for field_key in JOB_QUEUE_FIELDS:
+                field_value_obj = job_data_dict.get(field_key)
+                if field_value_obj is not None:
+                    field_value_str_lower = str(field_value_obj).lower()
+                    for negative_item_lower in processed_negative_list:
+                        if negative_item_lower in field_value_str_lower:
+                            return False  # Hide row if negative keyword found
+            return True
+        
+        self.view.apply_filter_to_rows(self.model.current_jobs_data, negative_filter_func)
+

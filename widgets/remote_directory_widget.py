@@ -8,8 +8,7 @@ from typing import List, Optional, Dict, Any
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListView, QLineEdit, 
-    QToolButton, QProgressBar, QLabel, QPushButton, QStandardItemModel,
-    QStandardItem, QSortFilterProxyModel
+    QToolButton, QProgressBar, QLabel, QPushButton
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QSize
@@ -17,7 +16,7 @@ from PyQt6.QtCore import Qt, QSize
 from modules.defaults import *
 from utils import script_dir
 from style import AppStyles
-from modules.toast_notify import show_error_toast, show_warning_toast
+from widgets.toast_widget import show_error_toast, show_warning_toast
 
 # ============================================================================
 # MODEL - Data and Business Logic

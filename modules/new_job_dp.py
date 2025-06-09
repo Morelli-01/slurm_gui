@@ -1,6 +1,6 @@
 from pathlib import Path
 from modules.defaults import *
-from modules.remote_directory_panel import RemoteDirectoryDialog
+from widgets.remote_directory_widget import RemoteDirectoryDialog
 from utils import create_separator, script_dir
 from style import AppStyles
 from widgets.toast_widget import show_error_toast, show_info_toast, show_success_toast, show_warning_toast

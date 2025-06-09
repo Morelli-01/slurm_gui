@@ -2,20 +2,20 @@ from modules.defaults import *
 
 
 class JobQueueView:
-    """View: Handles the UI display and user interactions"""
+    """View: Handles table display with original styling"""
     
     def __init__(self, table_widget: QTableWidget):
         self.table = table_widget
-        self.row_job_map: Dict[int, str] = {}  # row -> job_id mapping
-        self._setup_table()
+        self.job_row_map: Dict[str, int] = {}  # job_id -> row
+        self._setup_table_properties()
     
-    def _setup_table(self):
-        """Setup table widget properties"""
+    def _setup_table_properties(self):
+        """Setup table properties exactly like original"""
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         
-        # Apply styling
+        # Apply original styling exactly
         self.table.setStyleSheet(f"""
             QTableWidget {{
                 background-color: {COLOR_DARK_BG};
@@ -45,123 +45,89 @@ class JobQueueView:
         """)
     
     def setup_columns(self, visible_fields: List[str]):
-        """Setup table columns based on visible fields"""
+        """Setup columns exactly like original"""
         self.table.setColumnCount(len(visible_fields))
         self.table.setHorizontalHeaderLabels(visible_fields)
         
-        # Configure column resize modes
         header = self.table.horizontalHeader()
         for i, field in enumerate(visible_fields):
             if field == "Job Name":
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
             else:
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-        
-        if visible_fields:
+
+        if self.table.columnCount() > 0:
             header.setStretchLastSection(True)
+        else:
+            header.setStretchLastSection(False)
     
-    def add_job_row(self, job: Dict[str, Any], visible_fields: List[str]) -> int:
-        """Add a new job row and return the row index"""
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        
-        job_id = job.get("Job ID", "")
-        self.row_job_map[row] = job_id
-        
-        self._populate_row(row, job, visible_fields)
-        return row
-    
-    def update_job_row(self, row: int, job: Dict[str, Any], visible_fields: List[str]):
-        """Update an existing job row"""
-        if 0 <= row < self.table.rowCount():
-            self._populate_row(row, job, visible_fields)
-    
-    def remove_job_row(self, row: int):
-        """Remove a job row"""
-        if 0 <= row < self.table.rowCount():
-            # Update row mappings for rows that will shift up
-            job_id = self.row_job_map.get(row)
-            self.table.removeRow(row)
-            
-            # Rebuild row mapping since indices changed
-            self._rebuild_row_mapping()
-    
-    def _populate_row(self, row: int, job: Dict[str, Any], visible_fields: List[str]):
-        """Populate a table row with job data"""
-        for col, field in enumerate(visible_fields):
-            item_data = job.get(field, "N/A")
-            
-            # Handle different data types
-            if isinstance(item_data, int):
-                item = QTableWidgetItem()
-                item.setData(Qt.ItemDataRole.EditRole, item_data)
-            elif isinstance(item_data, str):
-                item = QTableWidgetItem(item_data)
-            elif isinstance(item_data, list) and len(item_data) == 2:
-                # Handle time used format [display_string, timedelta]
-                item = QTableWidgetItem()
-                item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds if hasattr(item_data[1], 'seconds') else 0)
-                item.setData(Qt.ItemDataRole.DisplayRole, str(item_data[0]))
-            else:
-                item = QTableWidgetItem(str(item_data))
-            
-            # Apply status coloring for Status column
-            if field == "Status":
-                self._apply_status_color(item, str(item_data).upper())
-            
-            # Apply alternating row colors
-            if row % 2 == 0:
-                item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
-            else:
-                item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-            
-            # Set default foreground color
-            item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
-            
-            self.table.setItem(row, col, item)
-    
-    def _apply_status_color(self, item: QTableWidgetItem, status: str):
-        """Apply color based on job status"""
-        status_colors = {
-            "RUNNING": COLOR_GREEN,
-            "PENDING": COLOR_ORANGE,
-            "COMPLETED": COLOR_BLUE,
-            "FAILED": COLOR_RED,
-            "COMPLETING": COLOR_ORANGE,
-            "PREEMPTED": COLOR_RED,
-            "SUSPENDED": COLOR_ORANGE,
-            "STOPPED": COLOR_BLUE,
-            "CANCELLED": COLOR_PURPLE,
-        }
-        
-        color = status_colors.get(status, COLOR_DARK_FG)
-        item.setForeground(QBrush(QColor(color)))
-    
-    def _rebuild_row_mapping(self):
-        """Rebuild the row to job ID mapping after row operations"""
-        new_mapping = {}
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, 0)  # Job ID is in first column
-            if item:
-                job_id = item.text()
-                new_mapping[row] = job_id
-        self.row_job_map = new_mapping
-    
-    def find_job_row(self, job_id: str) -> int:
-        """Find the row index for a given job ID"""
-        for row, mapped_job_id in self.row_job_map.items():
-            if mapped_job_id == job_id:
-                return row
-        return -1
-    
-    def clear_table(self):
-        """Clear all table contents"""
+    def populate_table_full(self, jobs_data: List[Dict[str, Any]], visible_fields: List[str]):
+        """Populate entire table - exactly like original logic"""
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
-        self.row_job_map.clear()
+        self.job_row_map.clear()
+        
+        for original_job_index, job_dict in enumerate(jobs_data):
+            current_table_row = self.table.rowCount()
+            self.table.insertRow(current_table_row)
+            
+            job_id = job_dict.get("Job ID", "")
+            self.job_row_map[job_id] = current_table_row
+            
+            for col_idx, field_name in enumerate(visible_fields):
+                item_data = job_dict.get(field_name, "N/A")
+                
+                # Handle different data types exactly like original
+                if isinstance(item_data, int):
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data)
+                elif isinstance(item_data, str):
+                    item = QTableWidgetItem(item_data)
+                else:
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                    item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                
+                # Store original index for filtering - exactly like original
+                item.setData(Qt.ItemDataRole.UserRole, original_job_index)
+                
+                # Default foreground for all items
+                item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
+                
+                # Status coloring exactly like original
+                if field_name == "Status":
+                    status = job_dict.get("Status", "").upper()
+                    color = QColor(COLOR_DARK_FG)  # Default
+                    if status == STATUS_RUNNING:
+                        color = QColor(COLOR_GREEN)
+                    elif status == STATUS_PENDING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_COMPLETED:
+                        color = QColor(COLOR_BLUE)
+                    elif status == STATUS_FAILED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_COMPLETING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_PREEMPTED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_SUSPENDED:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_STOPPED:
+                        color = QColor(COLOR_BLUE)
+                    item.setForeground(QBrush(color))
+                
+                # Alternating row colors exactly like original
+                if current_table_row % 2 == 0:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
+                else:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
+                
+                self.table.setItem(current_table_row, col_idx, item)
+        
+        self.table.setSortingEnabled(True)
     
     def show_connection_error(self):
-        """Show connection error message"""
-        self.clear_table()
+        """Show connection error exactly like original"""
         self.table.setRowCount(1)
         self.table.setColumnCount(1)
         self.table.setHorizontalHeaderLabels(["Status"])
@@ -173,3 +139,28 @@ class JobQueueView:
         
         self.table.setItem(0, 0, error_item)
         self.table.horizontalHeader().setStretchLastSection(True)
+    
+    def apply_filter_to_rows(self, jobs_data: List[Dict[str, Any]], filter_func):
+        """Apply filter function to table rows - exactly like original logic"""
+        if self.table.columnCount() == 0:
+            for r_idx in range(self.table.rowCount()):
+                self.table.setRowHidden(r_idx, True)
+            return
+        
+        for table_row_idx in range(self.table.rowCount()):
+            first_item_in_row = self.table.item(table_row_idx, 0)
+            
+            if not first_item_in_row:
+                self.table.setRowHidden(table_row_idx, True)
+                continue
+            
+            original_job_idx = first_item_in_row.data(Qt.ItemDataRole.UserRole)
+            
+            if original_job_idx is None or not (0 <= original_job_idx < len(jobs_data)):
+                self.table.setRowHidden(table_row_idx, True)
+                continue
+            
+            job_data_dict = jobs_data[original_job_idx]
+            row_should_be_visible = filter_func(job_data_dict)
+            self.table.setRowHidden(table_row_idx, not row_should_be_visible)
+
