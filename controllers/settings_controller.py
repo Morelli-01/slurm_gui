@@ -3,7 +3,8 @@ from models.settings_model import SettingsModel
 from modules.defaults import *
 from widgets.toast_widget import *
 from views.settings_view import SettingsView
-
+from utils import settings_path
+from pathlib import Path
 # CONTROLLER
 class SettingsController(QObject):
     """Controller: Handles user interactions and coordinates model/view"""
@@ -99,16 +100,12 @@ class SettingsController(QObject):
     
     def _load_settings(self):
         """Load settings from QSettings"""
-        from pathlib import Path
-        from utils import settings_path
         
         settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
         self.model.load_from_qsettings(settings)
     
     def _persist_settings(self):
         """Persist settings to QSettings"""
-        from pathlib import Path
-        from utils import settings_path
         
         settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
         self.model.save_to_qsettings(settings)

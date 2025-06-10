@@ -1,6 +1,6 @@
 from controllers.job_queue_controller import JobQueueController
 from modules.defaults import *
-from style import AppStyles
+from core.style import AppStyles
 
 
 class JobQueueWidget(QGroupBox):

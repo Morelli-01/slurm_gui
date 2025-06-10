@@ -15,7 +15,7 @@ from PyQt6.QtCore import Qt, QSize
 
 from modules.defaults import *
 from utils import script_dir
-from style import AppStyles
+from core.style import AppStyles
 from widgets.toast_widget import show_error_toast, show_warning_toast
 
 # ============================================================================

@@ -1,5 +1,5 @@
 from modules.defaults import *
-from style import AppStyles
+from core.style import AppStyles
 
 # VIEW
 class SettingsView(QWidget):

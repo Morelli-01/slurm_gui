@@ -3,7 +3,7 @@ from typing import Iterable, Sequence, Any, List, Dict, Optional
 from modules.data_classes import Job, Project
 from utils import script_dir
 from modules.defaults import *
-from style import AppStyles
+from core.style import AppStyles
 
 
 class JobsGroup(QWidget):

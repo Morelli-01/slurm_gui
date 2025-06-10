@@ -1,4 +1,6 @@
 import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 import platform
 
 from controllers.slurm_connection_controller import SlurmWorker
@@ -16,7 +18,7 @@ from PyQt6.QtCore import Qt
 from modules.defaults import *
 from modules.job_panel import JobsPanel
 from widgets.job_queue_widget import JobQueueWidget 
-from style import AppStyles
+from core.style import AppStyles
 from utils import *
 from pathlib import Path
 import shutil
@@ -28,7 +30,6 @@ import random
 import threading
 import tempfile
 import sys
-from utils import script_dir
 from datetime import datetime
 import re
 from PyQt6.QtGui import QFontDatabase, QFont
