@@ -1,11 +1,18 @@
 # slurm_gui
 
-A simple Python GUI for managing SLURM jobs.
+A modern Python GUI for managing SLURM jobs with MVC architecture, real-time monitoring, and advanced project organization.
 
 ## Features
 
-- Submit and monitor SLURM jobs
-- User-friendly interface
+- Submit and monitor SLURM jobs with real-time updates
+- Project-based job organization and management
+- Comprehensive cluster status visualization (GPU, CPU, RAM usage)
+- Job arrays and dependency management
+- Discord webhook notifications for job status changes
+- Remote directory browsing and terminal access
+- Advanced job queue filtering and sorting
+- Live job log viewing with auto-refresh
+- Modern dark theme with toast notifications
 
 ## Getting Started
 
@@ -27,36 +34,63 @@ A simple Python GUI for managing SLURM jobs.
 
 ## File/Folder Overview
 
-- `main_application.py`: Main entry point. Starts the PyQt GUI, manages the core window and user interactions.
-- `slurm_connection.py`: Logic for connecting to a SLURM cluster via SSH, running commands, fetching job/node info, and handling job submissions.
-- `style.py`: Centralized Qt stylesheet and theme definitions used throughout the GUI.
-- `utils.py`: Utility functions and common constants (e.g., paths, color codes), plus custom widgets for the UI.
-- `requirements.txt`: Lists Python dependencies to run the application.
+- `main_application.py`: Main entry point. Starts the PyQt GUI and manages the core window and user interactions.
+- `style.py`: Centralized styling system with theme management and component-specific styles.
+- `utils.py`: Utility functions, helper classes, and common constants used throughout the application.
+- `requirements.txt`: Lists Python dependencies required to run the application.
 - `README.md`: This file.
 
 ### Folders
 
-- `modules/`: Contains GUI panels, widgets, and supporting logic for jobs, settings, notifications, etc. See breakdown below.
-- `src_static/`: Static resources like icons, images, default config files, and themes. (See [all static files](https://github.com/Morelli-01/slurm_gui/tree/main/src_static)).
+- `controllers/`: MVC controllers that coordinate between models and views, handling business logic and user interactions.
+- `models/`: Data models managing SLURM connections, job data, settings, and business logic with signal emission for real-time updates.
+- `views/`: Pure UI presentation components that handle user interface rendering and emit signals for user interactions.
+- `widgets/`: Composite UI components that combine MVC patterns into reusable widgets, maintaining backward compatibility.
+- `modules/`: Core application modules including job management, project storage, data classes, and configuration defaults.
+- `src_static/`: Static resources like icons, images, default config files, and themes.
 
 _Note: Only the first 10 files per folder are listed here due to API limitations. For a full list, visit the links above._
 
 ---
 
-### `modules/` Folder File Overview
+### Key MVC Components
 
-- `cluster_status_widget.py`: Implements the Cluster Status panel with GPU/CPU/RAM visualizations, node status, and live updates from the cluster.
-- `data_classes.py`: Defines the core data models for jobs and projects (Job, Project) and helper methods for SLURM job serialization, validation, and conversion.
-- `defaults.py`: Central location for default constants, color definitions, status names, and style options used app-wide.
-- `job_logs.py`: Dialog and logic for viewing job logs (stdout, stderr), live-updates logs via background threads, and provides job detail views.
-- `job_panel.py`: Main panel for managing jobs, including job creation, submission, status display, and interaction with projects.
-- `job_queue_widget.py`: Table widget for displaying, filtering, and sorting the global job queue from SLURM.
-- `jobs_group.py`: Multi-project job table container; enables switching between projects and efficiently updating job tables for each project.
-- `new_job_dp.py`: Dialog and logic for creating and editing new SLURM jobs, with form validation and advanced options.
-- `project_store.py`: Manages project/job storage, synchronizes with remote SLURM cluster settings, and monitors job status in the background.
-- `remote_directory_panel.py`: Dialog and logic for browsing, filtering, and selecting remote directories on the SLURM cluster (via SSH).
+#### Controllers (`controllers/`)
+- `cluster_status_controller.py`: Coordinates cluster status data between model and view components.
+- `job_queue_controller.py`: Manages job queue display logic and filtering operations.
+- `settings_controller.py`: Handles application settings and configuration management.
+- `slurm_connection_controller.py`: Controls SLURM connection lifecycle and data fetching operations.
 
-_Note: For the full up-to-date list, see the [modules directory on GitHub](https://github.com/Morelli-01/slurm_gui/tree/main/modules)._
+#### Models (`models/`)
+- `cluster_status_model.py`: Manages cluster node data processing and caching.
+- `job_queue_model.py`: Handles job queue data management and filtering state.
+- `settings_model.py`: Manages application settings persistence and validation.
+- `slurm_connection_model.py`: Core SLURM connection logic, command execution, and job submission.
+
+#### Views (`views/`)
+- `cluster_status_view.py`: UI components for cluster status visualization with multiple tabs.
+- `job_queue_view.py`: Table display components for job queue presentation.
+- `settings_view.py`: Settings interface with connection, display, and notification options.
+- `slurm_connection_view.py`: Connection status and cluster information display.
+
+#### Widgets (`widgets/`)
+- `cluster_status_widget.py`: Complete cluster status widget combining MVC components.
+- `job_queue_widget.py`: Job queue table widget with filtering and sorting capabilities.
+- `settings_widget.py`: Settings management widget with tabbed interface.
+- `slurm_connection_widget.py`: SLURM connection facade maintaining backward compatibility.
+- `toast_widget.py`: Modern notification system with multiple toast types.
+- `remote_directory_widget.py`: Remote directory browser with SSH file system access.
+
+#### Core Modules (`modules/`)
+- `data_classes.py`: Job and Project data structures with validation and serialization.
+- `job_panel.py`: Main job management interface with project organization.
+- `jobs_group.py`: Job table container with efficient updates and action buttons.
+- `new_job_dp.py`: Job creation and modification dialogs with advanced options.
+- `project_store.py`: Project and job persistence with real-time monitoring.
+- `job_logs.py`: Job log viewing with live updates and progress tracking.
+- `defaults.py`: Application constants, enums, and default configurations.
+
+_Note: For the full up-to-date list, see the [project directory on GitHub](https://github.com/Morelli-01/slurm_gui)._
 
 ## License
 
