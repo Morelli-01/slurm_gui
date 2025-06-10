@@ -984,8 +984,8 @@ class SlurmJobManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         """Handles the window close event."""
-        if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
-            self.jobs_panel.project_storer.stop_job_monitoring()
+        # if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
+        #     self.jobs_panel.project_storer.stop_job_monitoring()
 
         self.slurm_connection.close()
         print("Closing application.")

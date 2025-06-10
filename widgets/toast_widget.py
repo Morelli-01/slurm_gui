@@ -445,7 +445,7 @@ class ToastView(QWidget):
         super().show()
         
         # Setup slide animation
-        start_pos = QPoint(target_position.x() + 400, target_position.y())
+        start_pos = QPoint(target_position.x(), target_position.y())
         self.move(start_pos)
         self.setWindowOpacity(0.0)
         
