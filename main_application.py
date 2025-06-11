@@ -1,4 +1,6 @@
 import os
+
+from core.event_bus import Events, get_event_bus
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 import platform
@@ -127,7 +129,7 @@ class ConnectionSetupDialog(QDialog):
 class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
-
+        self.event_bus = get_event_bus()
         # Initialize SLURM connection
         self.slurm_connection = SlurmConnection(settings_path)
         self.slurm_worker = SlurmWorker(self.slurm_connection)
@@ -186,7 +188,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.setup_refresh_timer()
         self.set_connection_status(self.slurm_connection.is_connected())
         self.refresh_all()
-        self.load_settings()
+        # self.load_settings()
 
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling with proper project store recovery"""
@@ -523,7 +525,6 @@ class SlurmJobManagerApp(QMainWindow):
             QPixmap(initial_status_icon_path).scaled(icon_size,
                                                      Qt.AspectRatioMode.KeepAspectRatio,
                                                      Qt.TransformationMode.SmoothTransformation))
-        self.connection_status.clicked.connect(self.update_connection_setting)
         nav_layout.addWidget(self.connection_status)
 
         self.main_layout.addWidget(nav_widget)
@@ -782,12 +783,15 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        self.settings_panel.save_appearance_btn.clicked.connect(
-            self.save_appearence_settings)
-        self.settings_panel.connection_settings_btn.clicked.connect(
-            self.update_connection_setting)
-        self.settings_panel.save_button.clicked.connect(self.save_settings)
+        # self.settings_panel.save_appearance_btn.clicked.connect(
+        #     self.save_appearence_settings)
+        # self.settings_panel.connection_settings_btn.clicked.connect(
+        #     self.update_connection_setting)
+        # self.settings_panel.save_button.clicked.connect(self.save_settings)
         self.stacked_widget.addWidget(self.settings_panel)
+        self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
+        # self.connection_status.clicked.connect(self.update_connection_setting)
+
 
     # --- Action & Data Methods ---
     def filter_by_accounts(self, account_type):
@@ -802,43 +806,43 @@ class SlurmJobManagerApp(QMainWindow):
             self.job_queue_widget.filter_table_by_negative_keywords(
                 STUDENTS_JOBS_KEYWORD)
 
-    def update_connection_setting(self):
-        """Enhanced connection update with proper project store reinitialization"""
-        print("Updating connection settings...")
+    # def update_connection_setting(self):
+    #     """Enhanced connection update with proper project store reinitialization"""
+    #     print("Updating connection settings...")
 
-        # Save settings first
-        self.save_settings()
+    #     # Save settings first
+    #     self.save_settings()
 
-        # Show connecting status
-        self.set_connection_status(None, connecting=True)
+    #     # Show connecting status
+    #     self.set_connection_status(None, connecting=True)
 
-        # Run connection update in a separate thread to avoid blocking UI
-        def connection_update_worker():
-            try:
-                # Update credentials and reconnect
-                self.slurm_connection.update_credentials_and_reconnect()
+    #     # Run connection update in a separate thread to avoid blocking UI
+    #     def connection_update_worker():
+    #         try:
+    #             # Update credentials and reconnect
+    #             self.slurm_connection.update_credentials_and_reconnect()
 
-                # Check if connection was successful
-                if self.slurm_connection.check_connection():
-                    print("Connection update successful")
+    #             # Check if connection was successful
+    #             if self.slurm_connection.check_connection():
+    #                 print("Connection update successful")
 
-                    # Use QTimer to safely update UI from main thread
-                    QTimer.singleShot(
-                        0, lambda: self._finalize_connection_update(True))
-                else:
-                    print("Connection update failed")
-                    QTimer.singleShot(
-                        0, lambda: self._finalize_connection_update(False))
+    #                 # Use QTimer to safely update UI from main thread
+    #                 QTimer.singleShot(
+    #                     0, lambda: self._finalize_connection_update(True))
+    #             else:
+    #                 print("Connection update failed")
+    #                 QTimer.singleShot(
+    #                     0, lambda: self._finalize_connection_update(False))
 
-            except Exception as e:
-                print(f"Error during connection update: {e}")
-                QTimer.singleShot(
-                    0, lambda: self._finalize_connection_update(False, str(e)))
+    #         except Exception as e:
+    #             print(f"Error during connection update: {e}")
+    #             QTimer.singleShot(
+    #                 0, lambda: self._finalize_connection_update(False, str(e)))
 
-        # Start the worker thread
-        thread = threading.Thread(target=connection_update_worker)
-        thread.daemon = True
-        thread.start()
+    #     # Start the worker thread
+    #     thread = threading.Thread(target=connection_update_worker)
+    #     thread.daemon = True
+    #     thread.start()
 
     def _finalize_connection_update(self, success, error_message=None):
         """Finalize the connection update on the main thread"""
@@ -881,89 +885,78 @@ class SlurmJobManagerApp(QMainWindow):
         if hasattr(self, 'job_queue_widget'):
             self.job_queue_widget.update_queue_status(queue_jobs)
 
-    def save_appearence_settings(self):
-        print("--- Saving Appearence Settings ---")
-        self.settings.beginGroup("AppearenceSettings")
-        for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:-1]):
-            self.settings.setValue(
-                obj.objectName(), bool(obj.checkState().value))
-        self.settings.endGroup()
+    # def save_settings(self):
+    #     """Saves the current settings using QSettings."""
+    #     print("--- Saving Settings ---")
 
-        self.settings.sync()
-        self.job_queue_widget.reload_settings_and_redraw()
+    #     # Save general settings (SLURM connection)
+    #     self.settings.beginGroup("GeneralSettings")
+    #     self.settings.setValue(
+    #         "clusterAddress", self.settings_panel.cluster_address.text())
+    #     self.settings.setValue("username", self.settings_panel.username.text())
+    #     self.settings.setValue("psw", self.settings_panel.password.text())
+    #     self.settings.endGroup()
 
-    def save_settings(self):
-        """Saves the current settings using QSettings."""
-        print("--- Saving Settings ---")
+    #     # Save notification settings (including Discord webhook)
+    #     self.settings.beginGroup("NotificationSettings")
+    #     notification_settings = self.settings_panel.get_notification_settings()
+    #     self.settings.setValue(
+    #         "discord_enabled", notification_settings["discord_enabled"])
+    #     self.settings.setValue("discord_webhook_url",
+    #                            notification_settings["discord_webhook_url"])
+    #     self.settings.endGroup()
 
-        # Save general settings (SLURM connection)
-        self.settings.beginGroup("GeneralSettings")
-        self.settings.setValue(
-            "clusterAddress", self.settings_panel.cluster_address.text())
-        self.settings.setValue("username", self.settings_panel.username.text())
-        self.settings.setValue("psw", self.settings_panel.password.text())
-        self.settings.endGroup()
+    #     self.settings.sync()
+    #     print("--- Settings Saved ---")
 
-        # Save notification settings (including Discord webhook)
-        self.settings.beginGroup("NotificationSettings")
-        notification_settings = self.settings_panel.get_notification_settings()
-        self.settings.setValue(
-            "discord_enabled", notification_settings["discord_enabled"])
-        self.settings.setValue("discord_webhook_url",
-                               notification_settings["discord_webhook_url"])
-        self.settings.endGroup()
+    # def load_settings(self):
+    #     """Loads settings from QSettings."""
+    #     print("--- Loading Settings ---")
 
-        self.settings.sync()
-        print("--- Settings Saved ---")
+    #     self.settings = QSettings(str(Path(settings_path)),
+    #                               QSettings.Format.IniFormat)
 
-    def load_settings(self):
-        """Loads settings from QSettings."""
-        print("--- Loading Settings ---")
+    #     # Load general settings
+    #     self.settings.beginGroup("GeneralSettings")
+    #     theme = self.settings.value("theme", "Dark")
 
-        self.settings = QSettings(str(Path("./configs/settings.ini")),
-                                  QSettings.Format.IniFormat)
+    #     cluster_address = self.settings.value("clusterAddress", "")
+    #     if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
+    #         self.settings_panel.cluster_address.setText(cluster_address)
 
-        # Load general settings
-        self.settings.beginGroup("GeneralSettings")
-        theme = self.settings.value("theme", "Dark")
+    #     username = self.settings.value("username", "")
+    #     if hasattr(self, 'settings_panel') and self.settings_panel.username:
+    #         self.settings_panel.username.setText(username)
 
-        cluster_address = self.settings.value("clusterAddress", "")
-        if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
-            self.settings_panel.cluster_address.setText(cluster_address)
+    #     cluster_psw = self.settings.value("psw", "")
+    #     if hasattr(self, 'settings_panel') and self.settings_panel.password:
+    #         self.settings_panel.password.setText(cluster_psw)
+    #     self.settings.endGroup()
 
-        username = self.settings.value("username", "")
-        if hasattr(self, 'settings_panel') and self.settings_panel.username:
-            self.settings_panel.username.setText(username)
+    #     # Load appearance settings (jobs queue options)
+    #     self.settings.beginGroup("AppearenceSettings")
+    #     if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
+    #         for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:]):
+    #             value = self.settings.value(
+    #                 obj.objectName(), 'false', type=bool)
+    #             obj.setCheckState(
+    #                 Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+    #     self.settings.endGroup()
 
-        cluster_psw = self.settings.value("psw", "")
-        if hasattr(self, 'settings_panel') and self.settings_panel.password:
-            self.settings_panel.password.setText(cluster_psw)
-        self.settings.endGroup()
+    #     # Load notification settings (including Discord webhook)
+    #     self.settings.beginGroup("NotificationSettings")
+    #     notification_settings = {
+    #         "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
+    #         "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
+    #     }
 
-        # Load appearance settings (jobs queue options)
-        self.settings.beginGroup("AppearenceSettings")
-        if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
-            for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:]):
-                value = self.settings.value(
-                    obj.objectName(), 'false', type=bool)
-                obj.setCheckState(
-                    Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
-        self.settings.endGroup()
+    #     # Apply notification settings to the settings panel
+    #     if hasattr(self, 'settings_panel'):
+    #         self.settings_panel.set_notification_settings(
+    #             notification_settings)
+    #     self.settings.endGroup()
 
-        # Load notification settings (including Discord webhook)
-        self.settings.beginGroup("NotificationSettings")
-        notification_settings = {
-            "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
-            "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
-        }
-
-        # Apply notification settings to the settings panel
-        if hasattr(self, 'settings_panel'):
-            self.settings_panel.set_notification_settings(
-                notification_settings)
-        self.settings.endGroup()
-
-        print("--- Settings Loaded ---")
+    #     print("--- Settings Loaded ---")
 
     def _update_window_title(self):
         """Update window title to show active jobs count"""

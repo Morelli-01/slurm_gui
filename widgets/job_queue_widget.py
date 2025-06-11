@@ -65,7 +65,7 @@ class JobQueueWidget(QGroupBox):
         """Filter table by negative keywords - exact same interface as original"""
         self.controller._filter_table_by_negative_keywords(negative_keyword_list)
 
-    def reload_settings_and_redraw(self):
+    def reload_settings_and_redraw(self, *args):
         """Reload settings - exact same interface as original"""
         self.controller.model.load_settings()
         # Clear sorting state if sorted field no longer visible

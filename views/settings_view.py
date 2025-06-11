@@ -1,27 +1,26 @@
+from functools import partial
+from pathlib import Path
+from core.event_bus import Events, get_event_bus
 from modules.defaults import *
 from core.style import AppStyles
-
+from utils import settings_path
 # VIEW
+
+
 class SettingsView(QWidget):
     """View: Handles UI presentation"""
-    
+
     # Signals for user actions
-    connection_save_requested = pyqtSignal(dict)
-    display_save_requested = pyqtSignal()
-    all_save_requested = pyqtSignal()
     discord_test_requested = pyqtSignal(str)
-    connection_field_changed = pyqtSignal(str, str)  # field_name, value
-    job_queue_column_changed = pyqtSignal(str, bool)  # column_name, enabled
-    discord_enabled_changed = pyqtSignal(bool)
-    discord_url_changed = pyqtSignal(str)
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.event_bus = get_event_bus()
         self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
         self._job_queue_checkboxes = []
         self._setup_ui()
         self._connect_signals()
-    
+
     def _setup_ui(self):
         """Create and layout UI components"""
         # Main scroll area
@@ -31,7 +30,8 @@ class SettingsView(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         main_layout.addWidget(scroll)
 
@@ -39,7 +39,7 @@ class SettingsView(QWidget):
         content = QWidget()
         content.setMinimumWidth(500)
         scroll.setWidget(content)
-        
+
         layout = QVBoxLayout(content)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
@@ -51,27 +51,22 @@ class SettingsView(QWidget):
 
         # Connection section
         self._setup_connection_section(layout)
-        
+
         # Display section
         self._setup_display_section(layout)
-        
+
         # Notifications section
         self._setup_notifications_section(layout)
 
-        # Save All button
-        self.save_button = QPushButton("Save All Settings")
-        self.save_button.setObjectName(BTN_GREEN)
-        self.save_button.setFixedWidth(200)
-        layout.addWidget(self.save_button)
-
         layout.addStretch()
-    
+        self.load_settings()
+
     def _setup_connection_section(self, layout):
         """Setup connection settings section"""
         conn_group = QGroupBox("SLURM Connection")
         conn_layout = QFormLayout(conn_group)
         conn_layout.setSpacing(8)
-        
+
         self.cluster_address = QLineEdit()
         self.cluster_address.setFixedHeight(30)
         self.cluster_address.setPlaceholderText("cluster.example.com")
@@ -94,7 +89,7 @@ class SettingsView(QWidget):
         conn_layout.addRow("", self.connection_settings_btn)
 
         layout.addWidget(conn_group)
-    
+
     def _setup_display_section(self, layout):
         """Setup display settings section"""
         display_group = QGroupBox("Display Options")
@@ -104,7 +99,7 @@ class SettingsView(QWidget):
         self.jobs_queue_options_group = QGroupBox("Job Queue Columns")
         queue_layout = QGridLayout(self.jobs_queue_options_group)
         queue_layout.setSpacing(5)
-        
+
         for i, label in enumerate(JOB_QUEUE_FIELDS):
             if label:
                 checkbox = QCheckBox(label)
@@ -121,7 +116,7 @@ class SettingsView(QWidget):
         display_layout.addWidget(self.save_appearance_btn)
 
         layout.addWidget(display_group)
-    
+
     def _setup_notifications_section(self, layout):
         """Setup notifications settings section"""
         notif_group = QGroupBox("Notifications")
@@ -133,48 +128,31 @@ class SettingsView(QWidget):
 
         self.discord_webhook_url = QLineEdit()
         self.discord_webhook_url.setFixedHeight(30)
-        self.discord_webhook_url.setPlaceholderText("https://discord.com/api/webhooks/...")
-        self.discord_webhook_url.setEnabled(False)
+        self.discord_webhook_url.setPlaceholderText(
+            "https://discord.com/api/webhooks/...")
+        # self.discord_webhook_url.setEnabled(False)
         notif_layout.addWidget(self.discord_webhook_url)
 
         self.test_discord_btn = QPushButton("Test Discord Webhook")
         self.test_discord_btn.setObjectName(BTN_BLUE)
         self.test_discord_btn.setFixedWidth(250)
-        self.test_discord_btn.setEnabled(False)
+        # self.test_discord_btn.setEnabled(False)
         notif_layout.addWidget(self.test_discord_btn)
 
         layout.addWidget(notif_group)
-    
+
     def _connect_signals(self):
         """Connect UI signals to internal signals"""
-        # Connection fields
-        self.cluster_address.textChanged.connect(
-            lambda text: self.connection_field_changed.emit('cluster_address', text))
-        self.username.textChanged.connect(
-            lambda text: self.connection_field_changed.emit('username', text))
-        self.password.textChanged.connect(
-            lambda text: self.connection_field_changed.emit('password', text))
-        
-        # Job queue checkboxes - state is an int (0=unchecked, 2=checked)
-        for checkbox in self._job_queue_checkboxes:
-            checkbox.stateChanged.connect(
-                lambda state, name=checkbox.objectName(): 
-                self.job_queue_column_changed.emit(name, bool(state)))
-        
-        # Discord settings - state is an int (0=unchecked, 2=checked)
+
+        self.connection_settings_btn.clicked.connect(
+            self._emit_connection_save)
+        self.save_appearance_btn.clicked.connect(self._emit_display_opt_save)
         self.discord_webhook_check.stateChanged.connect(
-            lambda state: self.discord_enabled_changed.emit(bool(state)))
-        self.discord_webhook_url.textChanged.connect(self.discord_url_changed.emit)
-        
-        # Buttons
-        self.connection_settings_btn.clicked.connect(self._emit_connection_save)
-        self.save_appearance_btn.clicked.connect(self.display_save_requested.emit)
-        self.save_button.clicked.connect(self.all_save_requested.emit)
+            self._emit_noti_opt_save)
+        self.discord_webhook_url.textChanged.connect(self._emit_noti_opt_save)
         self.test_discord_btn.clicked.connect(self._emit_discord_test)
-        
-        # Discord enable/disable toggle
-        self.discord_webhook_check.stateChanged.connect(self._toggle_discord_webhook)
-    
+
+
     def _emit_connection_save(self):
         """Emit connection save signal with current values"""
         settings = {
@@ -182,39 +160,71 @@ class SettingsView(QWidget):
             'username': self.username.text().strip(),
             'password': self.password.text().strip()
         }
-        self.connection_save_requested.emit(settings)
-    
+        self.event_bus.emit(
+            Events.CONNECTION_SAVE_REQ,
+            {"settings": settings},
+            source="settings.view"
+        )
+
+    def _emit_display_opt_save(self):
+        print(" --- Saving Display Settings --- ")
+        display_settings = {}
+        for checkbox in self._job_queue_checkboxes:
+            display_settings[checkbox.objectName()] = bool(checkbox.checkState().value)
+        
+        self.event_bus.emit(Events.DISPLAY_SAVE_REQ,
+                            data={"display_settings": display_settings},
+                            source="settings.view")
+
     def _emit_discord_test(self):
         """Emit discord test signal with current URL"""
-        self.discord_test_requested.emit(self.discord_webhook_url.text().strip())
+        self.discord_test_requested.emit(
+            self.discord_webhook_url.text().strip())
     
-    def _toggle_discord_webhook(self, state):
-        """Enable/disable Discord webhook controls"""
-        enabled = (state == Qt.CheckState.Checked or state == 2)
-        self.discord_webhook_url.setEnabled(enabled)
-        self.test_discord_btn.setEnabled(enabled)
-    
-    # Public methods to update UI from model
-    def update_connection_settings(self, settings):
-        """Update connection UI from settings"""
-        self.cluster_address.setText(settings.get('cluster_address', ''))
-        self.username.setText(settings.get('username', ''))
-        self.password.setText(settings.get('password', ''))
-    
-    def update_display_settings(self, settings):
-        """Update display UI from settings"""
-        job_queue_columns = settings.get('job_queue_columns', {})
-        for checkbox in self._job_queue_checkboxes:
-            field_name = checkbox.objectName()
-            enabled = job_queue_columns.get(field_name, True)
-            checkbox.setChecked(enabled)
-    
-    def update_notification_settings(self, settings):
-        """Update notification UI from settings"""
-        discord_enabled = settings.get('discord_enabled', False)
-        discord_url = settings.get('discord_webhook_url', '')
-        
-        self.discord_webhook_check.setChecked(discord_enabled)
-        self.discord_webhook_url.setText(discord_url)
-        self._toggle_discord_webhook(Qt.CheckState.Checked if discord_enabled else Qt.CheckState.Unchecked)
+    def _emit_noti_opt_save(self, *args):
+        notification_settings = {
+            "discord_enabled":bool(self.discord_webhook_check.checkState().value),
+            "discord_webhook_url": self.discord_webhook_url.text()
+        }
+        self.event_bus.emit(Events.NOTIF_SAVE_REQ, notification_settings, source="settings.view")
 
+    def load_settings(self):
+        """Loads settings from QSettings."""
+        print("--- Loading Settings ---")
+
+        self.settings = QSettings(str(Path(settings_path)),
+                                  QSettings.Format.IniFormat)
+
+        # Load general settings
+        self.settings.beginGroup("GeneralSettings")
+
+        cluster_address = self.settings.value("clusterAddress", "")
+        self.cluster_address.setText(cluster_address)
+
+        username = self.settings.value("username", "")
+        self.username.setText(username)
+
+        psw = self.settings.value("psw", "")
+        self.password.setText(psw)
+        self.settings.endGroup()
+
+        # Load appearance settings (jobs queue options)
+        self.settings.beginGroup("AppearenceSettings")
+        for i, obj in enumerate(self._job_queue_checkboxes):
+            value = self.settings.value(
+                obj.objectName(), 'false', type=bool)
+            obj.setCheckState(
+                Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+        self.settings.endGroup()
+
+        # Load notification settings (including Discord webhook)
+        self.settings.beginGroup("NotificationSettings")
+        notification_settings = {
+            "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
+            "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
+        }
+        self.discord_webhook_check.setChecked(notification_settings["discord_enabled"])
+        self.discord_webhook_url.setText(notification_settings["discord_webhook_url"])
+        self.settings.endGroup()
+
+        print("--- Settings Loaded ---")

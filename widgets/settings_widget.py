@@ -24,7 +24,7 @@ class SettingsWidget(QWidget):
         # Expose buttons for external access (maintaining original interface)
         self.save_appearance_btn = self.view.save_appearance_btn
         self.connection_settings_btn = self.view.connection_settings_btn  
-        self.save_button = self.view.save_button
+        # self.save_button = self.view.save_button
         
         # Expose other necessary attributes for compatibility
         self.cluster_address = self.view.cluster_address
