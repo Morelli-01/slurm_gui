@@ -278,6 +278,7 @@ class Events:
     """Common event type constants"""
     
     # Connection events
+    CONNECTION_STATE_CHANGED =  "connection_status.changed"
     CONNECTION_ESTABLISHED = "connection.established"
     CONNECTION_LOST = "connection.lost"
     CONNECTION_RESTORED = "connection.restored"
@@ -291,7 +292,7 @@ class Events:
     # Data events
     CLUSTER_DATA_UPDATED = "cluster.data_updated"
     JOB_QUEUE_UPDATED = "job_queue.updated"
-    
+    DATA_READY = "cluster_job.data_ready"
     # UI events
     SETTINGS_CHANGED = "settings.changed"
     THEME_CHANGED = "theme.changed"

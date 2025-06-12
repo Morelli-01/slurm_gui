@@ -1,11 +1,9 @@
 import os
-
-from core.event_bus import Events, get_event_bus
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 import platform
-
-from controllers.slurm_connection_controller import SlurmWorker
+from core.event_bus import EventPriority, Events, get_event_bus
+from core.slurm_api import SlurmAPI, SlurmWorker
 from widgets.cluster_status_widget import ClusterStatusWidget
 from core.defaults import *
 system = platform.system()
@@ -16,9 +14,6 @@ if system == "Windows":
     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
     os.environ["QT_FONT_DPI"] = "96"
     print("Windows: Qt DPI scaling enabled")
-from threading import Thread
-from PyQt6.QtCore import Qt
-from core.defaults import *
 from widgets.job_queue_widget import JobQueueWidget 
 from core.style import AppStyles
 from utils import *
@@ -27,15 +22,10 @@ import shutil
 from widgets.settings_widget import SettingsWidget
 from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
 import subprocess
-import random
-import threading
-import tempfile
 import sys
 from datetime import datetime
 import re
-from PyQt6.QtGui import QFontDatabase, QFont
 
-from widgets.slurm_connection_widget import SlurmConnection
 
 
 # --- Constants ---
@@ -129,16 +119,18 @@ class SlurmJobManagerApp(QMainWindow):
     
     def __init__(self):
         super().__init__()
+
         self.event_bus = get_event_bus()
         # Initialize SLURM connection
-        self.slurm_connection = SlurmConnection(settings_path)
-        self.slurm_worker = SlurmWorker(self.slurm_connection)
-        self.slurm_connection.data_fetched.connect(self.update_ui_with_data)
-        self.slurm_connection.error_occurred.connect(self.handle_connection_error)
+        self.slurm_api = SlurmAPI()
+        self.slurm_worker = SlurmWorker(self.slurm_api)
+
+        # self.slurm_api.data_fetched.connect(self.update_ui_with_data)
+        # self.slurm_api.error_occurred.connect(self.handle_connection_error)
 
         # Attempt to connect immediately
         try:
-            self.slurm_connection.connect()
+            self.slurm_api.connect()
         except Exception as e:
             print(f"Initial connection failed: {e}")
             show_error_toast(self, "Connection Error",
@@ -185,16 +177,18 @@ class SlurmJobManagerApp(QMainWindow):
         # Initialize
         self.update_nav_styles(self.nav_buttons["Jobs"])
         self.stacked_widget.setCurrentIndex(0)
-        self.setup_refresh_timer()
-        self.set_connection_status(self.slurm_connection.is_connected())
+        # self.setup_refresh_timer()
+        # self.set_connection_status(self.slurm_api.is_connected())
         self.refresh_all()
         self._event_bus_subscription()
+        self.slurm_worker.start()
         # self.load_settings()
 
 
     def _event_bus_subscription(self):
         self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
-        
+        self.event_bus.subscribe(Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
+        self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
 
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling with proper project store recovery"""
@@ -292,26 +286,14 @@ class SlurmJobManagerApp(QMainWindow):
         """Handle connection errors from the new MVC structure"""
         print(f"Connection error: {error_message}")
         show_error_toast(self, "Connection Error", error_message)
-        
-    def setup_refresh_timer(self):
-        """Sets up the timer for automatic data refreshing."""
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self.refresh_all)
-        self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
-    def refresh_all(self):
-        self.slurm_connection.fetch_data_async()
-
-        # self.slurm_worker.start()
-        # t = Thread(target=self.set_connection_status(
-        #     self.slurm_connection.is_connected()))
-        # t.start()
-
-    def update_ui_with_data(self, nodes_data, queue_jobs):
+    def update_ui_with_data(self, event):
         """Updates the UI with new data from SLURM."""
+        nodes_data = event.data["nodes"]
+        queue_jobs = event.data["jobs"]
         # Check for maintenance status
         try:
-            maintenance_info = self.slurm_connection._read_maintenances()
+            maintenance_info = self.slurm_api.read_maintenances()
             if maintenance_info:
                 # Extract maintenance details
                 maintenance_details = []
@@ -338,19 +320,16 @@ class SlurmJobManagerApp(QMainWindow):
             print(f"Error checking maintenance status: {e}")
             self.maintenance_label.hide()
 
-        # Add connection check
-        if not self.slurm_connection.check_connection():
-            # Show error messages instead of updating with empty data
-            # Will trigger connection error display
-            self.job_queue_widget.update_queue_status([])
-            self.cluster_status_overview_widget.update_status(None, [])  # Will trigger connection error display
 
-            # Update jobs panels to show connection error
-            if hasattr(self, 'jobs_panel') and self.jobs_panel.jobs_group:
-                for project_name in self.jobs_panel.project_group.projects_children.keys():
-                    self.jobs_panel.jobs_group.show_connection_error(
-                        project_name)
-            return
+        # TODO: move this in connection error handling
+        # # Add connection check
+        # if not self.slurm_api.check_connection():
+        #     # Show error messages instead of updating with empty data
+        #     # Will trigger connection error display
+        #     self.job_queue_widget.update_queue_status([])
+        #     self.cluster_status_overview_widget.update_status(None, [])  # Will trigger connection error display
+
+
 
         # Normal update if connection is good
         self.refresh_cluster_jobs_queue(queue_jobs)
@@ -428,16 +407,16 @@ class SlurmJobManagerApp(QMainWindow):
 
     def open_terminal(self):
         """Open a terminal with SSH connection to the cluster"""
-        if not self.slurm_connection or not self.slurm_connection.check_connection():
+        if not self.slurm_api or not self.slurm_api.check_connection():
             show_warning_toast(self, "Connection Required",
                                "Please establish a SLURM connection first.")
             return
 
         try:
             # Get connection details
-            host = self.slurm_connection.host
-            username = self.slurm_connection.user
-            password = self.slurm_connection.password
+            host = self.slurm_api.host
+            username = self.slurm_api.user
+            password = self.slurm_api.password
 
             system = platform.system().lower()
 
@@ -666,7 +645,7 @@ class SlurmJobManagerApp(QMainWindow):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.cluster_status_overview_widget = ClusterStatusWidget(
-            slurm_connection=self.slurm_connection)
+            slurm_connection=self.slurm_api)
         overview_layout.addWidget(self.cluster_status_overview_widget,
                                   alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
@@ -730,7 +709,7 @@ class SlurmJobManagerApp(QMainWindow):
         print("Refreshing cluster status...")
         if queue_jobs is None:
             try:
-                queue_jobs = self.slurm_connection._fetch_squeue()
+                queue_jobs = self.slurm_api._fetch_squeue()
             except ConnectionError as e:
                 print(e)
                 queue_jobs = []
@@ -759,8 +738,8 @@ class SlurmJobManagerApp(QMainWindow):
         """Handles the window close event."""
         # if hasattr(self, 'jobs_panel') and self.jobs_panel.project_storer:
         #     self.jobs_panel.project_storer.stop_job_monitoring()
-
-        self.slurm_connection.close()
+        self.slurm_worker.stop()
+        self.slurm_api.disconnect()
         print("Closing application.")
         event.accept()
 
