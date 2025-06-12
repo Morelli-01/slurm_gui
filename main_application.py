@@ -267,51 +267,22 @@ class SlurmJobManagerApp(QMainWindow):
                 }
             """)
 
-    def _handle_connection_recovery(self):
-        """Handle complete recovery when connection is restored"""
-        try:
-            # Step 1: Reinitialize the project store
-            ...
-        except Exception as e:
-            print(f"Error during connection recovery: {e}")
-            import traceback
-            traceback.print_exc()
-
-            # Show error to user
-            show_error_toast(self, "Recovery Error",
-                             f"Failed to restore project data after reconnection: {str(e)}")
-
-    def handle_connection_error(self, error_message: str):
-        """Handle connection errors from the new MVC structure"""
-        print(f"Connection error: {error_message}")
-        show_error_toast(self, "Connection Error", error_message)
-
     def update_ui_with_data(self, event):
         """Updates the UI with new data from SLURM."""
         nodes_data = event.data["nodes"]
         queue_jobs = event.data["jobs"]
-        # Check for maintenance status
+        
 
-
-
-        # TODO: move this in connection error handling
-        # # Add connection check
-        # if not self.slurm_api.check_connection():
-        #     # Show error messages instead of updating with empty data
-        #     # Will trigger connection error display
-        #     self.job_queue_widget.update_queue_status([])
-        #     self.cluster_status_overview_widget.update_status(None, [])  # Will trigger connection error display
-
-
-
-        # Normal update if connection is good
-        # self.refresh_cluster_jobs_queue(queue_jobs)
-        print("Refreshing cluster status...")
+        # Update job queue with incremental updates
+        print("Updating job queue...")
         if hasattr(self, 'job_queue_widget'):
             self.job_queue_widget.update_queue_status(queue_jobs)
-            
-        self.cluster_status_overview_widget.update_status(
-            nodes_data, queue_jobs)
+        
+        # Update cluster status
+        print("Updating cluster status...")
+        if hasattr(self, 'cluster_status_overview_widget'):
+            self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
+    
 
     # --- Navigation Bar ---
     def switch_panel(self, index, clicked_button):
@@ -627,7 +598,7 @@ class SlurmJobManagerApp(QMainWindow):
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
         refresh_cluster_btn = QPushButton("Refresh Status")
-        # refresh_cluster_btn.clicked.connect(self.refresh_all)
+        refresh_cluster_btn.clicked.connect(self.slurm_worker.once)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)
@@ -679,53 +650,6 @@ class SlurmJobManagerApp(QMainWindow):
         elif account_type == "PROD":
             self.job_queue_widget.filter_table_by_negative_keywords(
                 STUDENTS_JOBS_KEYWORD)
-
-    def _finalize_connection_update(self, success, error_message=None):
-        """Finalize the connection update on the main thread"""
-        if success:
-            # Update connection status
-            self.set_connection_status(True)
-
-            # Reinitialize project store if we have a jobs panel
-            if hasattr(self, 'jobs_panel'):
-                try:
-                    self.jobs_panel.setup_project_storer()
-                    show_success_toast(self, "Connection Updated",
-                                       "SLURM connection updated successfully!")
-                except Exception as e:
-                    print(f"Error setting up project store: {e}")
-                    show_error_toast(self, "Setup Error",
-                                     f"Connection established but failed to setup projects: {str(e)}")
-            else:
-                show_success_toast(self, "Connection Updated",
-                                   "SLURM connection updated successfully!")
-        else:
-            # Update connection status to disconnected
-            self.set_connection_status(False)
-
-            error_msg = "Failed to update SLURM connection."
-            if error_message:
-                error_msg += f" Error: {error_message}"
-
-            show_error_toast(self, "Connection Failed", error_msg)
-
-    def _update_window_title(self):
-        """Update window title to show active jobs count"""
-        if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
-            return
-
-        try:
-            active_jobs = self.jobs_panel.project_storer.get_active_jobs()
-            active_count = len(active_jobs)
-
-            base_title = APP_TITLE
-            if active_count > 0:
-                self.setWindowTitle(
-                    f"{base_title} - {active_count} active jobs")
-            else:
-                self.setWindowTitle(base_title)
-        except Exception as e:
-            print(f"Error updating window title: {e}")
 
     def closeEvent(self, event):
         """Handles the window close event."""
