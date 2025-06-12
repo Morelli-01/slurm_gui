@@ -1,7 +1,7 @@
 from functools import partial
 from pathlib import Path
 from core.event_bus import Events, get_event_bus
-from modules.defaults import *
+from core.defaults import *
 from core.style import AppStyles
 from utils import settings_path
 # VIEW

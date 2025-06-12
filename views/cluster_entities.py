@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from modules.defaults import STUDENTS_JOBS_KEYWORD
+from core.defaults import STUDENTS_JOBS_KEYWORD
 from utils import parse_memory_size
 from widgets.slurm_connection_widget import SlurmConnection
 import os

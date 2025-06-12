@@ -7,6 +7,7 @@ import platform
 
 from controllers.slurm_connection_controller import SlurmWorker
 from widgets.cluster_status_widget import ClusterStatusWidget
+from core.defaults import *
 system = platform.system()
 if system == "Windows":
     # Windows: Use Qt's built-in high DPI handling
@@ -17,8 +18,7 @@ if system == "Windows":
     print("Windows: Qt DPI scaling enabled")
 from threading import Thread
 from PyQt6.QtCore import Qt
-from modules.defaults import *
-from modules.job_panel import JobsPanel
+from core.defaults import *
 from widgets.job_queue_widget import JobQueueWidget 
 from core.style import AppStyles
 from utils import *
@@ -26,7 +26,6 @@ from pathlib import Path
 import shutil
 from widgets.settings_widget import SettingsWidget
 from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-from modules.project_store import ProjectStore
 import subprocess
 import random
 import threading
@@ -127,6 +126,7 @@ class ConnectionSetupDialog(QDialog):
 
 
 class SlurmJobManagerApp(QMainWindow):
+    
     def __init__(self):
         super().__init__()
         self.event_bus = get_event_bus()
@@ -188,7 +188,13 @@ class SlurmJobManagerApp(QMainWindow):
         self.setup_refresh_timer()
         self.set_connection_status(self.slurm_connection.is_connected())
         self.refresh_all()
+        self._event_bus_subscription()
         # self.load_settings()
+
+
+    def _event_bus_subscription(self):
+        self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
+        
 
     def set_connection_status(self, connected: bool, connecting=False):
         """Enhanced connection status handling with proper project store recovery"""
@@ -196,7 +202,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         if previous_status == False and connected:
             print("Connection restored - reinitializing project store and jobs panel")
-            self._handle_connection_recovery()
+            # self._handle_connection_recovery()
 
         self.connection_status_ = True if connected else False
 
@@ -272,25 +278,7 @@ class SlurmJobManagerApp(QMainWindow):
         """Handle complete recovery when connection is restored"""
         try:
             # Step 1: Reinitialize the project store
-            print("Reinitializing project store...")
-            if hasattr(self, 'jobs_panel'):
-                # Stop existing job monitoring if any
-                if self.jobs_panel.project_storer:
-                    self.jobs_panel.project_storer.stop_job_monitoring()
-
-                # Create new project store with restored connection
-                self.jobs_panel.project_storer = ProjectStore(
-                    self.slurm_connection)
-                self.jobs_panel._connect_project_store_signals()
-                print("Project store reinitialized successfully")
-
-                # Step 2: Reload projects and jobs
-                print("Reloading projects...")
-                self._reload_projects_after_reconnection()
-
-            else:
-                print("No jobs panel found - this shouldn't happen")
-
+            ...
         except Exception as e:
             print(f"Error during connection recovery: {e}")
             import traceback
@@ -305,97 +293,6 @@ class SlurmJobManagerApp(QMainWindow):
         print(f"Connection error: {error_message}")
         show_error_toast(self, "Connection Error", error_message)
         
-    def _reload_projects_after_reconnection(self):
-        """Reload all projects and their jobs after connection recovery"""
-        try:
-            if not hasattr(self, 'jobs_panel') or not self.jobs_panel.project_storer:
-                return
-
-            # Get all projects from the restored project store
-            project_names = self.jobs_panel.project_storer.all_projects()
-            print(f"Found {len(project_names)} projects to reload")
-
-            # Clear existing project widgets
-            self._clear_existing_projects()
-
-            # Reload each project
-            for project_name in project_names:
-                print(f"Reloading project: {project_name}")
-
-                # Add project widget back to UI
-                self.jobs_panel.project_group.add_new_project(project_name)
-
-                # Get project data
-                project = self.jobs_panel.project_storer.get(project_name)
-                if project and project.jobs:
-                    # Convert jobs to table rows
-                    job_rows = [job.to_table_row() for job in project.jobs]
-
-                    # Update jobs UI
-                    self.jobs_panel.jobs_group.update_jobs(
-                        project_name, job_rows)
-
-                    # Update project status counts
-                    if project_name in self.jobs_panel.project_group.projects_children:
-                        project_widget = self.jobs_panel.project_group.projects_children[
-                            project_name]
-                        if hasattr(project_widget, 'update_status_counts'):
-                            job_stats = project.get_job_stats()
-                            project_widget.update_status_counts(job_stats)
-
-            # Select the first project if available
-            if project_names:
-                first_project = project_names[0]
-                self.jobs_panel.project_group.handle_project_selection(
-                    first_project)
-                self.jobs_panel.on_project_selected(first_project)
-                self.jobs_panel.jobs_group.show_project(first_project)
-                print(f"Selected project: {first_project}")
-
-            print("Project reload completed successfully")
-            show_success_toast(self, "Connection Restored",
-                               f"")
-
-        except Exception as e:
-            print(f"Error reloading projects: {e}")
-            import traceback
-            traceback.print_exc()
-            show_error_toast(self, "Reload Error",
-                             f"Failed to reload projects: {str(e)}")
-
-    def _clear_existing_projects(self):
-        """Clear existing project widgets from the UI"""
-        try:
-            if not hasattr(self, 'jobs_panel'):
-                return
-
-            # Clear project group widgets
-            project_group = self.jobs_panel.project_group
-
-            # Remove all project widgets from the scroll area
-            for project_name in list(project_group.projects_children.keys()):
-                project_widget = project_group.projects_children[project_name]
-                project_group.scroll_content_layout.removeWidget(
-                    project_widget)
-                project_widget.hide()
-                project_widget.deleteLater()
-
-            # Clear the projects dictionary
-            project_group.projects_children.clear()
-            project_group.project_counter = 0
-            project_group._selected_project_widget = None
-
-            # Clear jobs group
-            for project_name in list(self.jobs_panel.jobs_group._indices.keys()):
-                self.jobs_panel.jobs_group.remove_project(project_name)
-
-            print("Cleared existing project widgets")
-
-        except Exception as e:
-            print(f"Error clearing existing projects: {e}")
-            import traceback
-            traceback.print_exc()
-
     def setup_refresh_timer(self):
         """Sets up the timer for automatic data refreshing."""
         self.refresh_timer = QTimer(self)
@@ -783,14 +680,7 @@ class SlurmJobManagerApp(QMainWindow):
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
-        # self.settings_panel.save_appearance_btn.clicked.connect(
-        #     self.save_appearence_settings)
-        # self.settings_panel.connection_settings_btn.clicked.connect(
-        #     self.update_connection_setting)
-        # self.settings_panel.save_button.clicked.connect(self.save_settings)
         self.stacked_widget.addWidget(self.settings_panel)
-        self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
-        # self.connection_status.clicked.connect(self.update_connection_setting)
 
 
     # --- Action & Data Methods ---
@@ -805,44 +695,6 @@ class SlurmJobManagerApp(QMainWindow):
         elif account_type == "PROD":
             self.job_queue_widget.filter_table_by_negative_keywords(
                 STUDENTS_JOBS_KEYWORD)
-
-    # def update_connection_setting(self):
-    #     """Enhanced connection update with proper project store reinitialization"""
-    #     print("Updating connection settings...")
-
-    #     # Save settings first
-    #     self.save_settings()
-
-    #     # Show connecting status
-    #     self.set_connection_status(None, connecting=True)
-
-    #     # Run connection update in a separate thread to avoid blocking UI
-    #     def connection_update_worker():
-    #         try:
-    #             # Update credentials and reconnect
-    #             self.slurm_connection.update_credentials_and_reconnect()
-
-    #             # Check if connection was successful
-    #             if self.slurm_connection.check_connection():
-    #                 print("Connection update successful")
-
-    #                 # Use QTimer to safely update UI from main thread
-    #                 QTimer.singleShot(
-    #                     0, lambda: self._finalize_connection_update(True))
-    #             else:
-    #                 print("Connection update failed")
-    #                 QTimer.singleShot(
-    #                     0, lambda: self._finalize_connection_update(False))
-
-    #         except Exception as e:
-    #             print(f"Error during connection update: {e}")
-    #             QTimer.singleShot(
-    #                 0, lambda: self._finalize_connection_update(False, str(e)))
-
-    #     # Start the worker thread
-    #     thread = threading.Thread(target=connection_update_worker)
-    #     thread.daemon = True
-    #     thread.start()
 
     def _finalize_connection_update(self, success, error_message=None):
         """Finalize the connection update on the main thread"""
@@ -884,79 +736,6 @@ class SlurmJobManagerApp(QMainWindow):
                 queue_jobs = []
         if hasattr(self, 'job_queue_widget'):
             self.job_queue_widget.update_queue_status(queue_jobs)
-
-    # def save_settings(self):
-    #     """Saves the current settings using QSettings."""
-    #     print("--- Saving Settings ---")
-
-    #     # Save general settings (SLURM connection)
-    #     self.settings.beginGroup("GeneralSettings")
-    #     self.settings.setValue(
-    #         "clusterAddress", self.settings_panel.cluster_address.text())
-    #     self.settings.setValue("username", self.settings_panel.username.text())
-    #     self.settings.setValue("psw", self.settings_panel.password.text())
-    #     self.settings.endGroup()
-
-    #     # Save notification settings (including Discord webhook)
-    #     self.settings.beginGroup("NotificationSettings")
-    #     notification_settings = self.settings_panel.get_notification_settings()
-    #     self.settings.setValue(
-    #         "discord_enabled", notification_settings["discord_enabled"])
-    #     self.settings.setValue("discord_webhook_url",
-    #                            notification_settings["discord_webhook_url"])
-    #     self.settings.endGroup()
-
-    #     self.settings.sync()
-    #     print("--- Settings Saved ---")
-
-    # def load_settings(self):
-    #     """Loads settings from QSettings."""
-    #     print("--- Loading Settings ---")
-
-    #     self.settings = QSettings(str(Path(settings_path)),
-    #                               QSettings.Format.IniFormat)
-
-    #     # Load general settings
-    #     self.settings.beginGroup("GeneralSettings")
-    #     theme = self.settings.value("theme", "Dark")
-
-    #     cluster_address = self.settings.value("clusterAddress", "")
-    #     if hasattr(self, 'settings_panel') and self.settings_panel.cluster_address:
-    #         self.settings_panel.cluster_address.setText(cluster_address)
-
-    #     username = self.settings.value("username", "")
-    #     if hasattr(self, 'settings_panel') and self.settings_panel.username:
-    #         self.settings_panel.username.setText(username)
-
-    #     cluster_psw = self.settings.value("psw", "")
-    #     if hasattr(self, 'settings_panel') and self.settings_panel.password:
-    #         self.settings_panel.password.setText(cluster_psw)
-    #     self.settings.endGroup()
-
-    #     # Load appearance settings (jobs queue options)
-    #     self.settings.beginGroup("AppearenceSettings")
-    #     if hasattr(self, 'settings_panel') and self.settings_panel.jobs_queue_options_group:
-    #         for i, obj in enumerate(self.settings_panel.jobs_queue_options_group.children()[1:]):
-    #             value = self.settings.value(
-    #                 obj.objectName(), 'false', type=bool)
-    #             obj.setCheckState(
-    #                 Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
-    #     self.settings.endGroup()
-
-    #     # Load notification settings (including Discord webhook)
-    #     self.settings.beginGroup("NotificationSettings")
-    #     notification_settings = {
-    #         "discord_enabled": self.settings.value("discord_enabled", False, type=bool),
-    #         "discord_webhook_url": self.settings.value("discord_webhook_url", "", type=str)
-    #     }
-
-    #     # Apply notification settings to the settings panel
-    #     if hasattr(self, 'settings_panel'):
-    #         self.settings_panel.set_notification_settings(
-    #             notification_settings)
-    #     self.settings.endGroup()
-
-    #     print("--- Settings Loaded ---")
 
     def _update_window_title(self):
         """Update window title to show active jobs count"""

@@ -1,7 +1,6 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar
-from modules.defaults import *
-
+from core.defaults import *
 # VIEW  
 class SlurmConnectionView(QWidget):
     """View: Displays SLURM connection status and information"""

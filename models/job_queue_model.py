@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from modules.defaults import *
+from core.defaults import *
 
 
 class JobQueueModel:

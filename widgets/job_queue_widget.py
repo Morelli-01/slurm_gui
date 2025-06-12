@@ -1,5 +1,5 @@
 from controllers.job_queue_controller import JobQueueController
-from modules.defaults import *
+from core.defaults import *
 from core.style import AppStyles
 
 

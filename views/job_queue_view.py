@@ -1,4 +1,4 @@
-from modules.defaults import *
+from core.defaults import *
 
 
 class JobQueueView:

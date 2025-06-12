@@ -1,5 +1,5 @@
 from models.job_queue_model import JobQueueModel
-from modules.defaults import *
+from core.defaults import *
 from views.job_queue_view import JobQueueView
 
 

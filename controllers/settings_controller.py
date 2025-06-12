@@ -1,7 +1,7 @@
 from datetime import datetime
 from core.event_bus import EventPriority, Events, get_event_bus
 from models.settings_model import SettingsModel
-from modules.defaults import *
+from core.defaults import *
 from widgets.toast_widget import *
 from views.settings_view import SettingsView
 from utils import settings_path

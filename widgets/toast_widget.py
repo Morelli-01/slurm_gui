@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QGraphicsDropShadowEffect, QSizePolicy, QApplication
 )
 
-from modules.defaults import *
+from core.defaults import *
 from utils import script_dir
 
 # ============================================================================

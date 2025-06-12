@@ -1,7 +1,7 @@
 
 from controllers.settings_controller import SettingsController
 from models.settings_model import SettingsModel
-from modules.defaults import *
+from core.defaults import *
 from views.settings_view import SettingsView
 
 # MAIN WIDGET (Facade)

@@ -1,5 +1,5 @@
 from pathlib import Path
-from modules.defaults import *
+from core.defaults import *
 from utils import settings_path
 from core.event_bus import Event
 

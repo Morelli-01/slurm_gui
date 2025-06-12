@@ -1,5 +1,5 @@
 from controllers.cluster_status_controller import ClusterStatusController
-from modules.defaults import *
+from core.defaults import *
 from views.cluster_entities import Cluster
 
 # --- Constants ---
