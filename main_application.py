@@ -179,7 +179,6 @@ class SlurmJobManagerApp(QMainWindow):
         self.stacked_widget.setCurrentIndex(0)
         # self.setup_refresh_timer()
         # self.set_connection_status(self.slurm_api.is_connected())
-        self.refresh_all()
         self._event_bus_subscription()
         self.slurm_worker.start()
         # self.load_settings()
@@ -622,7 +621,7 @@ class SlurmJobManagerApp(QMainWindow):
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
         refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.clicked.connect(self.refresh_all)
+        # refresh_cluster_btn.clicked.connect(self.refresh_all)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)

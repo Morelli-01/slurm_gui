@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from core.defaults import STUDENTS_JOBS_KEYWORD
+from core.slurm_api import SlurmAPI
 from utils import parse_memory_size
-from widgets.slurm_connection_widget import SlurmConnection
 import os
 
 @dataclass
@@ -181,7 +181,7 @@ class Node:
 @dataclass
 class Cluster:
     """Collection of SLURM nodes fetched from a connection."""
-    connection: Optional[SlurmConnection] = None
+    connection: Optional[SlurmAPI] = None
     nodes: Dict[str, Node] = field(default_factory=dict)
     jobs: List[Dict[str, Any]] = field(default_factory=list)
 
