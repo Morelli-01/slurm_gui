@@ -28,16 +28,16 @@ class JobQueueController:
         
     
     def update_queue_status(self, jobs_data: List[Dict[str, Any]]):
-        """Update queue status with efficiency improvements but same behavior"""
+        """Update queue status - simplified to always use full rebuild"""
         
+        # Setup columns (handles format changes)
         self.view.setup_columns(self.model.visible_fields)
-        self.view.update_table_incremental(jobs_data, self.model.visible_fields)
-
-        # Always do full rebuild for now to maintain exact original behavior
-        # TODO: Implement incremental updates after ensuring exact compatibility
-        # changes = self.model.update_jobs(jobs_data)
         
-        # self.view.populate_table_full(jobs_data, self.model.visible_fields)
+        # Always do full rebuild for reliability
+        self.view.populate_table_full(jobs_data, self.model.visible_fields)
+        
+        # Store current jobs data in model
+        self.model.current_jobs_data = jobs_data.copy()
         
         # Apply sorting exactly like original
         applied_user_sort = False
@@ -142,4 +142,3 @@ class JobQueueController:
             return True
         
         self.view.apply_filter_to_rows(self.model.current_jobs_data, negative_filter_func)
-

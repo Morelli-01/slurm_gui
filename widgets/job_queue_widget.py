@@ -5,7 +5,7 @@ from core.style import AppStyles
 
 class JobQueueWidget(QGroupBox):
     """
-    Refactored Job Queue Widget with MVC pattern but maintaining exact original functionality.
+    Job Queue Widget with simplified MVC pattern maintaining exact original functionality.
     """
 
     def __init__(self, parent=None):
@@ -51,6 +51,7 @@ class JobQueueWidget(QGroupBox):
     # Public API - exactly like original
     def update_queue_status(self, jobs_data):
         """Update queue status - exact same interface as original"""
+            
         self.controller.update_queue_status(jobs_data)
 
     def filter_table(self, filter_text: str):
@@ -66,21 +67,26 @@ class JobQueueWidget(QGroupBox):
         self.controller._filter_table_by_negative_keywords(negative_keyword_list)
 
     def reload_settings_and_redraw(self, *args):
-        """Reload settings - exact same interface as original"""
+        """Reload settings and redraw - exact same interface as original"""
+        # Reload settings from file
         self.controller.model.load_settings()
+        
         # Clear sorting state if sorted field no longer visible
         if (self.controller.model._sorted_by_field_name and 
             self.controller.model._sorted_by_field_name not in self.controller.model.visible_fields):
             self.controller.model._sorted_by_field_name = None
             self.controller.model._sorted_by_order = None
 
+        # Clear table and setup new columns
         self.queue_table.setSortingEnabled(False)
         self.queue_table.clear()
         self.controller.view.setup_columns(self.controller.model.visible_fields)
 
+        # Refresh with current data if available
         if self.controller.model.current_jobs_data:
             self.controller.update_queue_status(self.controller.model.current_jobs_data)
         else:
+            # Restore sorting indicator if no data
             self.queue_table.setSortingEnabled(True)
             if (self.controller.model._sorted_by_field_name and 
                 self.controller.model._sorted_by_field_name in self.controller.model.visible_fields and 
