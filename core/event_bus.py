@@ -5,7 +5,7 @@ Simple, thread-safe event bus for decoupled communication between components.
 
 import weakref
 from typing import Dict, List, Callable, Any, Optional
-from threading import Lock
+from threading import Lock  
 from dataclasses import dataclass
 from enum import Enum, auto
 from PyQt6.QtCore import QObject, pyqtSignal, QMetaObject, Qt

@@ -18,24 +18,23 @@ JOB_CODES = {
     "DL": "DEADLINE", "OT": "OTHER"
 }
 
-
-class SlurmWorker(threading.Thread):
+class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
     """Worker thread for SLURM operations using event bus - continuous loop"""
     
     def __init__(self, slurm_api, refresh_interval_seconds=5):
-        super().__init__(daemon=True)
+        super().__init__()  # QThread doesn't need daemon=True
         self.slurm_api = slurm_api
         self.event_bus = get_event_bus()
         self.refresh_interval = refresh_interval_seconds
-        self._stop_requested = threading.Event()
+        self._stop_requested = False  # Changed from threading.Event to simple boolean
     
     def run(self):
         """Continuous loop until stop is requested"""
-        while not self._stop_requested.is_set():
+        while not self._stop_requested:
             try:
                 if self.slurm_api.connectino_status != ConnectionState.CONNECTED:
                     # Wait and continue loop instead of returning
-                    self._stop_requested.wait(self.refresh_interval)
+                    self.msleep(self.refresh_interval * 1000)  # QThread.msleep takes milliseconds
                     continue
                 
                 nodes_data = self.slurm_api.fetch_nodes_info()
@@ -50,14 +49,14 @@ class SlurmWorker(threading.Thread):
                 self.event_bus.emit(Events.ERROR_OCCURRED, 
                                   {"error": str(e)}, source="worker")
             
-            # Sleep for the refresh interval (or until stop is requested)
-            self._stop_requested.wait(self.refresh_interval)
+            # Sleep for the refresh interval
+            self.msleep(self.refresh_interval * 1000)  # QThread.msleep takes milliseconds
     
     def stop(self):
         """Stop the worker thread"""
-        self._stop_requested.set()
-        self.join()  # Wait for thread to 
-
+        self._stop_requested = True
+        self.quit()  # QThread method to quit the event loop
+        # self.wait()  # QThread method to wait for thread to finish
 
 class ConnectionState(Enum):
     """Clear connection states"""

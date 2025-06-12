@@ -25,21 +25,19 @@ class JobQueueController:
         else:
             self.model._sorted_by_field_name = None
             self.model._sorted_by_order = None
+        
     
     def update_queue_status(self, jobs_data: List[Dict[str, Any]]):
         """Update queue status with efficiency improvements but same behavior"""
-        # Check connection exactly like original
-        if not jobs_data and hasattr(self.parent, 'slurm_connection'):
-            if self.parent.slurm_connection and not self.parent.slurm_connection.check_connection():
-                self.view.show_connection_error()
-                return
-        
-        # Always do full rebuild for now to maintain exact original behavior
-        # TODO: Implement incremental updates after ensuring exact compatibility
-        changes = self.model.update_jobs(jobs_data)
         
         self.view.setup_columns(self.model.visible_fields)
-        self.view.populate_table_full(jobs_data, self.model.visible_fields)
+        self.view.update_table_incremental(jobs_data, self.model.visible_fields)
+
+        # Always do full rebuild for now to maintain exact original behavior
+        # TODO: Implement incremental updates after ensuring exact compatibility
+        # changes = self.model.update_jobs(jobs_data)
+        
+        # self.view.populate_table_full(jobs_data, self.model.visible_fields)
         
         # Apply sorting exactly like original
         applied_user_sort = False

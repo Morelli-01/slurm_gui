@@ -163,4 +163,121 @@ class JobQueueView:
             job_data_dict = jobs_data[original_job_idx]
             row_should_be_visible = filter_func(job_data_dict)
             self.table.setRowHidden(table_row_idx, not row_should_be_visible)
+    
+    def update_table_incremental(self, jobs_data: List[Dict[str, Any]], visible_fields: List[str]):
+        """Update the table incrementally: update values, remove missing jobs, add new jobs."""
+        # Build a set of current job IDs and a mapping for quick lookup
+        new_job_ids = set()
+        new_job_map = {}
+        for idx, job in enumerate(jobs_data):
+            job_id = job.get("Job ID", "")
+            new_job_ids.add(job_id)
+            new_job_map[job_id] = (idx, job)
+
+        # Remove rows for jobs that are no longer present
+        current_job_ids = set(self.job_row_map.keys())
+        jobs_to_remove = current_job_ids - new_job_ids
+        rows_to_remove = sorted([self.job_row_map[jid] for jid in jobs_to_remove], reverse=True)
+        for row in rows_to_remove:
+            self.table.removeRow(row)
+        for jid in jobs_to_remove:
+            self.job_row_map.pop(jid, None)
+
+        # Update existing jobs and mark which are present
+        for jid in (current_job_ids & new_job_ids):
+            row = self.job_row_map[jid]
+            idx, job = new_job_map[jid]
+            for col_idx, field_name in enumerate(visible_fields):
+                item_data = job.get(field_name, "N/A")
+                item = self.table.item(row, col_idx)
+                if item is None:
+                    item = QTableWidgetItem()
+                    self.table.setItem(row, col_idx, item)
+                # Update value if changed
+                if isinstance(item_data, int):
+                    item.setData(Qt.ItemDataRole.EditRole, item_data)
+                elif isinstance(item_data, str):
+                    item.setText(item_data)
+                else:
+                    item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                    item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                item.setData(Qt.ItemDataRole.UserRole, idx)
+                item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
+                if field_name == "Status":
+                    status = job.get("Status", "").upper()
+                    color = QColor(COLOR_DARK_FG)
+                    if status == STATUS_RUNNING:
+                        color = QColor(COLOR_GREEN)
+                    elif status == STATUS_PENDING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_COMPLETED:
+                        color = QColor(COLOR_BLUE)
+                    elif status == STATUS_FAILED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_COMPLETING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_PREEMPTED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_SUSPENDED:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_STOPPED:
+                        color = QColor(COLOR_BLUE)
+                    item.setForeground(QBrush(color))
+                if row % 2 == 0:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
+                else:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
+
+        # Add new jobs
+        for jid in (new_job_ids - current_job_ids):
+            idx, job = new_job_map[jid]
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.job_row_map[jid] = row
+            for col_idx, field_name in enumerate(visible_fields):
+                item_data = job.get(field_name, "N/A")
+                if isinstance(item_data, int):
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data)
+                elif isinstance(item_data, str):
+                    item = QTableWidgetItem(item_data)
+                else:
+                    item = QTableWidgetItem()
+                    item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                    item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                item.setData(Qt.ItemDataRole.UserRole, idx)
+                item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
+                if field_name == "Status":
+                    status = job.get("Status", "").upper()
+                    color = QColor(COLOR_DARK_FG)
+                    if status == STATUS_RUNNING:
+                        color = QColor(COLOR_GREEN)
+                    elif status == STATUS_PENDING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_COMPLETED:
+                        color = QColor(COLOR_BLUE)
+                    elif status == STATUS_FAILED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_COMPLETING:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_PREEMPTED:
+                        color = QColor(COLOR_RED)
+                    elif status == STATUS_SUSPENDED:
+                        color = QColor(COLOR_ORANGE)
+                    elif status == STATUS_STOPPED:
+                        color = QColor(COLOR_BLUE)
+                    item.setForeground(QBrush(color))
+                if row % 2 == 0:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
+                else:
+                    item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
+                self.table.setItem(row, col_idx, item)
+
+        # Rebuild job_row_map to ensure row indices are correct
+        self.job_row_map.clear()
+        for row in range(self.table.rowCount()):
+            job_id_item = self.table.item(row, 0)
+            if job_id_item:
+                job_id = job_id_item.text() if isinstance(job_id_item.text(), str) else ""
+                self.job_row_map[job_id] = row
 

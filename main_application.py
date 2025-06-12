@@ -291,33 +291,7 @@ class SlurmJobManagerApp(QMainWindow):
         nodes_data = event.data["nodes"]
         queue_jobs = event.data["jobs"]
         # Check for maintenance status
-        try:
-            maintenance_info = self.slurm_api.read_maintenances()
-            if maintenance_info:
-                # Extract maintenance details
-                maintenance_details = []
-                for line in maintenance_info.split('\n'):
-                    if 'ReservationName=' in line:
-                        name = line.split('ReservationName=')[1].split()[0]
-                        start_time = line.split(" ")[1].split("=")[1]
-                        end_time = line.split(" ")[2].split("=")[1]
-                        time_to_maintenance = datetime.strptime(
-                            start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
-                        maintenance_details.append(
-                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
-                        break
 
-                if maintenance_details:
-                    self.maintenance_label.setText(
-                        f"⚠️ Maintenance: {', '.join(maintenance_details)}")
-                    self.maintenance_label.show()
-                else:
-                    self.maintenance_label.hide()
-            else:
-                self.maintenance_label.hide()
-        except Exception as e:
-            print(f"Error checking maintenance status: {e}")
-            self.maintenance_label.hide()
 
 
         # TODO: move this in connection error handling
@@ -331,7 +305,11 @@ class SlurmJobManagerApp(QMainWindow):
 
 
         # Normal update if connection is good
-        self.refresh_cluster_jobs_queue(queue_jobs)
+        # self.refresh_cluster_jobs_queue(queue_jobs)
+        print("Refreshing cluster status...")
+        if hasattr(self, 'job_queue_widget'):
+            self.job_queue_widget.update_queue_status(queue_jobs)
+            
         self.cluster_status_overview_widget.update_status(
             nodes_data, queue_jobs)
 
@@ -600,6 +578,34 @@ class SlurmJobManagerApp(QMainWindow):
         self.maintenance_label.setStyleSheet(
             "color: #FF0000;")  # Red color for warning
         self.maintenance_label.hide()  # Initially hidden
+        try:
+            maintenance_info = self.slurm_api.read_maintenances()
+            if maintenance_info:
+                # Extract maintenance details
+                maintenance_details = []
+                for line in maintenance_info.split('\n'):
+                    if 'ReservationName=' in line:
+                        name = line.split('ReservationName=')[1].split()[0]
+                        start_time = line.split(" ")[1].split("=")[1]
+                        end_time = line.split(" ")[2].split("=")[1]
+                        time_to_maintenance = datetime.strptime(
+                            start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
+                        maintenance_details.append(
+                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
+                        break
+
+                if maintenance_details:
+                    self.maintenance_label.setText(
+                        f"⚠️ Maintenance: {', '.join(maintenance_details)}")
+                    self.maintenance_label.show()
+                else:
+                    self.maintenance_label.hide()
+            else:
+                self.maintenance_label.hide()
+        except Exception as e:
+            print(f"Error checking maintenance status: {e}")
+            self.maintenance_label.hide()
+
 
         header_layout.addWidget(self.cluster_label)
         header_layout.addWidget(self.maintenance_label)
@@ -702,18 +708,6 @@ class SlurmJobManagerApp(QMainWindow):
                 error_msg += f" Error: {error_message}"
 
             show_error_toast(self, "Connection Failed", error_msg)
-
-    def refresh_cluster_jobs_queue(self, queue_jobs=None):
-        """Refreshes the cluster status widgets (demo)."""
-        print("Refreshing cluster status...")
-        if queue_jobs is None:
-            try:
-                queue_jobs = self.slurm_api._fetch_squeue()
-            except ConnectionError as e:
-                print(e)
-                queue_jobs = []
-        if hasattr(self, 'job_queue_widget'):
-            self.job_queue_widget.update_queue_status(queue_jobs)
 
     def _update_window_title(self):
         """Update window title to show active jobs count"""
