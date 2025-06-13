@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont, QPixmap, QIcon, QMovie, QStandardItemModel, QStandardItem, QBrush, QColor, QFontMetrics
 from PyQt6.QtCore import (Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyModel, QObject, QPropertyAnimation,
                           QThread, QTimer, QEvent, QSettings, QStandardPaths, QWaitCondition, QMutex,
-                          QPoint, QEasingCurve)
+                          QPoint, QEasingCurve, pyqtSlot, QMetaObject)
 import os, sys, threading, shutil, json, tempfile
 import time
 from typing import Dict, List, Any, Optional, Set

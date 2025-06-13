@@ -33,6 +33,7 @@ class SettingsModel(QObject):
         self.settings.setValue("username", self._connection_settings['username'])
         self.settings.setValue("psw", self._connection_settings['password'])
         self.settings.endGroup()
+        self.settings.sync()
         print("Connection settings saved!")
 
     def save_display_settigngs(self, event_data):

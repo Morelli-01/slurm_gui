@@ -1,5 +1,6 @@
 from functools import partial
 import os
+from threading import Thread
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 import platform
@@ -189,26 +190,28 @@ class SlurmJobManagerApp(QMainWindow):
     def _event_bus_subscription(self):
         self.event_bus.subscribe(Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
         self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
-        self.event_bus.subscribe(Events.CONNECTION_SAVE_REQ, self.new_connection)
+        self.event_bus.subscribe(Events.CONNECTION_SAVE_REQ, self.new_connection, priority=EventPriority.LOW)
 
     def new_connection(self, event_data):
-        self.refresh_timer.stop()
+            self.refresh_timer.stop()
+            
+            self.slurm_worker.stop()
+            self.slurm_worker.wait(1000)
+            
+            self.slurm_api = SlurmAPI.reset_instance()
+            self.slurm_worker = SlurmWorker(self.slurm_api)
+            try:
+                self.slurm_api.connect()
+            except Exception as e:
+                print(f"Initial connection failed: {e}")
+                show_error_toast(self, "Connection Error",
+                                f"Failed to connect to the cluster: {e}. Please check settings.")
+            self.slurm_worker.start()
+            self.refresh_timer = QTimer(self)
+            self.refresh_timer.timeout.connect(self.slurm_worker.start)
+            self.refresh_timer.start(REFRESH_INTERVAL_MS)
         
-        self.slurm_worker.stop()
-        self.slurm_worker.wait(1000)
-        
-        self.slurm_api = SlurmAPI.reset_instance()
-        self.slurm_worker = SlurmWorker(self.slurm_api)
-        try:
-            self.slurm_api.connect()
-        except Exception as e:
-            print(f"Initial connection failed: {e}")
-            show_error_toast(self, "Connection Error",
-                             f"Failed to connect to the cluster: {e}. Please check settings.")
-        self.slurm_worker.start()
-        self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(self.slurm_worker.start)
-        self.refresh_timer.start(REFRESH_INTERVAL_MS)
+
 
     def set_connection_status(self, event_data):
         """connection status handling"""

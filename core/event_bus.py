@@ -5,7 +5,7 @@ Simple, thread-safe event bus for decoupled communication between components.
 
 import weakref
 from typing import Dict, List, Callable, Any, Optional
-from threading import Lock  
+from threading import RLock  
 from dataclasses import dataclass
 from enum import Enum, auto
 from PyQt6.QtCore import QObject, pyqtSignal, QMetaObject, Qt
@@ -54,7 +54,7 @@ class EventBus(QObject):
     def __init__(self):
         super().__init__()
         self._listeners: Dict[str, List[EventListener]] = {}
-        self._lock = Lock()
+        self._lock = RLock()
         self._enabled = True
         
     def subscribe(self, event_type: str, callback: Callable, 
