@@ -19,6 +19,7 @@ JOB_CODES = {
     "DL": "DEADLINE", "OT": "OTHER"
 }
 
+
 class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
     """Worker thread for SLURM operations using event bus - continuous loop"""
 
@@ -31,40 +32,11 @@ class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
 
     def run(self):
         """Continuous loop until stop is requested"""
-        while not self._stop_requested:
-            try:
-                if self.slurm_api.connection_status != ConnectionState.CONNECTED:
-                    # Wait and continue loop instead of returning
-                    # QThread.msleep takes milliseconds
-                    self.msleep(self.refresh_interval * 1000)
-                    continue
-
-                nodes_data = self.slurm_api.fetch_nodes_info()
-                queue_jobs = self.slurm_api.fetch_job_queue()
-
-                self.event_bus.emit(Events.DATA_READY,
-                                    {"nodes": nodes_data or [],
-                                        "jobs": queue_jobs or []},
-                                    source="slurmworker")
-
-            except Exception as e:
-                print(f"Worker error: {e}")
-                self.event_bus.emit(Events.ERROR_OCCURRED,
-                                    {"error": str(e)}, source="worker")
-
-            # Sleep for the refresh interval
-            # QThread.msleep takes milliseconds
-            self.msleep(self.refresh_interval * 1000)
-
-    def once(self):
-        print("instant Refreshing")
         try:
             if self.slurm_api.connection_status != ConnectionState.CONNECTED:
                 return
-            
             nodes_data = self.slurm_api.fetch_nodes_info()
             queue_jobs = self.slurm_api.fetch_job_queue()
-
             self.event_bus.emit(Events.DATA_READY,
                                 {"nodes": nodes_data or [],
                                     "jobs": queue_jobs or []},
@@ -74,7 +46,6 @@ class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
             print(f"Worker error: {e}")
             self.event_bus.emit(Events.ERROR_OCCURRED,
                                 {"error": str(e)}, source="worker")
-
 
     def stop(self):
         """Stop the worker thread"""
@@ -116,9 +87,17 @@ class SlurmAPI():
     _instance = None
 
     def __new__(cls):
-        if cls._instance is None:
+        if cls._instance is None:   
             cls._instance = super().__new__(cls)
         return cls._instance
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance to create a fresh SlurmAPI"""
+        if cls._instance is not None:
+            # Disconnect and cleanup the old instance
+            cls._instance.disconnect()
+            cls._instance = None
+        return cls()
 
     def __init__(self):
         # Only initialize once
@@ -163,7 +142,7 @@ class SlurmAPI():
         stdin, stdout, stderr = self._client.exec_command(command)
         return stdout.read().decode().strip(), stderr.read().decode().strip()
 
-    def connect(self):
+    def connect(self, *args):
         """Establish SSH connection"""
         self._set_connection_status(ConnectionState.CONNECTING)
         try:
@@ -317,27 +296,31 @@ class SlurmAPI():
 
         return job_dict
 
-def _refresh(slurm_api:SlurmAPI):
-            try:
-                if slurm_api.connection_status != ConnectionState.CONNECTED:
-                    return
-                
-                nodes_data = slurm_api.fetch_nodes_info()
-                queue_jobs = slurm_api.fetch_job_queue()
 
-                get_event_bus().emit(Events.DATA_READY,
-                                    {"nodes": nodes_data or [],
-                                        "jobs": queue_jobs or []},
-                                    source="slurmworker")
+def _refresh(slurm_api: SlurmAPI):
+    try:
+        if slurm_api.connection_status != ConnectionState.CONNECTED:
+            return
 
-            except Exception as e:
-                print(f"Worker error: {e}")
-                get_event_bus().emit(Events.ERROR_OCCURRED,
-                                    {"error": str(e)}, source="worker")
+        nodes_data = slurm_api.fetch_nodes_info()
+        queue_jobs = slurm_api.fetch_job_queue()
+
+        get_event_bus().emit(Events.DATA_READY,
+                             {"nodes": nodes_data or [],
+                              "jobs": queue_jobs or []},
+                             source="slurmworker")
+
+    except Exception as e:
+        print(f"Worker error: {e}")
+        get_event_bus().emit(Events.ERROR_OCCURRED,
+                             {"error": str(e)}, source="worker")
+
 
 def refresh_func(slurm_api: SlurmAPI):
-    t = threading.Thread(target=functools.partial(_refresh, slurm_api), daemon=True)
+    t = threading.Thread(target=functools.partial(
+        _refresh, slurm_api), daemon=True)
     t.start()
+
 
 if __name__ == '__main__':
     settings_path = "/home/nicola/Desktop/slurm_gui/configs/settings.ini"

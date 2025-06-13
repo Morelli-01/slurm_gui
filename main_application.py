@@ -121,21 +121,9 @@ class SlurmJobManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.event_bus = get_event_bus()
         # Initialize SLURM connection
         self.slurm_api = SlurmAPI()
         self.slurm_worker = SlurmWorker(self.slurm_api)
-
-        # self.slurm_api.data_fetched.connect(self.update_ui_with_data)
-        # self.slurm_api.error_occurred.connect(self.handle_connection_error)
-
-        # Attempt to connect immediately
-        try:
-            self.slurm_api.connect()
-        except Exception as e:
-            print(f"Initial connection failed: {e}")
-            show_error_toast(self, "Connection Error",
-                             f"Failed to connect to the cluster: {e}. Please check settings.")
             
         self.setWindowTitle(APP_TITLE)
 
@@ -178,36 +166,60 @@ class SlurmJobManagerApp(QMainWindow):
         # Initialize
         self.update_nav_styles(self.nav_buttons["Jobs"])
         self.stacked_widget.setCurrentIndex(0)
-        # self.setup_refresh_timer()
-        # self.set_connection_status(self.slurm_api.is_connected())
+
+        self.event_bus = get_event_bus()
         self._event_bus_subscription()
-        # self.slurm_worker.start()
-        refresh_func(self.slurm_api)
+
+
+
+        # Attempt to connect immediately
+        try:
+            self.slurm_api.connect()
+        except Exception as e:
+            print(f"Initial connection failed: {e}")
+            show_error_toast(self, "Connection Error",
+                             f"Failed to connect to the cluster: {e}. Please check settings.")
+        self.slurm_worker.start()
         self.refresh_timer = QTimer(self)
-        self.refresh_timer.timeout.connect(partial(refresh_func, self.slurm_api))
+        self.refresh_timer.timeout.connect(self.slurm_worker.start)
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
         # self.load_settings()
 
 
     def _event_bus_subscription(self):
-        # self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
         self.event_bus.subscribe(Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
         self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
+        self.event_bus.subscribe(Events.CONNECTION_SAVE_REQ, self.new_connection)
 
-    def set_connection_status(self, connected: bool, connecting=False):
-        """Enhanced connection status handling with proper project store recovery"""
-        previous_status = getattr(self, 'connection_status_', None)
+    def new_connection(self, event_data):
+        self.refresh_timer.stop()
+        
+        self.slurm_worker.stop()
+        self.slurm_worker.wait(1000)
+        
+        self.slurm_api = SlurmAPI.reset_instance()
+        self.slurm_worker = SlurmWorker(self.slurm_api)
+        try:
+            self.slurm_api.connect()
+        except Exception as e:
+            print(f"Initial connection failed: {e}")
+            show_error_toast(self, "Connection Error",
+                             f"Failed to connect to the cluster: {e}. Please check settings.")
+        self.slurm_worker.start()
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.slurm_worker.start)
+        self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
-        if previous_status == False and connected:
-            print("Connection restored - reinitializing project store and jobs panel")
-            # self._handle_connection_recovery()
+    def set_connection_status(self, event_data):
+        """connection status handling"""
+        new_state = event_data.data["new_state"]
+        old_state = event_data.data["old_state"]
 
-        self.connection_status_ = True if connected else False
 
         # Use device-independent icon size
         icon_size = QSize(28, 28)
 
-        if connecting:
+        if new_state == ConnectionState.CONNECTING:
             loading_gif_path = os.path.join(
                 script_dir, "src_static", "loading.gif")
             loading_movie = QMovie(loading_gif_path)
@@ -231,7 +243,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.connection_status.setMovie(None)
         self.connection_status.setText(" Connection status...")
 
-        if connected:
+        if new_state == ConnectionState.CONNECTED:
             self.connection_status.setToolTip("Connected")
             good_connection_icon_path = os.path.join(
                 script_dir, "src_static", "good_connection.png")
@@ -288,7 +300,6 @@ class SlurmJobManagerApp(QMainWindow):
         if hasattr(self, 'cluster_status_overview_widget'):
             self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
     
-
     # --- Navigation Bar ---
     def switch_panel(self, index, clicked_button):
         """Switches the visible panel in the QStackedWidget."""
@@ -603,7 +614,7 @@ class SlurmJobManagerApp(QMainWindow):
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
 
         refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.clicked.connect(self.slurm_worker.once)
+        refresh_cluster_btn.clicked.connect(self.slurm_worker.start)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)
