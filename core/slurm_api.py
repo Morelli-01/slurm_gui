@@ -19,7 +19,6 @@ JOB_CODES = {
     "DL": "DEADLINE", "OT": "OTHER"
 }
 
-
 class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
     """Worker thread for SLURM operations using event bus - continuous loop"""
 
@@ -34,7 +33,7 @@ class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
         """Continuous loop until stop is requested"""
         while not self._stop_requested:
             try:
-                if self.slurm_api.connectino_status != ConnectionState.CONNECTED:
+                if self.slurm_api.connection_status != ConnectionState.CONNECTED:
                     # Wait and continue loop instead of returning
                     # QThread.msleep takes milliseconds
                     self.msleep(self.refresh_interval * 1000)
@@ -60,7 +59,7 @@ class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
     def once(self):
         print("instant Refreshing")
         try:
-            if self.slurm_api.connectino_status != ConnectionState.CONNECTED:
+            if self.slurm_api.connection_status != ConnectionState.CONNECTED:
                 return
             
             nodes_data = self.slurm_api.fetch_nodes_info()
@@ -106,7 +105,7 @@ def requires_connection(func: Callable) -> Callable:
     """Returns None if not connected, no error"""
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        if not hasattr(self, 'connectino_status') or self.connectino_status != ConnectionState.CONNECTED:
+        if not hasattr(self, 'connection_status') or self.connection_status != ConnectionState.CONNECTED:
             print("SlurmAPI is not connected!")
             return None
         return func(self, *args, **kwargs)
@@ -127,7 +126,7 @@ class SlurmAPI():
             return
 
         self.event_bus = get_event_bus()
-        self.connectino_status = ConnectionState.DISCONNECTED
+        self.connection_status = ConnectionState.DISCONNECTED
         self._config = ConnectionConfig()
         self._client: Optional[paramiko.SSHClient]
         self._load_connection_config()
@@ -147,12 +146,12 @@ class SlurmAPI():
             return False
 
     def _set_connection_status(self, new_state: ConnectionState):
-        old_state = self.connectino_status
-        self.connectino_status = new_state
+        old_state = self.connection_status
+        self.connection_status = new_state
         self.event_bus.emit(
             Events.CONNECTION_STATE_CHANGED,
             data={"old_state": old_state,
-                  "new_state": self.connectino_status},
+                  "new_state": self.connection_status},
             source="slurmapi"
         )
         print(f"Connection State changed: {old_state} -> {new_state}")
@@ -318,6 +317,28 @@ class SlurmAPI():
 
         return job_dict
 
+def _refresh(slurm_api:SlurmAPI):
+            print("instant Refreshing")
+            try:
+                if slurm_api.connection_status != ConnectionState.CONNECTED:
+                    return
+                
+                nodes_data = slurm_api.fetch_nodes_info()
+                queue_jobs = slurm_api.fetch_job_queue()
+
+                get_event_bus().emit(Events.DATA_READY,
+                                    {"nodes": nodes_data or [],
+                                        "jobs": queue_jobs or []},
+                                    source="slurmworker")
+
+            except Exception as e:
+                print(f"Worker error: {e}")
+                get_event_bus().emit(Events.ERROR_OCCURRED,
+                                    {"error": str(e)}, source="worker")
+
+def refresh_func(slurm_api: SlurmAPI):
+    t = threading.Thread(target=functools.partial(_refresh, slurm_api), daemon=True)
+    t.start()
 
 if __name__ == '__main__':
     settings_path = "/home/nicola/Desktop/slurm_gui/configs/settings.ini"

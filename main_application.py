@@ -1,9 +1,10 @@
+from functools import partial
 import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 import platform
 from core.event_bus import EventPriority, Events, get_event_bus
-from core.slurm_api import SlurmAPI, SlurmWorker
+from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker, refresh_func
 from widgets.cluster_status_widget import ClusterStatusWidget
 from core.defaults import *
 system = platform.system()
@@ -180,12 +181,16 @@ class SlurmJobManagerApp(QMainWindow):
         # self.setup_refresh_timer()
         # self.set_connection_status(self.slurm_api.is_connected())
         self._event_bus_subscription()
-        self.slurm_worker.start()
+        # self.slurm_worker.start()
+        refresh_func(self.slurm_api)
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(partial(refresh_func, self.slurm_api))
+        self.refresh_timer.start(REFRESH_INTERVAL_MS)
         # self.load_settings()
 
 
     def _event_bus_subscription(self):
-        self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
+        # self.event_bus.subscribe(Events.DISPLAY_SAVE_REQ, self.job_queue_widget.reload_settings_and_redraw)
         self.event_bus.subscribe(Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
         self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
 
@@ -355,16 +360,16 @@ class SlurmJobManagerApp(QMainWindow):
 
     def open_terminal(self):
         """Open a terminal with SSH connection to the cluster"""
-        if not self.slurm_api or not self.slurm_api.check_connection():
+        if not self.slurm_api or self.slurm_api.connection_status != ConnectionState.CONNECTED:
             show_warning_toast(self, "Connection Required",
                                "Please establish a SLURM connection first.")
             return
 
         try:
             # Get connection details
-            host = self.slurm_api.host
-            username = self.slurm_api.user
-            password = self.slurm_api.password
+            host = self.slurm_api._config.host
+            username = self.slurm_api._config.username
+            password = self.slurm_api._config.password
 
             system = platform.system().lower()
 

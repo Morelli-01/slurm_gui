@@ -1,6 +1,6 @@
 from pathlib import Path
 from core.defaults import *
-
+from utils import settings_path
 
 class JobQueueModel:
     """Model: Manages job queue data and state"""
@@ -20,15 +20,10 @@ class JobQueueModel:
         self._sorted_by_order: Optional[Qt.SortOrder] = None
         
         self.load_settings()
-    
+
     def load_settings(self):
         """Load settings exactly like original"""
-        try:
-            self.settings = QSettings(str(Path("./configs/settings.ini")), QSettings.Format.IniFormat)
-        except:
-            # Fallback if path doesn't work
-            from utils import settings_path
-            self.settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+        self.settings = QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
             
         self.settings.beginGroup("AppearenceSettings")
         for field in JOB_QUEUE_FIELDS:

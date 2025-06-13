@@ -791,7 +791,7 @@ class AppStyles:
                 color: {COLOR_DARK_FG};
                 margin-left: 5px;
             }}
-            TableWidget {{
+            QTableWidget {{
                 background-color: {COLOR_DARK_BG};
                 color: {COLOR_DARK_FG};
                 selection-background-color: {COLOR_DARK_BG_HOVER};
