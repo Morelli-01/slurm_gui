@@ -1,13 +1,24 @@
-from functools import partial
+from widgets.job_queue_widget import JobQueueWidget
+import re
+from datetime import datetime
+import sys
+import subprocess
+from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from widgets.settings_widget import SettingsWidget
+import shutil
+from pathlib import Path
+from utils import *
+from core.style import AppStyles
+from core.defaults import *
+from widgets.cluster_status_widget import ClusterStatusWidget
+from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker, refresh_func
+from core.event_bus import EventPriority, Events, get_event_bus
+import platform
+from functools import partial, wraps
 import os
 from threading import Thread
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-import platform
-from core.event_bus import EventPriority, Events, get_event_bus
-from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker, refresh_func
-from widgets.cluster_status_widget import ClusterStatusWidget
-from core.defaults import *
 system = platform.system()
 if system == "Windows":
     # Windows: Use Qt's built-in high DPI handling
@@ -16,18 +27,6 @@ if system == "Windows":
     os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
     os.environ["QT_FONT_DPI"] = "96"
     print("Windows: Qt DPI scaling enabled")
-from widgets.job_queue_widget import JobQueueWidget 
-from core.style import AppStyles
-from utils import *
-from pathlib import Path
-import shutil
-from widgets.settings_widget import SettingsWidget
-from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
-import subprocess
-import sys
-from datetime import datetime
-import re
-
 
 
 # --- Constants ---
@@ -118,14 +117,14 @@ class ConnectionSetupDialog(QDialog):
 
 
 class SlurmJobManagerApp(QMainWindow):
-    
+
     def __init__(self):
         super().__init__()
 
         # Initialize SLURM connection
         self.slurm_api = SlurmAPI()
         self.slurm_worker = SlurmWorker(self.slurm_api)
-            
+
         self.setWindowTitle(APP_TITLE)
 
         # Set window size - Qt 6 handles DPI scaling automatically
@@ -134,7 +133,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.setMinimumSize(min_width, min_height)
 
         # Set window icon
-        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
+        window_icon_path = os.path.join(
+            script_dir, "src_static", "app_logo.png")
         self.setWindowIcon(QIcon(window_icon_path))
 
         # Theme setup
@@ -171,8 +171,6 @@ class SlurmJobManagerApp(QMainWindow):
         self.event_bus = get_event_bus()
         self._event_bus_subscription()
 
-
-
         # Attempt to connect immediately
         try:
             self.slurm_api.connect()
@@ -186,38 +184,40 @@ class SlurmJobManagerApp(QMainWindow):
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
         # self.load_settings()
 
-
     def _event_bus_subscription(self):
-        self.event_bus.subscribe(Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
-        self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
-        self.event_bus.subscribe(Events.CONNECTION_SAVE_REQ, self.new_connection, priority=EventPriority.LOW)
-
+        self.event_bus.subscribe(
+            Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
+        self.event_bus.subscribe(
+            Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
+        self.event_bus.subscribe(
+            Events.CONNECTION_SAVE_REQ, self.new_connection, priority=EventPriority.LOW)
+    
     def new_connection(self, event_data):
-            self.refresh_timer.stop()
-            
-            self.slurm_worker.stop()
-            self.slurm_worker.wait(1000)
-            
-            self.slurm_api = SlurmAPI.reset_instance()
-            self.slurm_worker = SlurmWorker(self.slurm_api)
-            try:
-                self.slurm_api.connect()
-            except Exception as e:
-                print(f"Initial connection failed: {e}")
-                show_error_toast(self, "Connection Error",
-                                f"Failed to connect to the cluster: {e}. Please check settings.")
-            self.slurm_worker.start()
-            self.refresh_timer = QTimer(self)
-            self.refresh_timer.timeout.connect(self.slurm_worker.start)
-            self.refresh_timer.start(REFRESH_INTERVAL_MS)
-        
+        self.refresh_timer.stop()
 
+        self.slurm_worker.stop()
+        self.slurm_worker.wait(1000)
+
+        self.slurm_api = SlurmAPI.reset_instance()
+        self.slurm_worker = SlurmWorker(self.slurm_api)
+
+        if self.slurm_api.connect():
+            show_success_toast(self, "Connected",
+                               "Successfully connected to SLURM cluster")
+        else:
+            print(f"Initial connection failed")
+            show_error_toast(self, "Connection Error",
+                             f"Failed to connect to the cluster. Please check settings.")
+
+        self.slurm_worker.start()
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.slurm_worker.start)
+        self.refresh_timer.start(REFRESH_INTERVAL_MS)
 
     def set_connection_status(self, event_data):
         """connection status handling"""
         new_state = event_data.data["new_state"]
         old_state = event_data.data["old_state"]
-
 
         # Use device-independent icon size
         icon_size = QSize(28, 28)
@@ -291,18 +291,18 @@ class SlurmJobManagerApp(QMainWindow):
         """Updates the UI with new data from SLURM."""
         nodes_data = event.data["nodes"]
         queue_jobs = event.data["jobs"]
-        
 
         # Update job queue with incremental updates
         print("Updating job queue...")
         if hasattr(self, 'job_queue_widget'):
             self.job_queue_widget.update_queue_status(queue_jobs)
-        
+
         # Update cluster status
         print("Updating cluster status...")
         if hasattr(self, 'cluster_status_overview_widget'):
-            self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
-    
+            self.cluster_status_overview_widget.update_status(
+                nodes_data, queue_jobs)
+
     # --- Navigation Bar ---
     def switch_panel(self, index, clicked_button):
         """Switches the visible panel in the QStackedWidget."""
@@ -549,7 +549,7 @@ class SlurmJobManagerApp(QMainWindow):
         """Creates the main panel for submitting and viewing jobs."""
         # self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
         self.jobs_panel = QFrame()
-        
+
         self.stacked_widget.addWidget(self.jobs_panel)
 
     def create_cluster_panel(self):
@@ -595,7 +595,6 @@ class SlurmJobManagerApp(QMainWindow):
         except Exception as e:
             print(f"Error checking maintenance status: {e}")
             self.maintenance_label.hide()
-
 
         header_layout.addWidget(self.cluster_label)
         header_layout.addWidget(self.maintenance_label)
@@ -656,8 +655,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.settings_panel = SettingsWidget()
         self.stacked_widget.addWidget(self.settings_panel)
 
-
     # --- Action & Data Methods ---
+
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
             self.job_queue_widget.filter_table_by_account(
@@ -665,9 +664,11 @@ class SlurmJobManagerApp(QMainWindow):
         elif account_type == "ALL":
             self.job_queue_widget.filter_table_by_account("")
         elif account_type == "STUD":
-            self.job_queue_widget.filter_table_by_account(STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_account(
+                STUDENTS_JOBS_KEYWORD)
         elif account_type == "PROD":
-            self.job_queue_widget.filter_table_by_account(STUDENTS_JOBS_KEYWORD, negative=True)
+            self.job_queue_widget.filter_table_by_account(
+                STUDENTS_JOBS_KEYWORD, negative=True)
 
     def closeEvent(self, event):
         """Handles the window close event."""
@@ -678,7 +679,7 @@ class SlurmJobManagerApp(QMainWindow):
         print("Closing application.")
         event.accept()
 
-    #--------------------- Styles ------------------------
+    # --------------------- Styles ------------------------
 
     def apply_theme(self):
         """Apply the current theme using centralized styles"""
@@ -707,7 +708,7 @@ class SlurmJobManagerApp(QMainWindow):
         if hasattr(self, 'terminal_button'):
             self.terminal_button.style().unpolish(self.terminal_button)
             self.terminal_button.style().polish(self.terminal_button)
-    
+
 # --- Main Execution ---
 
 
@@ -850,7 +851,8 @@ if __name__ == "__main__":
                 app.setFont(font)
                 break
 
-        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
+        window_icon_path = os.path.join(
+            script_dir, "src_static", "app_logo.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()
         window.show()
