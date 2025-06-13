@@ -646,15 +646,14 @@ class SlurmJobManagerApp(QMainWindow):
     # --- Action & Data Methods ---
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
-            self.job_queue_widget.filter_table(
+            self.job_queue_widget.filter_table_by_account(
                 self.settings_panel.username.text())
         elif account_type == "ALL":
-            self.job_queue_widget.filter_table("")
+            self.job_queue_widget.filter_table_by_account("")
         elif account_type == "STUD":
-            self.job_queue_widget.filter_table_by_list(STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_account(STUDENTS_JOBS_KEYWORD)
         elif account_type == "PROD":
-            self.job_queue_widget.filter_table_by_negative_keywords(
-                STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_account(STUDENTS_JOBS_KEYWORD, negative=True)
 
     def closeEvent(self, event):
         """Handles the window close event."""

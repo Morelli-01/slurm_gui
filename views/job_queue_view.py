@@ -1,5 +1,4 @@
 from core.defaults import *
-from core.style import AppStyles
 
 
 class JobQueueView:
@@ -9,6 +8,7 @@ class JobQueueView:
         self.table = table_widget
         self._setup_table_properties()
         self.rows: Dict[int, list[Any]] = {}
+        self._filter: list = None
 
     def _setup_table_properties(self):
         """Setup table properties exactly like original"""
@@ -16,7 +16,8 @@ class JobQueueView:
             QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
-
+        self.table.setSortingEnabled(True)
+        
     def setup_columns(self, displayable_fields: Dict[str, bool],  visible_fields: List[str]):
         """Setup columns exactly like original"""
         self.table.setColumnCount(len(displayable_fields))
@@ -43,17 +44,17 @@ class JobQueueView:
         """Populate entire table"""
         # Get current job IDs from new data
         current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data}
-        
+
         # Find jobs that need to be removed (exist in table but not in new data)
         jobs_to_remove = set(self.rows.keys()) - current_job_ids
-        
+
         # Remove completed/missing jobs
         for job_id in jobs_to_remove:
             self.remove_job_from_table(job_id)
-            
+
         for original_job_index, job_dict in enumerate(jobs_data):
             current_table_row = self.table.rowCount()
-            
+
             if int(job_dict["Job ID"]) in self.rows.keys():
                 row = self.rows[int(job_dict["Job ID"])]
                 for col_idx, field_name in enumerate(displayable_fields.keys()):
@@ -66,9 +67,9 @@ class JobQueueView:
                         item.setData(Qt.ItemDataRole.EditRole, item_data)
                     else:
                         item.setData(Qt.ItemDataRole.EditRole,
-                                    item_data[1].seconds)
+                                     item_data[1].seconds)
                         item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
-                    
+
                     if field_name == "Status":
                         status = job_dict.get("Status", "").upper()
                         color = QColor(COLOR_DARK_FG)  # Default
@@ -98,7 +99,7 @@ class JobQueueView:
 
                     if field_name == "Job ID":
                         job_id = int(item_data)
-    
+
                     # Handle different data types exactly like original
                     if isinstance(item_data, int):
                         item = QTableWidgetItem()
@@ -108,7 +109,7 @@ class JobQueueView:
                     else:
                         item = QTableWidgetItem()
                         item.setData(Qt.ItemDataRole.EditRole,
-                                    item_data[1].seconds)
+                                     item_data[1].seconds)
                         item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
 
                     # Store original index for filtering - exactly like original
@@ -144,27 +145,69 @@ class JobQueueView:
                         item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
                     else:
                         item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-                    
+
                     row.append(item)
                     self.table.setItem(current_table_row, col_idx, item)
 
                 self.rows[job_id] = row
 
+        if self._filter:
+            self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
+
     def remove_job_from_table(self, job_id: int):
         """Remove a job from the table by job ID"""
         if job_id not in self.rows:
             return
-        
+
         # Find the row in the table that contains this job
         job_items = self.rows[job_id]
         first_item = job_items[0]  # Get first item to find row position
-        
+
         # Find which table row contains this item
         for row in range(self.table.rowCount()):
             if self.table.item(row, 0) is first_item:
                 self.table.removeRow(row)
                 break
-        
+
         # Remove from our tracking dictionary
         del self.rows[job_id]
 
+    def filter_rows(self, keywords: list[str], field_index: int = None, negative=False):
+        """Filter table rows based on keywords in specified field or all columns"""
+        self._filter = []
+        self._filter.append(keywords)
+        self._filter.append(field_index)
+        self._filter.append(negative)
+        # Convert keywords to lowercase for case-insensitive matching
+        keywords_lower = [keyword.lower() for keyword in keywords]
+
+        for row in range(self.table.rowCount()):
+            matches_keyword = False
+
+            if field_index is not None:
+                # Search in specific column only
+                item = self.table.item(row, field_index)
+                if item is not None:
+                    item_text = item.text().lower()
+                    matches_keyword = any(
+                        keyword in item_text for keyword in keywords_lower)
+            else:
+                # Search in all columns
+                for col in range(self.table.columnCount()):
+                    # Skip hidden columns
+                    # if self.table.isColumnHidden(col):
+                    #     continue
+
+                    item = self.table.item(row, col)
+                    if item is not None:
+                        item_text = item.text().lower()
+                        if any(keyword in item_text for keyword in keywords_lower):
+                            matches_keyword = True
+                            break  # Found match, no need to check other columns
+
+            if negative:
+                # Hide rows that DO match the keywords
+                self.table.setRowHidden(row, matches_keyword)
+            else:
+                # Hide rows that DON'T match the keywords
+                self.table.setRowHidden(row, not matches_keyword)

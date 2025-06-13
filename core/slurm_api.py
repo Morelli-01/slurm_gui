@@ -318,7 +318,6 @@ class SlurmAPI():
         return job_dict
 
 def _refresh(slurm_api:SlurmAPI):
-            print("instant Refreshing")
             try:
                 if slurm_api.connection_status != ConnectionState.CONNECTED:
                     return

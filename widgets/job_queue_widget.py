@@ -1,3 +1,4 @@
+from torch import neg
 from controllers.job_queue_controller import JobQueueController
 from core.defaults import *
 from core.event_bus import EventPriority, Events, get_event_bus
@@ -48,3 +49,17 @@ class JobQueueWidget(QGroupBox):
         """Update queue status - exact same interface as original"""
 
         self.controller.update_queue_status(jobs_data)
+    
+    def filter_table_by_account(self, keywords: list[str], negative=False):
+        if not isinstance(keywords, list):
+            keywords = [keywords]
+        self.controller.filter_table_by_account(keywords, negative=negative)
+
+    def filter_table(self, kw: str):
+        if not isinstance(kw, list):
+            kw = [kw]
+        self.controller.view.filter_rows(kw)
+
+    def show_all_rows(self):
+        self.controller.view.filter_rows([], 0)
+        

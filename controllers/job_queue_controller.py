@@ -39,3 +39,6 @@ class JobQueueController:
         
         self.view.populate_table_full(jobs_data, self.model.displayable_fields)
         
+    def filter_table_by_account(self, kws:list[str], negative=False):
+        account_index = list(self.model.displayable_fields.keys()).index("Account")
+        self.view.filter_rows(kws, field_index=account_index, negative=negative)
