@@ -22,6 +22,7 @@ import platform
 from functools import partial, wraps
 import os
 from threading import Thread
+from core.terminal_helper import *
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -430,25 +431,30 @@ class SlurmJobManagerApp(QMainWindow):
             return
 
         try:
-            # Get connection details
-            host = self.slurm_api._config.host
-            username = self.slurm_api._config.username
-            password = self.slurm_api._config.password
+            
+            helper = TerminalHelper()
+            connection = SSHConnectionDetails(self.slurm_api._config.host, self.slurm_api._config.username, self.slurm_api._config.password)
+            helper.open_ssh_terminal(connection, parent_widget=self)
 
-            system = platform.system().lower()
+            # # Get connection details
+            # host = self.slurm_api._config.host
+            # username = self.slurm_api._config.username
+            # password = self.slurm_api._config.password
 
-            if system == "windows":
-                self._open_windows_terminal(host, username, password)
-            elif system == "darwin":  # macOS
-                self._open_macos_terminal(host, username, password)
-            elif system == "linux":
-                self._open_linux_terminal(host, username, password)
-            else:
-                show_error_toast(
-                    self,
-                    "Unsupported Platform",
-                    f"Terminal opening not supported on {system}",
-                )
+            # system = platform.system().lower()
+
+            # if system == "windows":
+            #     self._open_windows_terminal(host, username, password)
+            # elif system == "darwin":  # macOS
+            #     self._open_macos_terminal(host, username, password)
+            # elif system == "linux":
+            #     self._open_linux_terminal(host, username, password)
+            # else:
+            #     show_error_toast(
+            #         self,
+            #         "Unsupported Platform",
+            #         f"Terminal opening not supported on {system}",
+            #     )
 
         except Exception as e:
             show_error_toast(
@@ -463,7 +469,6 @@ class SlurmJobManagerApp(QMainWindow):
                 "putty.exe",  # In PATH
                 r"C:\Program Files\PuTTY\putty.exe",
                 r"C:\Program Files (x86)\PuTTY\putty.exe",
-                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
             ]
 
             putty_path = None
