@@ -55,6 +55,11 @@ class JobQueueWidget(QGroupBox):
             keywords = [keywords]
         self.controller.filter_table_by_account(keywords, negative=negative)
 
+    def filter_table_by_user(self, keywords: list[str], negative=False):
+        if not isinstance(keywords, list):
+            keywords = [keywords]
+        self.controller.filter_table_by_user(keywords, negative=negative)
+
     def filter_table(self, kw: str):
         if not isinstance(kw, list):
             kw = [kw]

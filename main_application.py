@@ -3,7 +3,12 @@ import re
 from datetime import datetime
 import sys
 import subprocess
-from widgets.toast_widget import show_info_toast, show_success_toast, show_warning_toast, show_error_toast
+from widgets.toast_widget import (
+    show_info_toast,
+    show_success_toast,
+    show_warning_toast,
+    show_error_toast,
+)
 from widgets.settings_widget import SettingsWidget
 import shutil
 from pathlib import Path
@@ -17,6 +22,7 @@ import platform
 from functools import partial, wraps
 import os
 from threading import Thread
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 system = platform.system()
@@ -65,9 +71,11 @@ class ConnectionSetupDialog(QDialog):
 
         # Use device-independent pixels - Qt handles DPI scaling automatically
         self.setMinimumWidth(400)
-        self.setStyleSheet(AppStyles.get_dialog_styles() +
-                           AppStyles.get_input_styles() +
-                           AppStyles.get_button_styles())
+        self.setStyleSheet(
+            AppStyles.get_dialog_styles()
+            + AppStyles.get_input_styles()
+            + AppStyles.get_button_styles()
+        )
         layout = QVBoxLayout(self)
 
         # Use consistent spacing in device-independent pixels
@@ -75,7 +83,8 @@ class ConnectionSetupDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
 
         info_label = QLabel(
-            "Settings file not found. Please enter connection details to set up the first SSH connection.")
+            "Settings file not found. Please enter connection details to set up the first SSH connection."
+        )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
 
@@ -83,8 +92,7 @@ class ConnectionSetupDialog(QDialog):
         form_layout.setSpacing(10)
 
         self.cluster_address_input = QLineEdit()
-        self.cluster_address_input.setPlaceholderText(
-            "e.g., your.cluster.address")
+        self.cluster_address_input.setPlaceholderText("e.g., your.cluster.address")
         form_layout.addRow("Cluster Address:", self.cluster_address_input)
 
         self.username_input = QLineEdit()
@@ -92,15 +100,15 @@ class ConnectionSetupDialog(QDialog):
         form_layout.addRow("Username:", self.username_input)
 
         self.password_input = QLineEdit()
-        self.password_input.setPlaceholderText(
-            "Your password (optional, or use key)")
+        self.password_input.setPlaceholderText("Your password (optional, or use key)")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         form_layout.addRow("Password:", self.password_input)
 
         layout.addLayout(form_layout)
 
         self.button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
@@ -112,6 +120,7 @@ class ConnectionSetupDialog(QDialog):
             "username": self.username_input.text().strip(),
             "psw": self.password_input.text().strip(),
         }
+
 
 # --- Main Application Class ---
 
@@ -133,8 +142,7 @@ class SlurmJobManagerApp(QMainWindow):
         self.setMinimumSize(min_width, min_height)
 
         # Set window icon
-        window_icon_path = os.path.join(
-            script_dir, "src_static", "app_logo.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
         self.setWindowIcon(QIcon(window_icon_path))
 
         # Theme setup
@@ -153,8 +161,15 @@ class SlurmJobManagerApp(QMainWindow):
         # Create UI elements
         self.nav_buttons = {}
         self.create_navigation_bar()
-        self.main_layout.addWidget(create_separator(
-            color=COLOR_DARK_BORDER if self.current_theme == THEME_DARK else COLOR_LIGHT_BORDER))
+        self.main_layout.addWidget(
+            create_separator(
+                color=(
+                    COLOR_DARK_BORDER
+                    if self.current_theme == THEME_DARK
+                    else COLOR_LIGHT_BORDER
+                )
+            )
+        )
 
         self.stacked_widget = QStackedWidget()
         self.main_layout.addWidget(self.stacked_widget)
@@ -176,8 +191,11 @@ class SlurmJobManagerApp(QMainWindow):
             self.slurm_api.connect()
         except Exception as e:
             print(f"Initial connection failed: {e}")
-            show_error_toast(self, "Connection Error",
-                             f"Failed to connect to the cluster: {e}. Please check settings.")
+            show_error_toast(
+                self,
+                "Connection Error",
+                f"Failed to connect to the cluster: {e}. Please check settings.",
+            )
         self.slurm_worker.start()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.slurm_worker.start)
@@ -186,12 +204,15 @@ class SlurmJobManagerApp(QMainWindow):
 
     def _event_bus_subscription(self):
         self.event_bus.subscribe(
-            Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH)
+            Events.DATA_READY, self.update_ui_with_data, priority=EventPriority.HIGH
+        )
         self.event_bus.subscribe(
-            Events.CONNECTION_STATE_CHANGED, self.set_connection_status)
+            Events.CONNECTION_STATE_CHANGED, self.set_connection_status
+        )
         self.event_bus.subscribe(
-            Events.CONNECTION_SAVE_REQ, self.new_connection, priority=EventPriority.LOW)
-    
+            Events.CONNECTION_SAVE_REQ, self.new_connection, priority=EventPriority.LOW
+        )
+
     def new_connection(self, event_data):
         self.refresh_timer.stop()
 
@@ -202,12 +223,16 @@ class SlurmJobManagerApp(QMainWindow):
         self.slurm_worker = SlurmWorker(self.slurm_api)
 
         if self.slurm_api.connect():
-            show_success_toast(self, "Connected",
-                               "Successfully connected to SLURM cluster")
+            show_success_toast(
+                self, "Connected", "Successfully connected to SLURM cluster"
+            )
         else:
             print(f"Initial connection failed")
-            show_error_toast(self, "Connection Error",
-                             f"Failed to connect to the cluster. Please check settings.")
+            show_error_toast(
+                self,
+                "Connection Error",
+                f"Failed to connect to the cluster. Please check settings.",
+            )
 
         self.slurm_worker.start()
         self.refresh_timer = QTimer(self)
@@ -223,15 +248,15 @@ class SlurmJobManagerApp(QMainWindow):
         icon_size = QSize(28, 28)
 
         if new_state == ConnectionState.CONNECTING:
-            loading_gif_path = os.path.join(
-                script_dir, "src_static", "loading.gif")
+            loading_gif_path = os.path.join(script_dir, "src_static", "loading.gif")
             loading_movie = QMovie(loading_gif_path)
             loading_movie.setScaledSize(icon_size)
             loading_movie.start()
             self.connection_status.setMovie(loading_movie)
             self.connection_status.setText("")
             self.connection_status.setToolTip("Connecting...")
-            self.connection_status.setStyleSheet("""
+            self.connection_status.setStyleSheet(
+                """
                 QPushButton#statusButton {
                     background-color: #9e9e9e;
                     color: white;
@@ -239,7 +264,8 @@ class SlurmJobManagerApp(QMainWindow):
                     font-weight: bold;
                     padding: 8px 15px;
                 }
-            """)
+            """
+            )
             return
 
         # Restore text after movie is done
@@ -249,10 +275,13 @@ class SlurmJobManagerApp(QMainWindow):
         if new_state == ConnectionState.CONNECTED:
             self.connection_status.setToolTip("Connected")
             good_connection_icon_path = os.path.join(
-                script_dir, "src_static", "good_connection.png")
+                script_dir, "src_static", "good_connection.png"
+            )
             self.connection_status.setPixmap(
-                QIcon(good_connection_icon_path).pixmap(icon_size))
-            self.connection_status.setStyleSheet("""
+                QIcon(good_connection_icon_path).pixmap(icon_size)
+            )
+            self.connection_status.setStyleSheet(
+                """
                 QPushButton#statusButton {
                     background-color: #4caf50;
                     color: white;
@@ -265,14 +294,18 @@ class SlurmJobManagerApp(QMainWindow):
                     background-color: #66bb6a;
                     border: 2px solid #ffffff;
                 }
-            """)
+            """
+            )
         else:
             self.connection_status.setToolTip("Disconnected")
             bad_connection_icon_path = os.path.join(
-                script_dir, "src_static", "bad_connection.png")
+                script_dir, "src_static", "bad_connection.png"
+            )
             self.connection_status.setPixmap(
-                QIcon(bad_connection_icon_path).pixmap(icon_size))
-            self.connection_status.setStyleSheet("""
+                QIcon(bad_connection_icon_path).pixmap(icon_size)
+            )
+            self.connection_status.setStyleSheet(
+                """
                 QPushButton#statusButton {
                     background-color: #f44336;
                     color: white;
@@ -285,7 +318,8 @@ class SlurmJobManagerApp(QMainWindow):
                     background-color: #ef5350;
                     border: 2px solid #ffffff;
                 }
-            """)
+            """
+            )
 
     def update_ui_with_data(self, event):
         """Updates the UI with new data from SLURM."""
@@ -294,14 +328,13 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Update job queue with incremental updates
         print("Updating job queue...")
-        if hasattr(self, 'job_queue_widget'):
+        if hasattr(self, "job_queue_widget"):
             self.job_queue_widget.update_queue_status(queue_jobs)
 
         # Update cluster status
         print("Updating cluster status...")
-        if hasattr(self, 'cluster_status_overview_widget'):
-            self.cluster_status_overview_widget.update_status(
-                nodes_data, queue_jobs)
+        if hasattr(self, "cluster_status_overview_widget"):
+            self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
 
     # --- Navigation Bar ---
     def switch_panel(self, index, clicked_button):
@@ -326,9 +359,12 @@ class SlurmJobManagerApp(QMainWindow):
         logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
         pixmap = QPixmap(logo_path)
         # Qt automatically handles DPI scaling for pixmaps
-        scaled_pixmap = pixmap.scaled(logo_size, logo_size,
-                                      Qt.AspectRatioMode.KeepAspectRatio,
-                                      Qt.TransformationMode.SmoothTransformation)
+        scaled_pixmap = pixmap.scaled(
+            logo_size,
+            logo_size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
         logo_label.setPixmap(scaled_pixmap)
 
         nav_layout.addSpacing(25)  # Device-independent spacing
@@ -339,8 +375,9 @@ class SlurmJobManagerApp(QMainWindow):
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
-            btn.clicked.connect(lambda checked, index=i,
-                                button=btn: self.switch_panel(index, button))
+            btn.clicked.connect(
+                lambda checked, index=i, button=btn: self.switch_panel(index, button)
+            )
             nav_layout.addWidget(btn)
             self.nav_buttons[name] = btn
 
@@ -350,7 +387,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.terminal_button = QPushButton("Terminal")
         self.terminal_button.setObjectName("terminalButton")
         self.terminal_button.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "terminal.svg")))
+            QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
+        )
         self.terminal_button.setToolTip("Open SSH Terminal")
         self.terminal_button.clicked.connect(self.open_terminal)
         nav_layout.addWidget(self.terminal_button)
@@ -361,22 +399,34 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Set initial icon - Qt handles DPI scaling for icons automatically
         initial_status_icon_path = os.path.join(
-            script_dir, "src_static", "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png")
+            script_dir,
+            "src_static",
+            "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png",
+        )
         # Use device-independent size - Qt scales automatically
         icon_size = QSize(28, 28)
         self.connection_status.setPixmap(
-            QPixmap(initial_status_icon_path).scaled(icon_size,
-                                                     Qt.AspectRatioMode.KeepAspectRatio,
-                                                     Qt.TransformationMode.SmoothTransformation))
+            QPixmap(initial_status_icon_path).scaled(
+                icon_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
         nav_layout.addWidget(self.connection_status)
 
         self.main_layout.addWidget(nav_widget)
 
     def open_terminal(self):
         """Open a terminal with SSH connection to the cluster"""
-        if not self.slurm_api or self.slurm_api.connection_status != ConnectionState.CONNECTED:
-            show_warning_toast(self, "Connection Required",
-                               "Please establish a SLURM connection first.")
+        if (
+            not self.slurm_api
+            or self.slurm_api.connection_status != ConnectionState.CONNECTED
+        ):
+            show_warning_toast(
+                self,
+                "Connection Required",
+                "Please establish a SLURM connection first.",
+            )
             return
 
         try:
@@ -394,12 +444,16 @@ class SlurmJobManagerApp(QMainWindow):
             elif system == "linux":
                 self._open_linux_terminal(host, username, password)
             else:
-                show_error_toast(self, "Unsupported Platform",
-                                 f"Terminal opening not supported on {system}")
+                show_error_toast(
+                    self,
+                    "Unsupported Platform",
+                    f"Terminal opening not supported on {system}",
+                )
 
         except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open terminal: {str(e)}")
+            show_error_toast(
+                self, "Terminal Error", f"Failed to open terminal: {str(e)}"
+            )
 
     def _open_windows_terminal(self, host, username, password):
         """Open terminal on Windows using PuTTY for SSH connection"""
@@ -409,8 +463,7 @@ class SlurmJobManagerApp(QMainWindow):
                 "putty.exe",  # In PATH
                 r"C:\Program Files\PuTTY\putty.exe",
                 r"C:\Program Files (x86)\PuTTY\putty.exe",
-                os.path.join(script_dir, "src_static",
-                             "putty.exe"),  # Local copy
+                os.path.join(script_dir, "src_static", "putty.exe"),  # Local copy
             ]
 
             putty_path = None
@@ -421,25 +474,27 @@ class SlurmJobManagerApp(QMainWindow):
 
             if putty_path:
                 # Use PuTTY with saved session or direct connection
-                putty_cmd = [
-                    putty_path,
-                    f"{username}@{host}",
-                    "-ssh",
-                    "-pw", password
-                ]
+                putty_cmd = [putty_path, f"{username}@{host}", "-ssh", "-pw", password]
 
                 subprocess.Popen(putty_cmd)
-                show_success_toast(self, "Terminal Opened",
-                                   f"PuTTY SSH session opened for {username}@{host}")
+                show_success_toast(
+                    self,
+                    "Terminal Opened",
+                    f"PuTTY SSH session opened for {username}@{host}",
+                )
             else:
                 # PuTTY not found - show error with installation suggestion
-                show_error_toast(self, "PuTTY Not Found",
-                                 "PuTTY is required for SSH connections on Windows.\n"
-                                 "Please install PuTTY from https://www.putty.org/")
+                show_error_toast(
+                    self,
+                    "PuTTY Not Found",
+                    "PuTTY is required for SSH connections on Windows.\n"
+                    "Please install PuTTY from https://www.putty.org/",
+                )
 
         except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open Windows terminal: {str(e)}")
+            show_error_toast(
+                self, "Terminal Error", f"Failed to open Windows terminal: {str(e)}"
+            )
 
     def _open_macos_terminal(self, host, username, password):
         """Open terminal on macOS using sshpass for automatic SSH login."""
@@ -447,8 +502,11 @@ class SlurmJobManagerApp(QMainWindow):
             # Check if sshpass is available
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
-                show_error_toast(self, "sshpass Not Found",
-                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').")
+                show_error_toast(
+                    self,
+                    "sshpass Not Found",
+                    "sshpass is required for automatic password entry. Please install sshpass (e.g., 'brew install sshpass').",
+                )
                 return
 
             # Build the sshpass command
@@ -458,39 +516,50 @@ class SlurmJobManagerApp(QMainWindow):
             terminals = [
                 # Default Terminal.app
                 ["open", "-a", "Terminal", f"{ssh_cmd}"],
-                ["open", "-a", "iTerm", f"{ssh_cmd}"],     # iTerm2
+                ["open", "-a", "iTerm", f"{ssh_cmd}"],  # iTerm2
                 # AppleScript fallback
-                ["osascript", "-e",
-                    f'tell application "Terminal" to do script "{ssh_cmd}"'],
+                [
+                    "osascript",
+                    "-e",
+                    f'tell application "Terminal" to do script "{ssh_cmd}"',
+                ],
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
-                    show_success_toast(self, "Terminal Opened",
-                                       f"SSH session opened for {username}@{host}")
+                    show_success_toast(
+                        self,
+                        "Terminal Opened",
+                        f"SSH session opened for {username}@{host}",
+                    )
                     return
                 except FileNotFoundError:
                     continue
 
             # If no terminal emulator found, try AppleScript approach
             try:
-                applescript = f'''
+                applescript = f"""
                 tell application "Terminal"
                     activate
                     do script "{ssh_cmd}"
                 end tell
-                '''
+                """
                 subprocess.Popen(["osascript", "-e", applescript])
-                show_success_toast(self, "Terminal Opened",
-                                   f"SSH session opened for {username}@{host}")
+                show_success_toast(
+                    self, "Terminal Opened", f"SSH session opened for {username}@{host}"
+                )
             except Exception as e:
-                show_error_toast(self, "No Terminal Found",
-                                 f"No supported terminal emulator found on this system: {str(e)}")
+                show_error_toast(
+                    self,
+                    "No Terminal Found",
+                    f"No supported terminal emulator found on this system: {str(e)}",
+                )
 
         except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open macOS terminal: {str(e)}")
+            show_error_toast(
+                self, "Terminal Error", f"Failed to open macOS terminal: {str(e)}"
+            )
 
     def _open_linux_terminal(self, host, username, password):
         """Open terminal on Linux using sshpass for automatic SSH login."""
@@ -498,8 +567,11 @@ class SlurmJobManagerApp(QMainWindow):
             # Check if sshpass is available
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
-                show_error_toast(self, "sshpass Not Found",
-                                 "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').")
+                show_error_toast(
+                    self,
+                    "sshpass Not Found",
+                    "sshpass is required for automatic password entry. Please install sshpass (e.g., 'sudo apt install sshpass').",
+                )
                 return
 
             # Build the sshpass command
@@ -515,24 +587,31 @@ class SlurmJobManagerApp(QMainWindow):
                 ["terminator", "-e", f"bash -c {ssh_cmd}"],
                 ["alacritty", "-e", "bash", "-c", f"{ssh_cmd}"],
                 ["kitty", "bash", "-c", f"{ssh_cmd}"],
-                ["xterm", "-e", f"bash -c {ssh_cmd}"]
+                ["xterm", "-e", f"bash -c {ssh_cmd}"],
             ]
 
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
-                    show_success_toast(self, "Terminal Opened",
-                                       f"SSH session opened for {username}@{host}")
+                    show_success_toast(
+                        self,
+                        "Terminal Opened",
+                        f"SSH session opened for {username}@{host}",
+                    )
                     return
                 except FileNotFoundError:
                     continue
 
-            show_error_toast(self, "No Terminal Found",
-                             "No supported terminal emulator found on this system.")
+            show_error_toast(
+                self,
+                "No Terminal Found",
+                "No supported terminal emulator found on this system.",
+            )
 
         except Exception as e:
-            show_error_toast(self, "Terminal Error",
-                             f"Failed to open Linux terminal: {str(e)}")
+            show_error_toast(
+                self, "Terminal Error", f"Failed to open Linux terminal: {str(e)}"
+            )
 
     def _cleanup_temp_file(self, file_path):
         """Clean up temporary script files"""
@@ -540,8 +619,7 @@ class SlurmJobManagerApp(QMainWindow):
             if os.path.exists(file_path):
                 os.unlink(file_path)
         except Exception as e:
-            print(
-                f"Warning: Could not clean up temporary file {file_path}: {e}")
+            print(f"Warning: Could not clean up temporary file {file_path}: {e}")
 
     # --- Panel Creation Methods ---
 
@@ -565,28 +643,31 @@ class SlurmJobManagerApp(QMainWindow):
         # Use device-independent font size - Qt handles DPI scaling
 
         self.maintenance_label = QLabel()
-        self.maintenance_label.setStyleSheet(
-            "color: #FF0000;")  # Red color for warning
+        self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
         self.maintenance_label.hide()  # Initially hidden
         try:
             maintenance_info = self.slurm_api.read_maintenances()
             if maintenance_info:
                 # Extract maintenance details
                 maintenance_details = []
-                for line in maintenance_info.split('\n'):
-                    if 'ReservationName=' in line:
-                        name = line.split('ReservationName=')[1].split()[0]
+                for line in maintenance_info.split("\n"):
+                    if "ReservationName=" in line:
+                        name = line.split("ReservationName=")[1].split()[0]
                         start_time = line.split(" ")[1].split("=")[1]
                         end_time = line.split(" ")[2].split("=")[1]
-                        time_to_maintenance = datetime.strptime(
-                            start_time, "%Y-%m-%dT%H:%M:%S") - datetime.now()
+                        time_to_maintenance = (
+                            datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
+                            - datetime.now()
+                        )
                         maintenance_details.append(
-                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours")
+                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours"
+                        )
                         break
 
                 if maintenance_details:
                     self.maintenance_label.setText(
-                        f"⚠️ Maintenance: {', '.join(maintenance_details)}")
+                        f"⚠️ Maintenance: {', '.join(maintenance_details)}"
+                    )
                     self.maintenance_label.show()
                 else:
                     self.maintenance_label.hide()
@@ -602,7 +683,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.filter_btn_by_users = ButtonGroupWidget()
         self.filter_btn_by_users.selectionChanged.connect(
-            lambda text: self.filter_by_accounts(text))
+            lambda text: self.filter_by_accounts(text)
+        )
         header_layout.addWidget(self.filter_btn_by_users)
 
         self.filter_jobs = QLineEdit()
@@ -613,7 +695,8 @@ class SlurmJobManagerApp(QMainWindow):
         header_layout.addWidget(self.filter_jobs)
 
         self.filter_jobs.textChanged.connect(
-            lambda: self.job_queue_widget.filter_table(self.filter_jobs.text()))
+            lambda: self.job_queue_widget.filter_table(self.filter_jobs.text())
+        )
 
         refresh_cluster_btn = QPushButton("Refresh Status")
         refresh_cluster_btn.clicked.connect(self.slurm_worker.start)
@@ -629,19 +712,24 @@ class SlurmJobManagerApp(QMainWindow):
         self.job_queue_widget = JobQueueWidget()
         content_layout.addWidget(self.job_queue_widget)
         self.job_queue_widget.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         # Right Section: Cluster Overview
         overview_group = QGroupBox("Real-time Usage")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setSpacing(15)  # Device-independent spacing
         overview_group.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         self.cluster_status_overview_widget = ClusterStatusWidget(
-            slurm_connection=self.slurm_api)
-        overview_layout.addWidget(self.cluster_status_overview_widget,
-                                  alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            slurm_connection=self.slurm_api
+        )
+        overview_layout.addWidget(
+            self.cluster_status_overview_widget,
+            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+        )
 
         content_layout.addWidget(overview_group)
         content_layout.setStretchFactor(self.job_queue_widget, 1)
@@ -659,16 +747,17 @@ class SlurmJobManagerApp(QMainWindow):
 
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
-            self.job_queue_widget.filter_table_by_account(
-                self.settings_panel.username.text())
+            self.job_queue_widget.filter_table_by_user(
+                self.settings_panel.username.text()
+            )
         elif account_type == "ALL":
             self.job_queue_widget.filter_table_by_account("")
         elif account_type == "STUD":
-            self.job_queue_widget.filter_table_by_account(
-                STUDENTS_JOBS_KEYWORD)
+            self.job_queue_widget.filter_table_by_account(STUDENTS_JOBS_KEYWORD)
         elif account_type == "PROD":
             self.job_queue_widget.filter_table_by_account(
-                STUDENTS_JOBS_KEYWORD, negative=True)
+                STUDENTS_JOBS_KEYWORD, negative=True
+            )
 
     def closeEvent(self, event):
         """Handles the window close event."""
@@ -705,9 +794,10 @@ class SlurmJobManagerApp(QMainWindow):
             btn.style().polish(btn)
 
         # Style the terminal button separately (it's not a nav button)
-        if hasattr(self, 'terminal_button'):
+        if hasattr(self, "terminal_button"):
             self.terminal_button.style().unpolish(self.terminal_button)
             self.terminal_button.style().polish(self.terminal_button)
+
 
 # --- Main Execution ---
 
@@ -717,25 +807,24 @@ if __name__ == "__main__":
     if "linux" in platform.system().lower():
         if os.environ.get("XDG_SESSION_TYPE") != "wayland":
             try:
-                output = subprocess.check_output(
-                    "xdpyinfo", shell=True).decode()
-                match = re.search(
-                    r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
+                output = subprocess.check_output("xdpyinfo", shell=True).decode()
+                match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
 
                 if match:
                     dpi_x = int(match.group(1))
 
                     # Map DPI to scale factor
                     dpi_scale_map = {
-                        96: "1.0",    # 100%
+                        96: "1.0",  # 100%
                         120: "1.25",  # 125%
-                        144: "0.9",   # 150%
+                        144: "0.9",  # 150%
                         168: "0.6",
-                        192: "0.5"
+                        192: "0.5",
                     }
 
-                    closest_dpi = min(dpi_scale_map.keys(),
-                                      key=lambda k: abs(k - dpi_x))
+                    closest_dpi = min(
+                        dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x)
+                    )
                     scale = dpi_scale_map[closest_dpi]
 
                     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
@@ -755,6 +844,7 @@ if __name__ == "__main__":
 
         try:
             from screeninfo import get_monitors
+
             monitor = get_monitors()[0]  # assume main monitor
             width_px = monitor.width
             height_px = monitor.height
@@ -764,16 +854,15 @@ if __name__ == "__main__":
             estimated_width_in = 11.3
             dpi_x = width_px / estimated_width_in
             dpi_scale_map = {
-                90: "0.6",    # 100%
-                96: "0.7",    # 100%
+                90: "0.6",  # 100%
+                96: "0.7",  # 100%
                 120: "0.8",  # 125%
-                144: "0.9",   # 150%
+                144: "0.9",  # 150%
                 168: "1",
-                192: "0.5"
+                192: "0.5",
             }
 
-            closest_dpi = min(dpi_scale_map.keys(),
-                              key=lambda k: abs(k - dpi_x))
+            closest_dpi = min(dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x))
             scale = dpi_scale_map[closest_dpi]
             os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
             os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
@@ -788,11 +877,23 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     # Get system-specific configuration directory
     config_dir_name = "SlurmAIO"
-    configs_dir = Path(QStandardPaths.writableLocation(
-        QStandardPaths.StandardLocation.AppConfigLocation)) / config_dir_name
+    configs_dir = (
+        Path(
+            QStandardPaths.writableLocation(
+                QStandardPaths.StandardLocation.AppConfigLocation
+            )
+        )
+        / config_dir_name
+    )
     if not configs_dir.is_dir():
-        configs_dir = Path(QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.GenericConfigLocation)) / config_dir_name
+        configs_dir = (
+            Path(
+                QStandardPaths.writableLocation(
+                    QStandardPaths.StandardLocation.GenericConfigLocation
+                )
+            )
+            / config_dir_name
+        )
         if not configs_dir.is_dir():
             configs_dir = Path(script_dir) / "configs"
 
@@ -820,19 +921,16 @@ if __name__ == "__main__":
         if dialog.exec() == QDialog.DialogCode.Accepted:
             connection_details = dialog.get_connection_details()
 
-            settings = QSettings(str(settings_path),
-                                 QSettings.Format.IniFormat)
+            settings = QSettings(str(settings_path), QSettings.Format.IniFormat)
             settings.beginGroup("GeneralSettings")
-            settings.setValue("clusterAddress",
-                              connection_details["clusterAddress"])
+            settings.setValue("clusterAddress", connection_details["clusterAddress"])
             settings.setValue("username", connection_details["username"])
             settings.setValue("psw", connection_details["psw"])
             settings.endGroup()
             settings.sync()
             print(f"Updated settings file at: {settings_path} with user input")
 
-            window_icon_path = os.path.join(
-                script_dir, "src_static", "app_logo.png")
+            window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
             window.show()
@@ -851,8 +949,7 @@ if __name__ == "__main__":
                 app.setFont(font)
                 break
 
-        window_icon_path = os.path.join(
-            script_dir, "src_static", "app_logo.png")
+        window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()
         window.show()
