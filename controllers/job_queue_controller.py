@@ -32,13 +32,11 @@ class JobQueueController:
         """Update queue status with incremental updates"""
         
         # Check if columns need to be updated
-        self._do_full_rebuild(jobs_data)
+        self.view.update_table(jobs_data, self.model.displayable_fields)
         return
 
-    def _do_full_rebuild(self, jobs_data: List[Dict[str, Any]]):
-        """Do a full rebuild when columns change"""
         
-        self.view.populate_table_full(jobs_data, self.model.displayable_fields)
+        
         
     def filter_table_by_account(self, kws:list[str], negative=False):
         account_index = list(self.model.displayable_fields.keys()).index("Account")

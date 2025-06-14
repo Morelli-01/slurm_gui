@@ -16,7 +16,6 @@ class JobQueueWidget(QGroupBox):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.controller.view)
         self._event_bus_subscription()
-        # No UI/layout code here; visualization is handled by JobQueueView
 
     def _event_bus_subscription(self):
         get_event_bus().subscribe(

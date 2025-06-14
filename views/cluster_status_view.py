@@ -62,7 +62,6 @@ class ClusterStatusView(QWidget):
 
     def shutdown_ui(self, is_connected=False):
         """Show only a 'No connection' panel if not connected, else restore normal UI."""
-        print(f"i've been called with is_connected: {is_connected}")
         if not hasattr(self, '_no_connection_panel'):
             # Create the no connection panel only once
             self._no_connection_panel = QWidget()

@@ -1,5 +1,6 @@
 from core.defaults import *
 
+TABLE_TIMEOUT = 30  
 
 class JobQueueView(QWidget):
     """View: Handles table display with original styling"""
@@ -8,10 +9,12 @@ class JobQueueView(QWidget):
         super().__init__(parent)
         self.table = QTableWidget()
         self._setup_ui()
-        
         self._setup_table_properties()
         self.rows: Dict[int, list[Any]] = {}
         self._filter: list = None
+        self._table_refresh = TABLE_TIMEOUT
+        self._sorted_column = None
+
 
     def _setup_ui(self):
         """Setup UI exactly like original"""
@@ -28,7 +31,15 @@ class JobQueueView(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setSortingEnabled(True)
-        
+
+        # Add listener for sorting changes and save the column index
+        header = self.table.horizontalHeader()
+        header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
+
+    def _on_sort_indicator_changed(self, logicalIndex, order):
+        """Listener for sorting changes, saves the sorted column index"""
+        self._sorted_column = logicalIndex
+
     def setup_columns(self, displayable_fields: Dict[str, bool],  visible_fields: List[str]):
         """Setup columns exactly like original"""
         self.table.setColumnCount(len(displayable_fields))
@@ -51,8 +62,18 @@ class JobQueueView(QWidget):
         else:
             header.setStretchLastSection(False)
 
-    def populate_table_full(self, jobs_data: List[Dict[str, Any]], displayable_fields: Dict[str, bool]):
-        """Populate entire table"""
+    def update_table(self, jobs_data: List[Dict[str, Any]], displayable_fields: Dict[str, bool]):
+        """Incremental updated table"""
+
+        if self._table_refresh >= TABLE_TIMEOUT:
+            
+            self.table.clearContents()
+            self.table.setRowCount(0)
+            self.rows = {}
+            self._table_refresh=0
+            # self.table.sortItems(list(displayable_fields.keys()).index("Status"), Qt.SortOrder.DescendingOrder)
+
+
         # Get current job IDs from new data
         current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data}
 
@@ -164,6 +185,10 @@ class JobQueueView(QWidget):
 
         if self._filter:
             self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
+
+        self._table_refresh+=1
+        if self._sorted_column is None:
+            self.table.sortItems(list(displayable_fields.keys()).index("Status"), Qt.SortOrder.DescendingOrder)
 
     def remove_job_from_table(self, job_id: int):
         """Remove a job from the table by job ID"""
