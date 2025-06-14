@@ -181,7 +181,6 @@ class Node:
 @dataclass
 class Cluster:
     """Collection of SLURM nodes fetched from a connection."""
-    connection: Optional[SlurmAPI] = None
     nodes: Dict[str, Node] = field(default_factory=dict)
     jobs: List[Dict[str, Any]] = field(default_factory=list)
 

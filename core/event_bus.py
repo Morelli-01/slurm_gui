@@ -279,9 +279,6 @@ class Events:
     
     # Connection events
     CONNECTION_STATE_CHANGED =  "connection_status.changed"
-    CONNECTION_ESTABLISHED = "connection.established"
-    CONNECTION_LOST = "connection.lost"
-    CONNECTION_RESTORED = "connection.restored"
     
     # Job events  
     JOB_SUBMITTED = "job.submitted"
@@ -290,12 +287,8 @@ class Events:
     JOB_FAILED = "job.failed"
     
     # Data events
-    CLUSTER_DATA_UPDATED = "cluster.data_updated"
-    JOB_QUEUE_UPDATED = "job_queue.updated"
     DATA_READY = "cluster_job.data_ready"
     # UI events
-    SETTINGS_CHANGED = "settings.changed"
-    THEME_CHANGED = "theme.changed"
     PROJECT_SELECTED = "project.selected"
     
     # System events
@@ -303,10 +296,6 @@ class Events:
     APP_SHUTDOWN = "app.shutdown"
     ERROR_OCCURRED = "error.occurred"
     
-    # Notification events
-    SHOW_NOTIFICATION = "notification.show"
-    HIDE_NOTIFICATION = "notification.hide"
-
     # Internal settings events
     CONNECTION_SAVE_REQ = "settings.view.connection_save_btn"
     DISPLAY_SAVE_REQ = "settings.view.display_save_btn"

@@ -1,3 +1,4 @@
+from core.slurm_api import ConnectionState
 from models.job_queue_model import JobQueueModel
 from core.defaults import *
 from views.job_queue_view import JobQueueView
@@ -9,8 +10,8 @@ class JobQueueController:
     def __init__(self, parent_widget):
         self.parent = parent_widget
         self.model = JobQueueModel()
-        self.table = QTableWidget()
-        self.view = JobQueueView(self.table)
+        self.view = JobQueueView()
+        self.table = self.view.table
         self.view.setup_columns(self.model.displayable_fields , self.model.visible_fields)
         
         # Connect sorting signal exactly like original
@@ -46,3 +47,11 @@ class JobQueueController:
     def filter_table_by_user(self, kws:list[str], negative=False):
         account_index = list(self.model.displayable_fields.keys()).index("User")
         self.view.filter_rows(kws, field_index=account_index, negative=negative)
+    
+    def _shutdown(self, event_data):
+        new_state = event_data.data["new_state"]
+        old_state = event_data.data["old_state"]
+        if new_state == ConnectionState.DISCONNECTED:
+            self.view.shutdown_ui(is_connected=False)
+        elif new_state == ConnectionState.CONNECTED:
+            self.view.shutdown_ui(is_connected=True)

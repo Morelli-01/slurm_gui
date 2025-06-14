@@ -1,4 +1,3 @@
-from torch import neg
 from controllers.job_queue_controller import JobQueueController
 from core.defaults import *
 from core.event_bus import EventPriority, Events, get_event_bus
@@ -7,16 +6,17 @@ from core.style import AppStyles
 
 class JobQueueWidget(QGroupBox):
     """
-    Job Queue Widget with simplified MVC pattern maintaining exact original functionality.
+    Job Queue Widget: pure proxy to the MVC model, no UI/layout logic here.
     """
 
     def __init__(self, parent=None):
         super().__init__("Job Queue", parent)
         self.controller = JobQueueController(self)
-        self.queue_table = self.controller.table
-        self._setup_ui()
-        self._apply_original_styling()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.controller.view)
         self._event_bus_subscription()
+        # No UI/layout code here; visualization is handled by JobQueueView
 
     def _event_bus_subscription(self):
         get_event_bus().subscribe(
@@ -27,27 +27,13 @@ class JobQueueWidget(QGroupBox):
             ),
             priority=EventPriority.LOW
         )
+        get_event_bus().subscribe(
+            Events.CONNECTION_STATE_CHANGED,
+            self.controller._shutdown
+        )
 
-    def _setup_ui(self):
-        """Setup UI exactly like original"""
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.layout.setSpacing(10)
-        self.layout.addWidget(self.queue_table)
-        self.setMinimumHeight(200)
-
-    def _apply_original_styling(self):
-        """Apply original styling exactly"""
-        self.setStyleSheet(AppStyles.get_job_queue_style())
-
-        # Apply original scrollbar styling
-        self.queue_table.verticalScrollBar().setStyleSheet(scroll_bar_stylesheet)
-        self.queue_table.horizontalScrollBar().setStyleSheet(scroll_bar_stylesheet)
-
-    # Public API - exactly like original
+    # Public API - proxy to controller/view
     def update_queue_status(self, jobs_data):
-        """Update queue status - exact same interface as original"""
-
         self.controller.update_queue_status(jobs_data)
     
     def filter_table_by_account(self, keywords: list[str], negative=False):
@@ -67,4 +53,8 @@ class JobQueueWidget(QGroupBox):
 
     def show_all_rows(self):
         self.controller.view.filter_rows([], 0)
-        
+
+    # If you need to access the view for layout, do it from outside this widget:
+    @property
+    def view(self):
+        return self.controller.view

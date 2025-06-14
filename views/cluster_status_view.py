@@ -60,7 +60,33 @@ class ClusterStatusView(QWidget):
         self.cpu_usage_tab.show_connection_error()
         self.ram_usage_tab.show_connection_error()
 
+    def shutdown_ui(self, is_connected=False):
+        """Show only a 'No connection' panel if not connected, else restore normal UI."""
+        print(f"i've been called with is_connected: {is_connected}")
+        if not hasattr(self, '_no_connection_panel'):
+            # Create the no connection panel only once
+            self._no_connection_panel = QWidget()
+            layout = QVBoxLayout(self._no_connection_panel)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label = QLabel("No connection")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("font-size: 22px; color: #EA3323; padding: 60px;")
+            layout.addWidget(label)
 
+        # Remove all widgets from main_layout
+        while self.main_layout.count():
+            item = self.main_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        if not is_connected:
+            self.main_layout.addWidget(self._no_connection_panel)
+        else:
+            self.main_layout.addWidget(self.tab_widget)
+            self._apply_styling()
+        
 # Individual Tab Views
 class NodeStatusTabView(QWidget):
     """View for displaying node status visualization"""

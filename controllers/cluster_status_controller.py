@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from PyQt6.QtCore import QObject
+from core.slurm_api import ConnectionState
 from models.cluster_status_model import ClusterStatusModel
 from views.cluster_status_view import ClusterStatusView
 
@@ -38,3 +39,11 @@ class ClusterStatusController(QObject):
     def get_model(self):
         """Get the model for direct access if needed"""
         return self.model
+
+    def _shutdown(self, event_data):
+        new_state = event_data.data["new_state"]
+        old_state = event_data.data["old_state"]
+        if new_state == ConnectionState.DISCONNECTED:
+            self.view.shutdown_ui(is_connected=False)
+        elif new_state == ConnectionState.CONNECTED:
+            self.view.shutdown_ui(is_connected=True)

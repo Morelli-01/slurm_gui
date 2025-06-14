@@ -1,5 +1,6 @@
 from controllers.cluster_status_controller import ClusterStatusController
 from core.defaults import *
+from core.event_bus import Events, get_event_bus
 from views.cluster_entities import Cluster
 
 # --- Constants ---
@@ -12,12 +13,12 @@ REFRESH_INTERVAL_MS = 10000  # Refresh every 10 seconds
 class ClusterStatusWidget(QWidget):
     """Main Cluster Status Widget - acts as a facade maintaining the original interface"""
     
-    def __init__(self, parent=None, slurm_connection=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
         
         # Create MVC controller which manages model and view
         self.controller = ClusterStatusController(self)
-        self.cluster = Cluster(slurm_connection)
+        self.cluster = Cluster()
 
         # Setup layout to contain the view
         layout = QVBoxLayout(self)
@@ -27,10 +28,13 @@ class ClusterStatusWidget(QWidget):
         # Set window properties to maintain original interface
         self.setWindowTitle(APP_TITLE)
         self.setMinimumSize(QSize(MIN_WIDTH, MIN_HEIGHT))
-        
+        self._event_bus_subscription()
         # Store SLURM connection reference
-        self.sc_ = slurm_connection
-    
+    def _event_bus_subscription(self):
+        get_event_bus().subscribe(
+            Events.CONNECTION_STATE_CHANGED,
+            self.controller._shutdown
+        )
     def update_status(self, nodes_data=None, jobs_data=None):
         """Refresh cluster data and update the view."""
         if nodes_data is not None and jobs_data is not None:

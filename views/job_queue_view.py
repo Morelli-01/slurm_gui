@@ -1,14 +1,25 @@
 from core.defaults import *
 
 
-class JobQueueView:
+class JobQueueView(QWidget):
     """View: Handles table display with original styling"""
 
-    def __init__(self, table_widget: QTableWidget):
-        self.table = table_widget
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.table = QTableWidget()
+        self._setup_ui()
+        
         self._setup_table_properties()
         self.rows: Dict[int, list[Any]] = {}
         self._filter: list = None
+
+    def _setup_ui(self):
+        """Setup UI exactly like original"""
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.layout.setSpacing(10)
+        self.layout.addWidget(self.table)
+        self.setMinimumHeight(200)
 
     def _setup_table_properties(self):
         """Setup table properties exactly like original"""
@@ -211,3 +222,28 @@ class JobQueueView:
             else:
                 # Hide rows that DON'T match the keywords
                 self.table.setRowHidden(row, not matches_keyword)
+
+    def shutdown_ui(self, is_connected=False):
+        """Show only a 'No connection' panel if not connected, else restore normal UI."""
+        if not hasattr(self, '_no_connection_panel'):
+            self._no_connection_panel = QWidget()
+            layout = QVBoxLayout(self._no_connection_panel)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label = QLabel("No connection")
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("font-size: 22px; color: #EA3323; padding: 60px;")
+            layout.addWidget(label)
+
+        # Remove all widgets from the layout
+        while self.layout.count():
+            item = self.layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+
+        if not is_connected:
+            self.layout.addWidget(self._no_connection_panel)
+        else:
+            self.layout.addWidget(self.table)
+            self.setMinimumHeight(200)
