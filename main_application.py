@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 import sys
 import subprocess
+from widgets.jobs_panel_widget import JobsPanelWidget
 from widgets.toast_widget import (
     show_info_toast,
     show_success_toast,
@@ -445,9 +446,7 @@ class SlurmJobManagerApp(QMainWindow):
 
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
-        # self.jobs_panel = JobsPanel(slurm_connection=self.slurm_connection)
-        self.jobs_panel = QFrame()
-
+        self.jobs_panel = JobsPanelWidget() # <-- Changed this line
         self.stacked_widget.addWidget(self.jobs_panel)
 
     def create_cluster_panel(self):

@@ -290,7 +290,8 @@ class Events:
     DATA_READY = "cluster_job.data_ready"
     # UI events
     PROJECT_SELECTED = "project.selected"
-    
+    PROJECT_LIST_CHANGED = "project.list_changed"   
+
     # System events
     APP_STARTUP = "app.startup"
     APP_SHUTDOWN = "app.shutdown"
