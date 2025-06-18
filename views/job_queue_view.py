@@ -65,7 +65,7 @@ class JobQueueView(QWidget):
     def update_table(self, jobs_data: List[Dict[str, Any]], displayable_fields: Dict[str, bool]):
         """Incremental updated table"""
 
-        jobs_data = sorted(jobs_data, key=lambda job: (job["Status"], job["User"]), reverse=True)
+        jobs_data = sorted(jobs_data, key=lambda job: (job["Status"], -ord(job["User"][0])-0.01*ord(job["User"][1])), reverse=True)
         # Get current job IDs from new data
         current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data}
         # Find jobs that need to be removed (exist in table but not in new data)
