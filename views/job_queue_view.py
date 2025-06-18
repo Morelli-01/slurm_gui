@@ -1,6 +1,7 @@
 from core.defaults import *
+import traceback
 
-TABLE_TIMEOUT = 30  
+TABLE_TIMEOUT = 30
 
 class JobQueueView(QWidget):
     """View: Handles table display with original styling"""
@@ -62,108 +63,101 @@ class JobQueueView(QWidget):
         else:
             header.setStretchLastSection(False)
 
-    def update_table(self, jobs_data: List[Dict[str, Any]], displayable_fields: Dict[str, bool]):
-        """Incremental updated table"""
+    def update_table(self, jobs_data: List[Dict[str, Any]], displayable_fields: Dict[str, bool], is_recovery: bool = False):
+        """
+        Incrementally update the table. If an error occurs, it attempts
+        a full redraw from scratch as a recovery mechanism.
+        """
+        try:
+            # --- Incremental Update Logic ---
+            jobs_data = sorted(jobs_data, key=lambda job: (job.get("Status", ""), -ord(job.get("User", " " )[0])-0.01*ord(job.get("User","  ")[1])), reverse=True)
+            current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data if "Job ID" in job_dict}
+            jobs_to_remove = set(self.rows.keys()) - current_job_ids
 
-        jobs_data = sorted(jobs_data, key=lambda job: (job["Status"], -ord(job["User"][0])-0.01*ord(job["User"][1])), reverse=True)
-        # Get current job IDs from new data
-        current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data}
-        # Find jobs that need to be removed (exist in table but not in new data)
-        jobs_to_remove = set(self.rows.keys()) - current_job_ids
-        # Remove completed/missing jobs
-        for job_id in jobs_to_remove:
-            self.remove_job_from_table(job_id)
-        
-        for original_job_index, job_dict in enumerate(jobs_data):
-            current_table_row = self.table.rowCount()
-            if int(job_dict["Job ID"]) in self.rows.keys():
-                row = self.rows[int(job_dict["Job ID"])]
-                for col_idx, field_name in enumerate(displayable_fields.keys()):
-                    item_data = job_dict.get(field_name, "N/A")
-                    item = row[col_idx]
-                    if isinstance(item_data, int):
-                        item.setData(Qt.ItemDataRole.EditRole, item_data)
-                    elif isinstance(item_data, str):
-                        item.setData(Qt.ItemDataRole.EditRole, item_data)
-                    else:
-                        item.setData(Qt.ItemDataRole.EditRole,
-                                    item_data[1].seconds)
-                        item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
-                    if field_name == "Status":
-                        status = job_dict.get("Status", "").upper()
-                        color = QColor(COLOR_DARK_FG)  # Default
-                        if status == STATUS_RUNNING:
-                            color = QColor(COLOR_GREEN)
-                        elif status == STATUS_PENDING:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_COMPLETED:
-                            color = QColor(COLOR_BLUE)
-                        elif status == STATUS_FAILED:
-                            color = QColor(COLOR_RED)
-                        elif status == STATUS_COMPLETING:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_PREEMPTED:
-                            color = QColor(COLOR_RED)
-                        elif status == STATUS_SUSPENDED:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_STOPPED:
-                            color = QColor(COLOR_BLUE)
-                        item.setForeground(QBrush(color))
+            for job_id in jobs_to_remove:
+                self.remove_job_from_table(job_id)
+
+            for original_job_index, job_dict in enumerate(jobs_data):
+                job_id_val = job_dict.get("Job ID")
+                if not job_id_val:
+                    continue
+
+                job_id = int(job_id_val)
+                current_table_row = self.table.rowCount()
+
+                if job_id in self.rows:
+                    # Update existing row
+                    row = self.rows[job_id]
+                    for col_idx, field_name in enumerate(displayable_fields.keys()):
+                        item_data = job_dict.get(field_name, "N/A")
+                        item = row[col_idx]
+                        if isinstance(item_data, (int, str)):
+                            item.setData(Qt.ItemDataRole.EditRole, item_data)
+                        elif isinstance(item_data, (list, tuple)) and len(item_data) == 2:
+                            item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                            item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                        else:
+                            item.setData(Qt.ItemDataRole.DisplayRole, str(item_data))
+
+                        if field_name == "Status":
+                            status = job_dict.get("Status", "").upper()
+                            color = QColor(STATE_COLORS.get(status.lower(), COLOR_DARK_FG))
+                            item.setForeground(QBrush(color))
+                else:
+                    # Add new row
+                    self.table.insertRow(current_table_row)
+                    row_items = []
+                    for col_idx, field_name in enumerate(displayable_fields.keys()):
+                        item_data = job_dict.get(field_name, "N/A")
+                        item = QTableWidgetItem()
+
+                        if isinstance(item_data, int):
+                            item.setData(Qt.ItemDataRole.EditRole, item_data)
+                        elif isinstance(item_data, str):
+                            item.setData(Qt.ItemDataRole.DisplayRole, item_data)
+                        elif isinstance(item_data, (list, tuple)) and len(item_data) == 2:
+                            item.setData(Qt.ItemDataRole.EditRole, item_data[1].seconds)
+                            item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
+                        else:
+                            item.setData(Qt.ItemDataRole.DisplayRole, str(item_data))
+
+                        item.setData(Qt.ItemDataRole.UserRole, original_job_index)
+                        item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
+
+                        if field_name == "Status":
+                            status = job_dict.get("Status", "").upper()
+                            color = QColor(STATE_COLORS.get(status.lower(), COLOR_DARK_FG))
+                            item.setForeground(QBrush(color))
+
+                        if current_table_row % 2 == 0:
+                            item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
+                        else:
+                            item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
+
+                        row_items.append(item)
+                        self.table.setItem(current_table_row, col_idx, item)
+                    self.rows[job_id] = row_items
+
+            if self._filter:
+                self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
+            self._table_refresh += 1
+
+        except Exception as e:
+            print(f"--- ERROR IN JobQueueView.update_table ---")
+            traceback.print_exc()
+            print(f"Error: {e}")
+            
+            # --- Fallback/Recovery Mechanism ---
+            if not is_recovery:
+                print("--- ATTEMPTING TO RECOVER BY REDRAWING TABLE FROM SCRATCH ---")
+                # Clear all existing state
+                self.table.setRowCount(0)
+                self.rows.clear()
+                # Attempt to redraw the table from scratch
+                self.update_table(jobs_data, displayable_fields, is_recovery=True)
             else:
-                self.table.insertRow(current_table_row)
-                row = []
-                job_id = None
-                for col_idx, field_name in enumerate(displayable_fields.keys()):
-                    item_data = job_dict.get(field_name, "N/A")
-                    if field_name == "Job ID":
-                        job_id = int(item_data)
-                    # Handle different data types exactly like original
-                    if isinstance(item_data, int):
-                        item = QTableWidgetItem()
-                        item.setData(Qt.ItemDataRole.EditRole, item_data)
-                    elif isinstance(item_data, str):
-                        item = QTableWidgetItem(item_data)
-                    else:
-                        item = QTableWidgetItem()
-                        item.setData(Qt.ItemDataRole.EditRole,
-                                    item_data[1].seconds)
-                        item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
-                    # Store original index for filtering - exactly like original
-                    item.setData(Qt.ItemDataRole.UserRole, original_job_index)
-                    # Default foreground for all items
-                    item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
-                    # Status coloring exactly like original
-                    if field_name == "Status":
-                        status = job_dict.get("Status", "").upper()
-                        color = QColor(COLOR_DARK_FG)  # Default
-                        if status == STATUS_RUNNING:
-                            color = QColor(COLOR_GREEN)
-                        elif status == STATUS_PENDING:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_COMPLETED:
-                            color = QColor(COLOR_BLUE)
-                        elif status == STATUS_FAILED:
-                            color = QColor(COLOR_RED)
-                        elif status == STATUS_COMPLETING:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_PREEMPTED:
-                            color = QColor(COLOR_RED)
-                        elif status == STATUS_SUSPENDED:
-                            color = QColor(COLOR_ORANGE)
-                        elif status == STATUS_STOPPED:
-                            color = QColor(COLOR_BLUE)
-                        item.setForeground(QBrush(color))
-                    # Alternating row colors exactly like original
-                    if current_table_row % 2 == 0:
-                        item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
-                    else:
-                        item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-                    row.append(item)
-                    self.table.setItem(current_table_row, col_idx, item)
-                self.rows[job_id] = row
-        if self._filter:
-            self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
-        self._table_refresh+=1
+                print("--- RECOVERY FAILED. UNABLE TO UPDATE TABLE. ---")
+
 
     def remove_job_from_table(self, job_id: int):
         """Remove a job from the table by job ID"""
@@ -172,6 +166,10 @@ class JobQueueView(QWidget):
 
         # Find the row in the table that contains this job
         job_items = self.rows[job_id]
+        if not job_items:
+            del self.rows[job_id]
+            return
+
         first_item = job_items[0]  # Get first item to find row position
 
         # Find which table row contains this item
@@ -195,7 +193,9 @@ class JobQueueView(QWidget):
         for row in range(self.table.rowCount()):
             matches_keyword = False
 
-            if field_index is not None:
+            if not any(keywords_lower):
+                 matches_keyword = True
+            elif field_index is not None:
                 # Search in specific column only
                 item = self.table.item(row, field_index)
                 if item is not None:
