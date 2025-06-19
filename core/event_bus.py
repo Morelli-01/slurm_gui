@@ -293,7 +293,8 @@ class Events:
     PROJECT_LIST_CHANGED = "project.list_changed"   
     ADD_PROJECT = "project.add_project"   
     DEL_PROJECT = "project.del_project"   
-
+    JOB_CHANGED =  "project.job_changed"
+    
     # System events
     APP_STARTUP = "app.startup"
     APP_SHUTDOWN = "app.shutdown"
