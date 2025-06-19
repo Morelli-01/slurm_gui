@@ -159,28 +159,62 @@ class JobQueueView(QWidget):
         a full redraw from scratch as a recovery mechanism.
         """
         try:
-            # --- Incremental Update Logic ---
-            jobs_data = sorted(jobs_data, key=lambda job: (job.get("Status", ""), -ord(job.get("User", " " )[0])-0.01*ord(job.get("User","  ")[1])), reverse=True)
+            # Sort jobs data
+            jobs_data = sorted(jobs_data, key=lambda job: (job.get("Status", ""), -ord(job.get("User", " ")[0])-0.01*ord(job.get("User","  ")[1])), reverse=True)
             current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data if "Job ID" in job_dict}
-            jobs_to_remove = set(self.rows.keys()) - current_job_ids
-
-            for job_id in jobs_to_remove:
-                self.remove_job_from_table(job_id)
-
-            for original_job_index, job_dict in enumerate(jobs_data):
+            
+            # Track which job IDs map to which row indices
+            job_id_to_row = {}
+            
+            # First pass: identify existing rows and their job IDs
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, 0)  # Job ID is in first column
+                if item:
+                    try:
+                        job_id = int(item.text())
+                        job_id_to_row[job_id] = row
+                    except (ValueError, AttributeError):
+                        pass
+            
+            # Remove jobs that are no longer in the data
+            rows_to_remove = []
+            for job_id, row in job_id_to_row.items():
+                if job_id not in current_job_ids:
+                    rows_to_remove.append(row)
+            
+            # Remove rows in reverse order to maintain indices
+            for row in sorted(rows_to_remove, reverse=True):
+                self.table.removeRow(row)
+            
+            # Clear the stored references to avoid accessing deleted items
+            self.rows.clear()
+            
+            # Update existing rows and add new ones
+            for job_dict in jobs_data:
                 job_id_val = job_dict.get("Job ID")
                 if not job_id_val:
                     continue
-
+                    
                 job_id = int(job_id_val)
-                current_table_row = self.table.rowCount()
-
-                if job_id in self.rows:
+                
+                # Find if this job already has a row
+                existing_row = None
+                for row in range(self.table.rowCount()):
+                    item = self.table.item(row, 0)
+                    if item and item.text() == str(job_id):
+                        existing_row = row
+                        break
+                
+                if existing_row is not None:
                     # Update existing row
-                    row = self.rows[job_id]
                     for col_idx, field_name in enumerate(displayable_fields.keys()):
                         item_data = job_dict.get(field_name, "N/A")
-                        item = row[col_idx]
+                        item = self.table.item(existing_row, col_idx)
+                        
+                        if item is None:
+                            item = QTableWidgetItem()
+                            self.table.setItem(existing_row, col_idx, item)
+                        
                         if isinstance(item_data, (int, str)):
                             item.setData(Qt.ItemDataRole.EditRole, item_data)
                         elif isinstance(item_data, (list, tuple)) and len(item_data) == 2:
@@ -188,19 +222,20 @@ class JobQueueView(QWidget):
                             item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
                         else:
                             item.setData(Qt.ItemDataRole.DisplayRole, str(item_data))
-
+                        
                         if field_name == "Status":
                             status = job_dict.get("Status", "").upper()
                             color = QColor(STATE_COLORS.get(status.lower(), COLOR_DARK_FG))
                             item.setForeground(QBrush(color))
                 else:
                     # Add new row
+                    current_table_row = self.table.rowCount()
                     self.table.insertRow(current_table_row)
-                    row_items = []
+                    
                     for col_idx, field_name in enumerate(displayable_fields.keys()):
                         item_data = job_dict.get(field_name, "N/A")
                         item = QTableWidgetItem()
-
+                        
                         if isinstance(item_data, int):
                             item.setData(Qt.ItemDataRole.EditRole, item_data)
                         elif isinstance(item_data, str):
@@ -210,67 +245,52 @@ class JobQueueView(QWidget):
                             item.setData(Qt.ItemDataRole.DisplayRole, item_data[0])
                         else:
                             item.setData(Qt.ItemDataRole.DisplayRole, str(item_data))
-
-                        item.setData(Qt.ItemDataRole.UserRole, original_job_index)
-                        item.setForeground(QBrush(QColor(COLOR_DARK_FG)))
-
+                        
                         if field_name == "Status":
                             status = job_dict.get("Status", "").upper()
                             color = QColor(STATE_COLORS.get(status.lower(), COLOR_DARK_FG))
                             item.setForeground(QBrush(color))
-
+                        
                         if current_table_row % 2 == 0:
                             item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
                         else:
                             item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-
-                        row_items.append(item)
+                        
                         self.table.setItem(current_table_row, col_idx, item)
-                    self.rows[job_id] = row_items
-
+            
             if self._filter:
                 self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
+            
             self._table_refresh += 1
-
+            
         except Exception as e:
             print(f"--- ERROR IN JobQueueView.update_table ---")
             traceback.print_exc()
             print(f"Error: {e}")
             
-            # --- Fallback/Recovery Mechanism ---
+            # Fallback/Recovery Mechanism
             if not is_recovery:
                 print("--- ATTEMPTING TO RECOVER BY REDRAWING TABLE FROM SCRATCH ---")
-                # Clear all existing state
+                # Clear everything
                 self.table.setRowCount(0)
                 self.rows.clear()
-                # Attempt to redraw the table from scratch
+                # Try again
                 self.update_table(jobs_data, displayable_fields, is_recovery=True)
             else:
                 print("--- RECOVERY FAILED. UNABLE TO UPDATE TABLE. ---")
 
-
     def remove_job_from_table(self, job_id: int):
         """Remove a job from the table by job ID"""
-        if job_id not in self.rows:
-            return
-
-        # Find the row in the table that contains this job
-        job_items = self.rows[job_id]
-        if not job_items:
-            del self.rows[job_id]
-            return
-
-        first_item = job_items[0]  # Get first item to find row position
-
-        # Find which table row contains this item
+        # Find the row containing this job ID
         for row in range(self.table.rowCount()):
-            if self.table.item(row, 0) is first_item:
+            item = self.table.item(row, 0)  # Job ID is in first column
+            if item and item.text() == str(job_id):
                 self.table.removeRow(row)
                 break
-
-        # Remove from our tracking dictionary
-        del self.rows[job_id]
-
+        
+        # Remove from tracking dictionary if it exists
+        if job_id in self.rows:
+            del self.rows[job_id]
     def filter_rows(self, keywords: list[str], field_index: int = None, negative=False):
         """Filter table rows based on keywords in specified field or all columns"""
         self._filter = []
