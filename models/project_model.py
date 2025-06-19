@@ -57,4 +57,3 @@ class JobsModel:
     def set_active_project(self, name: str):
         """Sets the currently active project and emits an event."""
         self.active_project = next((p for p in self.projects if p.name == name), None)
-        # self.event_bus.emit(Events.PROJECT_SELECTED, data={'project': self.active_project})

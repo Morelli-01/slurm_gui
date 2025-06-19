@@ -137,7 +137,6 @@ class JobsTableView(QWidget):
         if len(projects) == 1:
             self.switch_to_project(projects[0].name)
 
-
     def add_project_table(self, project_name: str):
         """Adds a new table for a project."""
         if project_name not in self.tables:
