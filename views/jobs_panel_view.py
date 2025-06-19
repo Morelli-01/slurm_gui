@@ -1,24 +1,3 @@
-from PyQt6.QtWidgets import (
-    QWidget,
-    QHBoxLayout,
-    QVBoxLayout,
-    QTableWidget,
-    QListView,
-    QPushButton,
-    QSplitter,
-    QAbstractItemView,
-    QHeaderView,
-    QTableWidgetItem,
-    QLabel,
-)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
-import os
-from core.defaults import *
-from core.event_bus import Events, get_event_bus
-from utils import script_dir
-from models.project_model import Project
-
 import os
 from PyQt6.QtWidgets import (
     QWidget,
@@ -36,13 +15,16 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
     QInputDialog,
+    QStackedWidget,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QIcon, QMovie, QPixmap, QFontMetrics, QColor
 
 from core.defaults import *
+from core.event_bus import Events, get_event_bus
 from utils import script_dir
-from models.project_model import Project
+from models.project_model import Project, Job
+from typing import List
 
 
 class StatusBlock(QWidget):
@@ -220,7 +202,6 @@ class ProjectWidget(QGroupBox):
             {"project": self.title_label.text()},
             source="JobsPanelView.ProjectGroup.ProjectWidget",
         )
-        # self.selected.emit(self.title_label.text())
 
 
 class ProjectGroup(QGroupBox):
@@ -284,12 +265,18 @@ class ProjectGroup(QGroupBox):
             self._project_widgets[project.name] = widget
 
         # Restore selection
+        name = ""
         if active_project_name and active_project_name in self._project_widgets:
-            self.handle_project_selection(active_project_name)
+            name = active_project_name
         elif projects:
-            self.handle_project_selection(projects[0].name)
-        else:
-            self.handle_project_selection("")
+            name = projects[0].name
+
+        
+        get_event_bus().emit(
+                Events.PROJECT_SELECTED,
+                {"project": name},
+                source="JobsPanelView.ProjectGroup",
+            ) 
 
     def handle_project_selection(self, name: str):
         if self._selected_widget:
@@ -317,6 +304,11 @@ class JobsPanelView(QWidget):
         self.jobs_table_view = JobsTableView()
         self.splitter.addWidget(self.jobs_table_view)
         self.splitter.setSizes([200, 600])
+
+        get_event_bus().subscribe(
+            Events.PROJECT_SELECTED,
+            lambda event: self.jobs_table_view.switch_to_project(event.data["project"]),
+        )
 
     def shutdown_ui(self, is_connected=False):
         """Show a 'No connection' panel or restore the normal UI."""
@@ -409,62 +401,111 @@ class ActionButtonsWidget(QWidget):
         layout.addWidget(self.terminalButton)
 
 
-class JobsTableView(QTableWidget):
-    """Table to display jobs for a project."""
+class JobsTableView(QWidget):
+    """
+    View to display jobs for projects. It manages a dictionary of QTableWidgets,
+    one for each project, and displays them in a QStackedWidget.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setColumnCount(8)
-        self.setHorizontalHeaderLabels(
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.stacked_widget = QStackedWidget()
+        self.layout.addWidget(self.stacked_widget)
+
+        self.tables = {}  # {project_name: QTableWidget}
+
+        # A placeholder widget for when no project is selected
+        self.placeholder_widget = QWidget()
+        placeholder_layout = QVBoxLayout(self.placeholder_widget)
+        placeholder_label = QLabel("Select or create a project to view its jobs.")
+        placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder_layout.addWidget(placeholder_label)
+        self.stacked_widget.addWidget(self.placeholder_widget)
+        self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+
+    def _create_new_table(self, table_name = ''):
+        """Creates and configures a new QTableWidget."""
+        table = QTableWidget()
+        table.setObjectName(table_name)
+        table.setColumnCount(8)
+        table.setHorizontalHeaderLabels(
             ["Job ID", "Job Name", "Status", "Runtime", "CPU", "RAM", "GPU", "Actions"]
         )
-        self.horizontalHeader().setSectionResizeMode(
+        table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
-        )  # Job Name
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.verticalHeader().setVisible(False)
-        self.setAlternatingRowColors(True)
+        )
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(True)
+        
+        new_jobs_button = QPushButton(
+            "New Job", table)  # Set self as parent
+        new_jobs_button.setObjectName(BTN_GREEN)
+        # new_jobs_button.clicked.connect(self.open_new_job_dialog)
+        new_jobs_button.clicked.connect(lambda: print(f"jobs panel {table_name} active")) #TODO
+        new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
+        new_jobs_button.move(self.width() - new_jobs_button.width() - 20,
+                                  self.height() - new_jobs_button.height() - 20)
+        return table
 
-    def add_job(self, job_data):
-        row_position = self.rowCount()
-        self.insertRow(row_position)
-        self.setItem(row_position, 0, QTableWidgetItem(job_data.id))
-        self.setItem(row_position, 1, QTableWidgetItem(job_data.name))
-        self.setItem(row_position, 2, QTableWidgetItem(job_data.status))
-        self.setItem(row_position, 3, QTableWidgetItem(job_data.runtime))
-        self.setItem(row_position, 4, QTableWidgetItem(job_data.cpu))
-        self.setItem(row_position, 5, QTableWidgetItem(job_data.ram))
-        self.setItem(row_position, 6, QTableWidgetItem(job_data.gpu))
-        self.setCellWidget(row_position, 7, ActionButtonsWidget())
+    def update_projects(self, projects: List[Project]):
+        """Synchronizes the tables with the list of projects from the model."""
+        current_projects = set(p.name for p in projects)
+        existing_tables = set(self.tables.keys())
 
-
-class ProjectListView(QWidget):
-    """Left panel for project selection."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
-
-        title = QLabel("Projects")
-        title.setObjectName("sectionTitle")
-        layout.addWidget(title)
-
-        self.list_view = QListView()
-        self.list_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.model = QStandardItemModel()
-        self.list_view.setModel(self.model)
-        layout.addWidget(self.list_view)
-
-        button_layout = QHBoxLayout()
-        self.add_project_button = QPushButton("Add")
-        button_layout.addWidget(self.add_project_button)
-        layout.addLayout(button_layout)
-
-    def update_project_list(self, projects: List[Project]):
-        self.model.clear()
+        for project_name in existing_tables - current_projects:
+            self.remove_project_table(project_name)
+        
         for project in projects:
-            item = QStandardItem(project.name)
-            self.model.appendRow(item)
+            if project.name not in self.tables:
+                self.add_project_table(project.name)
+            self.update_jobs_for_project(project.name, project.jobs)
+
+        if len(projects) == 1:
+            self.switch_to_project(projects[0].name)
+
+
+    def add_project_table(self, project_name: str):
+        """Adds a new table for a project."""
+        if project_name not in self.tables:
+            table = self._create_new_table(project_name)
+            self.tables[project_name] = table
+            self.stacked_widget.addWidget(table)
+
+    def remove_project_table(self, project_name: str):
+        """Removes the table for a project."""
+        if project_name in self.tables:
+            table = self.tables.pop(project_name)
+            self.stacked_widget.removeWidget(table)
+            table.deleteLater()
+
+    def switch_to_project(self, project_name: str):
+        """Switches the view to the table for the selected project."""
+        if project_name in self.tables:
+            self.stacked_widget.setCurrentWidget(self.tables[project_name])
+        else:
+            self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+
+    def update_jobs_for_project(self, project_name: str, jobs: List[Job]):
+        """Populates a project's table with its jobs."""
+        if project_name in self.tables:
+            table = self.tables[project_name]
+            table.setRowCount(0)
+            for job_data in jobs:
+                self._add_job_to_table(table, job_data)
+
+    def _add_job_to_table(self, table: QTableWidget, job_data: Job):
+        """Adds a single job row to the given table."""
+        row_position = table.rowCount()
+        table.insertRow(row_position)
+        table.setItem(row_position, 0, QTableWidgetItem(job_data.id))
+        table.setItem(row_position, 1, QTableWidgetItem(job_data.name))
+        table.setItem(row_position, 2, QTableWidgetItem(job_data.status))
+        table.setItem(row_position, 3, QTableWidgetItem(job_data.runtime))
+        table.setItem(row_position, 4, QTableWidgetItem(job_data.cpu))
+        table.setItem(row_position, 5, QTableWidgetItem(job_data.ram))
+        table.setItem(row_position, 6, QTableWidgetItem(job_data.gpu))
+        table.setCellWidget(row_position, 7, ActionButtonsWidget())
