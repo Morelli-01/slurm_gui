@@ -285,6 +285,7 @@ class Events:
     JOB_STATUS_CHANGED = "job.status_changed"
     JOB_COMPLETED = "job.completed"
     JOB_FAILED = "job.failed"
+    ADD_JOB = "job.add"
     
     # Data events
     DATA_READY = "cluster_job.data_ready"
@@ -293,7 +294,6 @@ class Events:
     PROJECT_LIST_CHANGED = "project.list_changed"   
     ADD_PROJECT = "project.add_project"   
     DEL_PROJECT = "project.del_project"   
-    JOB_CHANGED =  "project.job_changed"
     
     # System events
     APP_STARTUP = "app.startup"

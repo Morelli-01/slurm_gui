@@ -1,8 +1,10 @@
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
+from core.style import AppStyles
 from utils import script_dir
 from models.project_model import Project, Job
 from typing import List
+import uuid # Import uuid for generating unique IDs
 
 
 class ActionButtonsWidget(QWidget):
@@ -10,9 +12,11 @@ class ActionButtonsWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("actionContainer")
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(5)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4) 
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.startButton = QPushButton()
         self.startButton.setObjectName("actionSubmitBtn")
@@ -94,14 +98,16 @@ class JobsTableView(QWidget):
         placeholder_layout.addWidget(placeholder_label)
         self.stacked_widget.addWidget(self.placeholder_widget)
         self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+        self._apply_stylesheet()
 
     def _create_new_table(self, table_name = ''):
         """Creates and configures a new QTableWidget."""
+        headers =  ["Job ID", "Job Name", "Status", "Runtime", "CPU", "RAM", "GPU", "Actions"]
         table = QTableWidget()
         table.setObjectName(table_name)
         table.setColumnCount(8)
         table.setHorizontalHeaderLabels(
-            ["Job ID", "Job Name", "Status", "Runtime", "CPU", "RAM", "GPU", "Actions"]
+           headers
         )
         table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
@@ -110,17 +116,60 @@ class JobsTableView(QWidget):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.verticalHeader().setVisible(False)
         table.setAlternatingRowColors(True)
+        table.setSizePolicy(QSizePolicy.Policy.Expanding,
+                           QSizePolicy.Policy.Expanding)
         
+        h = table.horizontalHeader()
+        h.setStretchLastSection(False)
+        for i, head in enumerate(headers):
+            if head == "Actions":
+                h.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                table.setColumnWidth(i, 240)  # Reduced width for smaller buttons
+            elif head in ["CPU", "GPU", "RAM"]:
+                h.setSectionResizeMode(
+                    i, QHeaderView.ResizeMode.ResizeToContents)
+                table.setColumnWidth(i, 70)
+            elif head == "Job Name":
+                h.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+            else:
+                h.setSectionResizeMode(
+                    i, QHeaderView.ResizeMode.ResizeToContents)
+                
         new_jobs_button = QPushButton(
             "New Job", table)  # Set self as parent
         new_jobs_button.setObjectName(BTN_GREEN)
-        # new_jobs_button.clicked.connect(self.open_new_job_dialog)
-        new_jobs_button.clicked.connect(lambda: print(f"jobs panel {table_name} active")) #TODO
+        new_jobs_button.clicked.connect( # Modified to emit new event
+            lambda: get_event_bus().emit(
+                Events.ADD_JOB,
+                {"project_name": table_name,
+                 "job_data": {
+                     "id": f"{uuid.uuid4().hex[:8]}", # Generate a unique ID
+                     "name": "New Job Template",
+                     "status": "NOT_SUBMITTED",
+                     "runtime": "0:00",
+                     "cpu": "1",
+                     "ram": "1M",
+                     "gpu": "0",
+                     "node": "N/A"
+                 }},
+                source="JobsPanelView.JobsTableView"
+            )
+        )
         new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
         new_jobs_button.move(self.width() - new_jobs_button.width() - 20,
                                   self.height() - new_jobs_button.height() - 20)
         return table
 
+    def _apply_stylesheet(self):
+        """Apply centralized styles to the jobs group"""
+        # Use centralized styling system
+        style = AppStyles.get_table_styles()
+        style += AppStyles.get_button_styles()
+        style += AppStyles.get_scrollbar_styles()
+        style += AppStyles.get_job_action_styles()
+
+        self.setStyleSheet(style)
+        
     def update_projects(self, projects: List[Project]):
         """Synchronizes the tables with the list of projects from the model."""
         current_projects = set(p.name for p in projects)
@@ -166,15 +215,65 @@ class JobsTableView(QWidget):
             for job_data in jobs:
                 self._add_job_to_table(table, job_data)
 
+    def _apply_state_color(self, item: QTableWidgetItem):
+        """Apply color based on job status"""
+        txt = item.text().lower()
+        if txt in STATE_COLORS:
+            color = QColor(STATE_COLORS[txt])
+            item.setData(Qt.ItemDataRole.ForegroundRole, QBrush(color))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
     def _add_job_to_table(self, table: QTableWidget, job_data: Job):
-        """Adds a single job row to the given table."""
+        """Adds a single job row to the given table, matching style and logic of _add_job_row."""
+        actions_col = table.columnCount() - 1
         row_position = table.rowCount()
         table.insertRow(row_position)
-        table.setItem(row_position, 0, QTableWidgetItem(job_data.id))
-        table.setItem(row_position, 1, QTableWidgetItem(job_data.name))
-        table.setItem(row_position, 2, QTableWidgetItem(job_data.status))
-        table.setItem(row_position, 3, QTableWidgetItem(job_data.runtime))
-        table.setItem(row_position, 4, QTableWidgetItem(job_data.cpu))
-        table.setItem(row_position, 5, QTableWidgetItem(job_data.ram))
-        table.setItem(row_position, 6, QTableWidgetItem(job_data.gpu))
-        table.setCellWidget(row_position, 7, ActionButtonsWidget())
+        table.verticalHeader().setDefaultSectionSize(getattr(self, "_ROW_HEIGHT", 50))
+
+        # Use to_table_row if available, else fallback to attributes
+        if hasattr(job_data, "to_table_row"):
+            row_values = job_data.to_table_row()
+        else:
+            row_values = [
+                getattr(job_data, "id", ""),
+                getattr(job_data, "name", ""),
+                getattr(job_data, "status", ""),
+                getattr(job_data, "runtime", ""),
+                getattr(job_data, "cpu", ""),
+                getattr(job_data, "ram", ""),
+                getattr(job_data, "gpu", ""),
+            ]
+
+        for col in range(actions_col):
+            val = row_values[col] if col < len(row_values) else ""
+            item = QTableWidgetItem(str(val))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            if col == 2:  # Status column
+                if hasattr(self, "_apply_state_color"):
+                    self._apply_state_color(item)
+
+            # item.setTextAlignment(
+            #         Qt.AlignmentFlag.AlignVCenter
+            #     )
+
+            table.setItem(row_position, col, item)
+
+        # Add action buttons
+        action_widget = ActionButtonsWidget()
+        action_widget._job_status = getattr(job_data, "status", None)
+        table.setCellWidget(row_position, actions_col, action_widget)
+
+    # def _add_job_to_table(self, table: QTableWidget, job_data: Job):
+    #     """Adds a single job row to the given table."""
+    #     row_position = table.rowCount()
+    #     table.verticalHeader().setDefaultSectionSize(50)
+    #     table.insertRow(row_position)
+    #     table.setItem(row_position, 0, QTableWidgetItem(job_data.id))
+    #     table.setItem(row_position, 1, QTableWidgetItem(job_data.name))
+    #     table.setItem(row_position, 2, QTableWidgetItem(job_data.status))
+    #     table.setItem(row_position, 3, QTableWidgetItem(job_data.runtime))
+    #     table.setItem(row_position, 4, QTableWidgetItem(job_data.cpu))
+    #     table.setItem(row_position, 5, QTableWidgetItem(job_data.ram))
+    #     table.setItem(row_position, 6, QTableWidgetItem(job_data.gpu))
+    #     table.setCellWidget(row_position, 7, ActionButtonsWidget())
