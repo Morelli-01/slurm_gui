@@ -13,6 +13,7 @@ from PyQt6.QtCore import (Qt, QSize, pyqtSignal, QRect, QTime, QSortFilterProxyM
 import os, sys, threading, shutil, json, tempfile
 import time
 from typing import Dict, List, Any, Optional, Set
+from PyQt6 import sip
 
 JOB_QUEUE_FIELDS = [
     "Job ID", "Job Name", "User",

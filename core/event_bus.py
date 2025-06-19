@@ -291,6 +291,8 @@ class Events:
     # UI events
     PROJECT_SELECTED = "project.selected"
     PROJECT_LIST_CHANGED = "project.list_changed"   
+    ADD_PROJECT = "project.add_project"   
+    DEL_PROJECT = "project.del_project"   
 
     # System events
     APP_STARTUP = "app.startup"

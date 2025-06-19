@@ -1,6 +1,8 @@
+from ast import Dict
 from dataclasses import dataclass, field
 from typing import List, Optional
 from core.event_bus import get_event_bus, Events
+from widgets.toast_widget import show_error_toast
 
 @dataclass
 class Job:
@@ -35,12 +37,15 @@ class JobsModel:
         self.active_project: Optional[Project] = None
         self.event_bus = get_event_bus()
 
-    def add_project(self, name: str):
+    def add_project(self, event: Dict):
         """Adds a new project and emits an event."""
+        name = event.data["project_name"]
         if name and not any(p.name == name for p in self.projects):
             new_project = Project(name=name)
             self.projects.append(new_project)
             self.event_bus.emit(Events.PROJECT_LIST_CHANGED, data={'projects': self.projects})
+        else:
+            show_error_toast(self,"Error" ,"Project already exist")
 
     def remove_project(self, name: str):
         """Removes a project and emits an event."""
@@ -52,4 +57,4 @@ class JobsModel:
     def set_active_project(self, name: str):
         """Sets the currently active project and emits an event."""
         self.active_project = next((p for p in self.projects if p.name == name), None)
-        self.event_bus.emit(Events.PROJECT_SELECTED, data={'project': self.active_project})
+        # self.event_bus.emit(Events.PROJECT_SELECTED, data={'project': self.active_project})
