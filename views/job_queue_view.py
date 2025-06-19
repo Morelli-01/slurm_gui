@@ -26,16 +26,106 @@ class JobQueueView(QWidget):
         self.setMinimumHeight(200)
 
     def _setup_table_properties(self):
-        """Setup table properties exactly like original"""
-        self.table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows)
+        """Setup table properties with cell selection and copy functionality"""
+        # Allow both row and cell selection
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectItems)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
+        
+        # Enable text selection within cells
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        
+        # Hide vertical header
         self.table.verticalHeader().setVisible(False)
+        
+        # Enable sorting
         self.table.setSortingEnabled(True)
+        
+        # Enable context menu
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
 
         # Add listener for sorting changes and save the column index
         header = self.table.horizontalHeader()
         header.sortIndicatorChanged.connect(self._on_sort_indicator_changed)
+    def _show_context_menu(self, position):
+        """Show context menu for copying cell values"""
+        if not self.table.itemAt(position):
+            return
+            
+        menu = QMenu(self)
+        
+        # Copy selected cell(s)
+        copy_action = QAction("Copy", self)
+        copy_action.setShortcut("Ctrl+C")
+        copy_action.triggered.connect(self._copy_selected_cells)
+        menu.addAction(copy_action)
+        
+        # Copy entire row
+        copy_row_action = QAction("Copy Row", self)
+        copy_row_action.triggered.connect(self._copy_selected_row)
+        menu.addAction(copy_row_action)
+        
+        # Select all in column
+        select_column_action = QAction("Select Column", self)
+        select_column_action.triggered.connect(self._select_column)
+        menu.addAction(select_column_action)
+        
+        menu.exec(self.table.mapToGlobal(position))
+    
+    def _copy_selected_cells(self):
+        """Copy selected cell values to clipboard"""
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            return
+            
+        # Group items by row for proper formatting
+        rows_data = {}
+        for item in selected_items:
+            row = item.row()
+            col = item.column()
+            if row not in rows_data:
+                rows_data[row] = {}
+            rows_data[row][col] = item.text()
+        
+        # Create clipboard text
+        clipboard_text = []
+        for row in sorted(rows_data.keys()):
+            row_data = rows_data[row]
+            # Sort columns and join with tabs
+            row_text = "\t".join(row_data[col] for col in sorted(row_data.keys()))
+            clipboard_text.append(row_text)
+        
+        # Copy to clipboard
+        clipboard = QApplication.clipboard()
+        clipboard.setText("\n".join(clipboard_text))
+
+    def _copy_selected_row(self):
+        """Copy entire row(s) to clipboard"""
+        selected_rows = set(item.row() for item in self.table.selectedItems())
+        if not selected_rows:
+            return
+            
+        clipboard_text = []
+        for row in sorted(selected_rows):
+            row_data = []
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item:
+                    row_data.append(item.text())
+                else:
+                    row_data.append("")
+            clipboard_text.append("\t".join(row_data))
+        
+        # Copy to clipboard
+        clipboard = QApplication.clipboard()
+        clipboard.setText("\n".join(clipboard_text))
+
+    def _select_column(self):
+        """Select entire column based on current selection"""
+        current_item = self.table.currentItem()
+        if current_item:
+            column = current_item.column()
+            self.table.selectColumn(column)
 
     def _on_sort_indicator_changed(self, logicalIndex, order):
         """Listener for sorting changes, saves the sorted column index"""

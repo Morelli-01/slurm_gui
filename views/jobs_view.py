@@ -21,57 +21,36 @@ class ActionButtonsWidget(QWidget):
         self.startButton = QPushButton()
         self.startButton.setObjectName("actionSubmitBtn")
         self.startButton.setToolTip("Start Job")
-        self.startButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "submit.svg"))
-        )
         layout.addWidget(self.startButton)
 
         self.stopButton = QPushButton()
         self.stopButton.setObjectName("actionStopBtn")
         self.stopButton.setToolTip("Stop Job")
-        self.stopButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "stop.svg"))
-        )
         layout.addWidget(self.stopButton)
 
         self.cancelButton = QPushButton()
         self.cancelButton.setObjectName("actionCancelBtn")
         self.cancelButton.setToolTip("Cancel Job")
-        self.cancelButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "delete.svg"))
-        )
         layout.addWidget(self.cancelButton)
 
         self.logsButton = QPushButton()
         self.logsButton.setObjectName("actionLogsBtn")
         self.logsButton.setToolTip("View Logs")
-        self.logsButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "view_logs.svg"))
-        )
         layout.addWidget(self.logsButton)
 
         self.duplicateButton = QPushButton()
         self.duplicateButton.setObjectName("actionDuplicateBtn")
         self.duplicateButton.setToolTip("Duplicate Job")
-        self.duplicateButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "duplicate.svg"))
-        )
         layout.addWidget(self.duplicateButton)
 
         self.modifyButton = QPushButton()
         self.modifyButton.setObjectName("actionModifyBtn")
         self.modifyButton.setToolTip("Modify Job")
-        self.modifyButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "edit.svg"))
-        )
         layout.addWidget(self.modifyButton)
 
         self.terminalButton = QPushButton()
         self.terminalButton.setObjectName("actionTerminalBtn")
         self.terminalButton.setToolTip("Open Terminal on Node")
-        self.terminalButton.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
-        )
         layout.addWidget(self.terminalButton)
 
 
