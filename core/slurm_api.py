@@ -12,50 +12,71 @@ from utils import settings_path, parse_duration
 
 
 JOB_CODES = {
-    "CD": "COMPLETED", "CG": "COMPLETING", "F": "FAILED", "PD": "PENDING",
-    "PR": "PREEMPTED", "R": "RUNNING", "S": "SUSPENDED", "ST": "STOPPED",
-    "CA": "CANCELLED", "TO": "TIMEOUT", "NF": "NODE_FAIL", "RV": "REVOKED",
-    "SE": "SPECIAL_EXIT", "OOM": "OUT_OF_MEMORY", "BF": "BOOT_FAIL",
-    "DL": "DEADLINE", "OT": "OTHER"
+    "CD": "COMPLETED",
+    "CG": "COMPLETING",
+    "F": "FAILED",
+    "PD": "PENDING",
+    "PR": "PREEMPTED",
+    "R": "RUNNING",
+    "S": "SUSPENDED",
+    "ST": "STOPPED",
+    "CA": "CANCELLED",
+    "TO": "TIMEOUT",
+    "NF": "NODE_FAIL",
+    "RV": "REVOKED",
+    "SE": "SPECIAL_EXIT",
+    "OOM": "OUT_OF_MEMORY",
+    "BF": "BOOT_FAIL",
+    "DL": "DEADLINE",
+    "OT": "OTHER",
 }
 
 
-class SlurmWorker(QThread):  # Changed from threading.Thread to QThread
-    """Worker thread for SLURM operations using event bus - continuous loop"""
+class SlurmWorker(QThread):
+    """Worker thread for SLURM operations using Qt signals for thread-safety."""
+
+    # Define signals for thread-safe communication to the main thread.
+    # The 'object' type can carry any Python object (like a dict).
+    data_ready = pyqtSignal(object)
+    error_occurred = pyqtSignal(str)
 
     def __init__(self, slurm_api, refresh_interval_seconds=5):
-        super().__init__()  # QThread doesn't need daemon=True
+        super().__init__()
         self.slurm_api = slurm_api
-        self.event_bus = get_event_bus()
         self.refresh_interval = refresh_interval_seconds
-        self._stop_requested = False  # Changed from threading.Event to simple boolean
+        self._stop_requested = False
 
     def run(self):
-        """Continuous loop until stop is requested"""
+        """Fetch data and emit signals with the results."""
         try:
             if self.slurm_api.connection_status != ConnectionState.CONNECTED:
                 return
+
             nodes_data = self.slurm_api.fetch_nodes_info()
             queue_jobs = self.slurm_api.fetch_job_queue()
-            self.event_bus.emit(Events.DATA_READY,
-                                {"nodes": nodes_data or [],
-                                    "jobs": queue_jobs or []},
-                                source="slurmworker")
+
+            # Emit the signal with the fetched data payload
+            self.data_ready.emit({
+                "nodes": nodes_data or [],
+                "jobs": queue_jobs or []
+            })
 
         except Exception as e:
-            print(f"Worker error: {e}")
-            self.event_bus.emit(Events.ERROR_OCCURRED,
-                                {"error": str(e)}, source="worker")
+            error_message = f"Worker thread error: {e}"
+            print(error_message)
+            # Emit the error signal
+            self.error_occurred.emit(error_message)
 
     def stop(self):
         """Stop the worker thread"""
         self._stop_requested = True
         self.quit()  # QThread method to quit the event loop
-        # self.wait()  # QThread method to wait for thread to finish
+        # self.wait()  # Wait for the thread to finish cleanly
 
 
 class ConnectionState(Enum):
     """Clear connection states"""
+
     DISCONNECTED = auto()
     CONNECTING = auto()
     CONNECTED = auto()
@@ -64,6 +85,7 @@ class ConnectionState(Enum):
 @dataclass
 class ConnectionConfig:
     """Immutable connection configuration"""
+
     host: str = None
     username: str = None
     password: str = None
@@ -74,22 +96,28 @@ class ConnectionConfig:
 
 def requires_connection(func: Callable) -> Callable:
     """Returns None if not connected, no error"""
+
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        if not hasattr(self, 'connection_status') or self.connection_status != ConnectionState.CONNECTED:
+        if (
+            not hasattr(self, "connection_status")
+            or self.connection_status != ConnectionState.CONNECTED
+        ):
             print("SlurmAPI is not connected!")
             return None
         return func(self, *args, **kwargs)
+
     return wrapper
 
 
-class SlurmAPI():
+class SlurmAPI:
     _instance = None
 
     def __new__(cls):
-        if cls._instance is None:   
+        if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
+
     @classmethod
     def reset_instance(cls):
         """Reset the singleton instance to create a fresh SlurmAPI"""
@@ -101,7 +129,7 @@ class SlurmAPI():
 
     def __init__(self):
         # Only initialize once
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self.event_bus = get_event_bus()
@@ -119,9 +147,9 @@ class SlurmAPI():
             config = configparser.ConfigParser()
             config.read(settings_path)
 
-            self._config.host = config['GeneralSettings']['clusterAddress']
-            self._config.password = config['GeneralSettings']['psw']
-            self._config.username = config['GeneralSettings']['username']
+            self._config.host = config["GeneralSettings"]["clusterAddress"]
+            self._config.password = config["GeneralSettings"]["psw"]
+            self._config.username = config["GeneralSettings"]["username"]
             return True
         except (KeyError, ValueError) as e:
             print(f"Invalid configuration file: {e}")
@@ -132,9 +160,8 @@ class SlurmAPI():
         self.connection_status = new_state
         self.event_bus.emit(
             Events.CONNECTION_STATE_CHANGED,
-            data={"old_state": old_state,
-                  "new_state": self.connection_status},
-            source="slurmapi"
+            data={"old_state": old_state, "new_state": self.connection_status},
+            source="slurmapi",
         )
         print(f"Connection State changed: {old_state} -> {new_state}")
 
@@ -157,7 +184,7 @@ class SlurmAPI():
                 password=self._config.password,
                 timeout=self._config.timeout,
                 allow_agent=False,
-                look_for_keys=False
+                look_for_keys=False,
             )
             self._set_connection_status(ConnectionState.CONNECTED)
 
@@ -208,8 +235,9 @@ class SlurmAPI():
                         node_dict[key] = value
 
                     if key == "State":
-                        node_dict["RESERVED"] = "YES" if "RESERVED" in value.upper(
-                        ) else "NO"
+                        node_dict["RESERVED"] = (
+                            "YES" if "RESERVED" in value.upper() else "NO"
+                        )
 
             nodes_arr.append(node_dict)
 
@@ -219,10 +247,12 @@ class SlurmAPI():
     def fetch_job_queue(self) -> List[Dict[str, Any]]:
         """Fetch job queue information"""
 
-        cmd = "squeue -O jobarrayid:\\;,Reason:\\;,NodeList:\\;,Username:\\;,tres-per-job:\\;," + \
-              "tres-per-task:\\;,tres-per-node:\\;,Name:\\;,Partition:\\;,StateCompact:\\;," + \
-              "Timelimit:\\;,TimeUsed:\\;,NumNodes:\\;,NumTasks:\\;,Reason:\\;,MinMemory:\\;," + \
-              "MinCpus:\\;,Account:\\;,PriorityLong:\\;,jobid:\\;,tres:\\;,nice:"
+        cmd = (
+            "squeue -O jobarrayid:\\;,Reason:\\;,NodeList:\\;,Username:\\;,tres-per-job:\\;,"
+            + "tres-per-task:\\;,tres-per-node:\\;,Name:\\;,Partition:\\;,StateCompact:\\;,"
+            + "Timelimit:\\;,TimeUsed:\\;,NumNodes:\\;,NumTasks:\\;,Reason:\\;,MinMemory:\\;,"
+            + "MinCpus:\\;,Account:\\;,PriorityLong:\\;,jobid:\\;,tres:\\;,nice:"
+        )
 
         out, _ = self.run_command(cmd)
         job_queue = []
@@ -249,7 +279,7 @@ class SlurmAPI():
 
         msg_out, _ = self.run_command("scontrol show reservation 2>/dev/null")
         return None if "No reservations in the system" in msg_out else msg_out
-   
+
     @requires_connection
     def fetch_accounts(self) -> List[str]:
         """Fetch available accounts."""
@@ -257,12 +287,14 @@ class SlurmAPI():
             return self.accounts
         try:
             # The command gives unique accounts already
-            msg_out, err_out = self.run_command("sacctmgr show associations format=Account -n -P")
+            msg_out, err_out = self.run_command(
+                "sacctmgr show associations format=Account -n -P"
+            )
             if err_out:
                 print(f"Error fetching accounts: {err_out}")
                 return []
-            
-            self.accounts  = sorted(list(set(msg_out.splitlines())))
+
+            self.accounts = sorted(list(set(msg_out.splitlines())))
             return self.accounts
         except Exception as e:
             print(f"Exception fetching accounts: {e}")
@@ -284,7 +316,7 @@ class SlurmAPI():
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
-    
+
     @requires_connection
     def remote_path_exists(self, path: str) -> bool:
         """Check if a remote path exists and is a directory."""
@@ -298,18 +330,20 @@ class SlurmAPI():
         command = f'if [ -f "{path}" ]; then echo "exists"; fi'
         stdout, stderr = self.run_command(command)
         return stdout.strip() == "exists"
-    
+
     @requires_connection
     def list_remote_directories(self, path: str) -> List[str]:
         """List directories in a given remote path."""
         # The command finds all directories in the given path, at a max depth of 1, and prints their names.
-        command = f"find '{path}' -maxdepth 1 -mindepth 1 -type d -exec basename {{}} \\;"
+        command = (
+            f"find '{path}' -maxdepth 1 -mindepth 1 -type d -exec basename {{}} \\;"
+        )
         stdout, stderr = self.run_command(command)
         if stderr:
             print(f"Error listing directories in '{path}': {stderr}")
             return []
-        
-        directories = stdout.strip().split('\n')
+
+        directories = stdout.strip().split("\n")
         # Filter out empty strings that might result from splitting
         return [d for d in directories if d]
 
@@ -349,10 +383,13 @@ class SlurmAPI():
             "Status": status,
             "RawStatusCode": raw_status_code,
             "Time Limit": fields[10],
-            "Time Used": [fields[11], parse_duration(fields[11]) if fields[11] else timedelta()],
+            "Time Used": [
+                fields[11],
+                parse_duration(fields[11]) if fields[11] else timedelta(),
+            ],
             "Account": fields[17],
             "Priority": int(fields[18]) if fields[18].isdigit() else 0,
-            "GPUs": 0
+            "GPUs": 0,
         }
 
         # Parse resources
@@ -378,32 +415,7 @@ class SlurmAPI():
         return job_dict
 
 
-def _refresh(slurm_api: SlurmAPI):
-    try:
-        if slurm_api.connection_status != ConnectionState.CONNECTED:
-            return
-
-        nodes_data = slurm_api.fetch_nodes_info()
-        queue_jobs = slurm_api.fetch_job_queue()
-
-        get_event_bus().emit(Events.DATA_READY,
-                             {"nodes": nodes_data or [],
-                              "jobs": queue_jobs or []},
-                             source="slurmworker")
-
-    except Exception as e:
-        print(f"Worker error: {e}")
-        get_event_bus().emit(Events.ERROR_OCCURRED,
-                             {"error": str(e)}, source="worker")
-
-
-def refresh_func(slurm_api: SlurmAPI):
-    t = threading.Thread(target=functools.partial(
-        _refresh, slurm_api), daemon=True)
-    t.start()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     settings_path = "/home/nicola/Desktop/slurm_gui/configs/settings.ini"
     api = SlurmAPI()
     print(api._config)

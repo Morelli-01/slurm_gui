@@ -17,7 +17,7 @@ from utils import *
 from core.style import AppStyles
 from core.defaults import *
 from widgets.cluster_status_widget import ClusterStatusWidget
-from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker, refresh_func
+from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker
 from core.event_bus import EventPriority, Events, get_event_bus
 import platform
 from functools import partial, wraps
@@ -135,7 +135,9 @@ class SlurmJobManagerApp(QMainWindow):
         # Initialize SLURM connection
         self.slurm_api = SlurmAPI()
         self.slurm_worker = SlurmWorker(self.slurm_api)
-
+        self.slurm_worker.data_ready.connect(self.handle_worker_data)
+        self.slurm_worker.error_occurred.connect(self.handle_worker_error)
+        
         self.setWindowTitle(APP_TITLE)
 
         # Set window size - Qt 6 handles DPI scaling automatically
@@ -223,6 +225,8 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.slurm_api = SlurmAPI.reset_instance()
         self.slurm_worker = SlurmWorker(self.slurm_api)
+        self.slurm_worker.data_ready.connect(self.handle_worker_data)
+        self.slurm_worker.error_occurred.connect(self.handle_worker_error)
 
         if self.slurm_api.connect():
             show_success_toast(
@@ -240,6 +244,19 @@ class SlurmJobManagerApp(QMainWindow):
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.slurm_worker.start)
         self.refresh_timer.start(REFRESH_INTERVAL_MS)
+
+    def handle_worker_data(self, data_dict):
+        """
+        This slot receives data from the SlurmWorker thread safely.
+        It then emits an event on the event bus, which will now be processed
+        synchronously and safely in the main GUI thread.
+        """
+        self.event_bus.emit(Events.DATA_READY, data=data_dict, source="SlurmJobManagerApp")
+
+    def handle_worker_error(self, error_message):
+        """This slot receives error messages from the SlurmWorker thread safely."""
+        show_error_toast(self, "Worker Thread Error", error_message)
+        self.event_bus.emit(Events.ERROR_OCCURRED, data={"error": error_message}, source="SlurmJobManagerApp")
 
     def set_connection_status(self, event_data):
         """connection status handling"""
