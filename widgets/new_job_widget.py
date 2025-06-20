@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QFormLayout, QLineEdit, QSpinBox, QTextEdit, QDialogButtonBox,
     QLabel, QComboBox, QCheckBox, QGroupBox, QPushButton,
-    QFileDialog, QPlainTextEdit
+    QFileDialog, QPlainTextEdit, QApplication
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -63,7 +63,6 @@ class JobCreationDialog(QDialog):
         # Create tabs
         self._create_basic_tab()
         self._create_resources_tab()
-        self._create_files_tab()
         self._create_dependencies_tab()
         self._create_advanced_tab()
         self._create_preview_tab()
@@ -167,9 +166,11 @@ class JobCreationDialog(QDialog):
         self.ntasks_spin.setValue(self.job.ntasks or 1)
         cpu_layout.addRow("Number of Tasks:", self.ntasks_spin)
         
-        self.nodes_edit = QLineEdit(str(self.job.nodes or 1))
-        self.nodes_edit.setPlaceholderText("e.g., 1 or 1-4")
-        cpu_layout.addRow("Nodes:", self.nodes_edit)
+        self.nodes_spin = QSpinBox()
+        self.nodes_spin.setMinimum(1)
+        self.nodes_spin.setMaximum(1000)
+        self.nodes_spin.setValue(int(self.job.nodes) if hasattr(self.job, 'nodes') and str(self.job.nodes).isdigit() else 1)
+        cpu_layout.addRow("Nodes:", self.nodes_spin)
         
         layout.addWidget(cpu_group)
         
@@ -177,9 +178,11 @@ class JobCreationDialog(QDialog):
         mem_group = QGroupBox("Memory")
         mem_layout = QFormLayout(mem_group)
         
-        self.mem_edit = QLineEdit(self.job.mem or "1G")
-        self.mem_edit.setPlaceholderText("e.g., 1G, 500M, 16G")
-        mem_layout.addRow("Memory:", self.mem_edit)
+        self.mem_spin = QSpinBox()
+        self.mem_spin.setMinimum(1)
+        self.mem_spin.setMaximum(1024*1024)  # up to 1TB in GB
+        self.mem_spin.setValue(int(self.job.mem[:-1]) if hasattr(self.job, 'mem') and isinstance(self.job.mem, str) and self.job.mem[:-1].isdigit() else 1)
+        mem_layout.addRow("Memory (GB):", self.mem_spin)
         
         layout.addWidget(mem_group)
         
@@ -187,47 +190,22 @@ class JobCreationDialog(QDialog):
         gpu_group = QGroupBox("GPU Resources")
         gpu_layout = QFormLayout(gpu_group)
         
-        self.gpus_edit = QLineEdit(self.job.gpus or "")
-        self.gpus_edit.setPlaceholderText("e.g., 1, 2, a100:1")
-        gpu_layout.addRow("GPUs:", self.gpus_edit)
+        self.gpus_spin = QSpinBox()
+        self.gpus_spin.setMinimum(0)
+        self.gpus_spin.setMaximum(128)
+        self.gpus_spin.setValue(int(self.job.gpus) if hasattr(self.job, 'gpus') and str(self.job.gpus).isdigit() else 0)
+        gpu_layout.addRow("GPUs:", self.gpus_spin)
         
-        self.gpus_per_task_edit = QLineEdit(self.job.gpus_per_task or "")
-        self.gpus_per_task_edit.setPlaceholderText("e.g., 1")
-        gpu_layout.addRow("GPUs per Task:", self.gpus_per_task_edit)
+        self.gpus_per_task_spin = QSpinBox()
+        self.gpus_per_task_spin.setMinimum(0)
+        self.gpus_per_task_spin.setMaximum(128)
+        self.gpus_per_task_spin.setValue(int(self.job.gpus_per_task) if hasattr(self.job, 'gpus_per_task') and str(self.job.gpus_per_task).isdigit() else 0)
+        gpu_layout.addRow("GPUs per Task:", self.gpus_per_task_spin)
         
         layout.addWidget(gpu_group)
         layout.addStretch()
         
         self.tab_widget.addTab(tab, "Resources")
-        
-    def _create_files_tab(self):
-        """Create the files tab"""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        layout.setSpacing(10)
-        
-        # Output file
-        self.output_edit = QLineEdit(self.job.output_file or "")
-        self.output_edit.setPlaceholderText("e.g., job_%j.out (default: slurm-%j.out)")
-        layout.addRow("Output File:", self.output_edit)
-        
-        # Error file
-        self.error_edit = QLineEdit(self.job.error_file or "")
-        self.error_edit.setPlaceholderText("e.g., job_%j.err (default: same as output)")
-        layout.addRow("Error File:", self.error_edit)
-        
-        # Info label
-        info_label = QLabel(
-            "<b>Variable substitutions:</b><br>"
-            "%j - Job ID<br>"
-            "%a - Array task ID<br>"
-            "%u - Username<br>"
-            "%x - Job name"
-        )
-        info_label.setStyleSheet("color: #8be9fd; padding: 10px; background: rgba(68, 71, 90, 0.5); border-radius: 5px;")
-        layout.addRow(info_label)
-        
-        self.tab_widget.addTab(tab, "Files")
         
     def _create_dependencies_tab(self):
         """Create the dependencies and arrays tab"""
@@ -286,24 +264,51 @@ class JobCreationDialog(QDialog):
         layout.setSpacing(10)
         
         # QoS
-        self.qos_edit = QLineEdit(self.job.qos or "")
+        self.qos_edit = QComboBox()
+        self.qos_edit.setEditable(True)
+        qos_list = self.slurm_api.fetch_qos() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
+        if qos_list:
+            self.qos_edit.addItems(qos_list)
+        if self.job.qos:
+            self.qos_edit.setCurrentText(self.job.qos)
         self.qos_edit.setPlaceholderText("Quality of Service")
         layout.addRow("QoS:", self.qos_edit)
         
         # Constraint
-        self.constraint_edit = QLineEdit(self.job.constraint or "")
+        self.constraint_edit = QComboBox()
+        self.constraint_edit.setEditable(True)
+        constraint_list = self.slurm_api.fetch_constraint() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
+        if constraint_list:
+            self.constraint_edit.addItems(constraint_list)
+        if self.job.constraint:
+            self.constraint_edit.setCurrentText(self.job.constraint)
         self.constraint_edit.setPlaceholderText("e.g., gpu80gb, cpu_gen:cascadelake")
         layout.addRow("Constraint:", self.constraint_edit)
         
         # Nodelist
-        self.nodelist_edit = QLineEdit(getattr(self.job, 'nodelist', None) or "")
+        self.nodelist_edit = QComboBox()
+        self.nodelist_edit.setEditable(True)
+        nodelist_list = self.slurm_api.fetch_nodelist() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
+        if nodelist_list:
+            self.nodelist_edit.addItems(nodelist_list)
+        if getattr(self.job, 'nodelist', None):
+            self.nodelist_edit.setCurrentText(self.job.nodelist)
         self.nodelist_edit.setPlaceholderText("e.g., node001, node[001-004], node00[1,3,5]")
         layout.addRow("Nodelist:", self.nodelist_edit)
+        
+        # Output file
+        self.output_edit = QLineEdit(self.job.output_file or "~/.slurm_logs/out_%A.log")
+        self.output_edit.setPlaceholderText("e.g., ~/.slurm_logs/out_%A.log")
+        layout.addRow("Output File:", self.output_edit)
+        
+        # Error file
+        self.error_edit = QLineEdit(self.job.error_file or "~/.slurm_logs/err_%A.log")
+        self.error_edit.setPlaceholderText("e.g., ~/.slurm_logs/err_%A.log")
+        layout.addRow("Error File:", self.error_edit)
         
         # Nice
         self.nice_spin = QSpinBox()
         self.nice_spin.setValue(self.job.nice or 0)
-        self.nice_spin.setSpecialValueText("Default")
         layout.addRow("Nice:", self.nice_spin)
         
         # Oversubscribe
@@ -320,21 +325,6 @@ class JobCreationDialog(QDialog):
         font = QFont("Consolas" if os.name == 'nt' else "Monospace", 10)
         self.optional_sbatch_edit.setFont(font)
         layout.addRow(self.optional_sbatch_edit)
-        
-        # Constraint and Nodelist examples
-        constraint_info = QLabel(
-            "<b>Common Constraints:</b><br>"
-            "• gpu80gb - Request 80GB GPU<br>"
-            "• cpu_gen:cascadelake - Specific CPU generation<br>"
-            "• avx512 - AVX-512 instruction support<br>"
-            "• ib - InfiniBand network<br><br>"
-            "<b>Nodelist Examples:</b><br>"
-            "• node001 - Single specific node<br>"
-            "• node[001-004] - Range of nodes<br>"
-            "• node00[1,3,5] - Specific nodes"
-        )
-        constraint_info.setStyleSheet("color: #8be9fd; padding: 10px; background: rgba(68, 71, 90, 0.5); border-radius: 5px;")
-        layout.addRow(constraint_info)
         
         self.tab_widget.addTab(tab, "Advanced")
         
@@ -386,24 +376,21 @@ class JobCreationDialog(QDialog):
         # Resources tab
         self.cpus_spin.valueChanged.connect(self._update_job)
         self.ntasks_spin.valueChanged.connect(self._update_job)
-        self.nodes_edit.textChanged.connect(self._update_job)
-        self.mem_edit.textChanged.connect(self._update_job)
-        self.gpus_edit.textChanged.connect(self._update_job)
-        self.gpus_per_task_edit.textChanged.connect(self._update_job)
-        
-        # Files tab
-        self.output_edit.textChanged.connect(self._update_job)
-        self.error_edit.textChanged.connect(self._update_job)
+        self.nodes_spin.valueChanged.connect(self._update_job)
+        self.mem_spin.valueChanged.connect(self._update_job)
+        self.gpus_spin.valueChanged.connect(self._update_job)
+        self.gpus_per_task_spin.valueChanged.connect(self._update_job)
         
         # Dependencies & Arrays tab
         self.array_edit.textChanged.connect(self._update_job)
         self.dependency_edit.textChanged.connect(self._update_job)
         
         # Advanced tab
-        self.qos_edit.textChanged.connect(self._update_job)
-        self.constraint_edit.textChanged.connect(self._update_job)
-        self.nodelist_edit.textChanged.connect(self._update_job)
+        self.qos_edit.editTextChanged.connect(self._update_job)
+        self.constraint_edit.editTextChanged.connect(self._update_job)
+        self.nodelist_edit.editTextChanged.connect(self._update_job)
         self.nice_spin.valueChanged.connect(self._update_job)
+        self.nice_spin.valueChanged.connect(self._update_preview)
         self.oversubscribe_check.stateChanged.connect(self._update_job)
         self.optional_sbatch_edit.textChanged.connect(self._update_job)
         
@@ -417,25 +404,23 @@ class JobCreationDialog(QDialog):
         self.job.working_directory = self.working_dir_edit.text() or None
         self.job.venv = self.venv_edit.text() or None
         self.job.script_commands = self.script_edit.toPlainText()
-        
         # Resources
         self.job.cpus_per_task = self.cpus_spin.value()
         self.job.ntasks = self.ntasks_spin.value()
-        self.job.nodes = self.nodes_edit.text() or "1"
-        self.job.mem = self.mem_edit.text() or "1G"
-        self.job.gpus = self.gpus_edit.text() or None
-        self.job.gpus_per_task = self.gpus_per_task_edit.text() or None
-        
+        self.job.nodes = self.nodes_spin.value()
+        self.job.mem = f"{self.mem_spin.value()}G"
+        self.job.gpus = str(self.gpus_spin.value()) if self.gpus_spin.value() > 0 else None
+        self.job.gpus_per_task = str(self.gpus_per_task_spin.value()) if self.gpus_per_task_spin.value() > 0 else None
         # Files
-        self.job.output_file = self.output_edit.text() or None
-        self.job.error_file = self.error_edit.text() or None
+        self.job.output_file = self.output_edit.text() or "~/.slurm_logs/out_%A.log"
+        self.job.error_file = self.error_edit.text() or "~/.slurm_logs/err_%A.log"
         
         # Advanced
         self.job.account = self.account_edit.currentText() or None
         self.job.partition = self.partition_edit.currentText() or None
-        self.job.qos = self.qos_edit.text() or None
+        self.job.qos = self.qos_edit.currentText() or None
         self.job.array = self.array_edit.text() or None
-        self.job.constraint = self.constraint_edit.text() or None
+        self.job.constraint = self.constraint_edit.currentText() or None
         self.job.dependency = self.dependency_edit.text() or None
         self.job.nice = self.nice_spin.value() if self.nice_spin.value() != 0 else None
         self.job.oversubscribe = self.oversubscribe_check.isChecked()

@@ -24,14 +24,14 @@ class Job:
     constraint: Optional[List[str]] = None
     cpus_per_task: Optional[int] = 1
     dependency: Optional[str] = None
-    error_file: Optional[str] = None
+    error_file: Optional[str] = "~/.slurm_logs/err_%A.log"
     gpus: Optional[str] = None
     gpus_per_task: Optional[str] = None
     mem: Optional[str] = "1G"  # Default to 1GB
     nice: Optional[int] = None
     nodes: Optional[str] = 1
     ntasks: Optional[int] = 1
-    output_file: Optional[str] = None
+    output_file: Optional[str] = "~/.slurm_logs/out_%A.log"
     oversubscribe: bool = False
     partition: Optional[str] = None
     qos: Optional[str] = None

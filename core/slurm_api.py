@@ -140,6 +140,9 @@ class SlurmAPI:
         self._initialized = True
         self.accounts = None
         self.partitions = None
+        self.qos = None
+        self.constraint = None
+        self.nodelist = None
         self.remote_home: Optional[str] = None
 
     def _load_connection_config(self):
@@ -187,13 +190,7 @@ class SlurmAPI:
                 look_for_keys=False,
             )
             self._set_connection_status(ConnectionState.CONNECTED)
-
-            # --- fetch some basic info ---
-            self.fetch_accounts()
-            self.fetch_partitions()
-            self.remote_home = self.get_home_directory()
-            # -----------------------------
-
+            self._load_basic_info()
             return True
         except Exception as e:
             print(f"Connection failed: {e}")
@@ -201,6 +198,15 @@ class SlurmAPI:
 
             self.disconnect()
             return False
+    
+    @requires_connection
+    def _load_basic_info(self):
+        self.fetch_accounts()
+        self.fetch_partitions()
+        self.remote_home = self.get_home_directory()
+        self.qos = self.fetch_qos()
+        self.constraint = self.fetch_constraint()
+        self.nodelist = self.fetch_nodelist()
 
     def disconnect(self):
         """Close connection"""
@@ -316,7 +322,58 @@ class SlurmAPI:
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
-
+        
+    @requires_connection
+    def fetch_qos(self) -> List[str]:
+        """Fetch available partitions."""
+        if self.qos:
+            return self.qos
+        try:
+            msg_out, err_out = self.run_command("sacctmgr show qos --parsable2 format=Name --noheader")
+            if err_out:
+                print(f"Error fetching partitions: {err_out}")
+                return []
+            msg_out = str(msg_out).replace("*", "")
+            self.qos = sorted(list(set(msg_out.splitlines())))
+            return self.qos
+        except Exception as e:
+            print(f"Exception fetching partitions: {e}")
+            return []    
+        
+    @requires_connection
+    def fetch_constraint(self) -> List[str]:
+        """Fetch available partitions."""
+        if self.constraint:
+            return self.constraint
+        try:
+            msg_out, err_out = self.run_command("sinfo -o '%f' --noheader  | sort | uniq")
+            if err_out:
+                print(f"Error fetching partitions: {err_out}")
+                return []
+            msg_out = str(msg_out).replace("*", "")
+            self.constraint = sorted(list(set(msg_out.splitlines())))
+            return self.constraint
+        except Exception as e:
+            print(f"Exception fetching partitions: {e}")
+            return []
+    
+    @requires_connection
+    def fetch_nodelist(self) -> List[str]:
+        """Fetch available partitions."""
+        if self.nodelist:
+            return self.nodelist
+        try:
+            msg_out, err_out = self.run_command("sinfo -N -h -o \"%N\"")
+            if err_out:
+                print(f"Error fetching partitions: {err_out}")
+                return []
+            msg_out = str(msg_out).replace("*", "")
+            self.nodelist = sorted(list(set(msg_out.splitlines())))
+            return self.nodelist
+        except Exception as e:
+            print(f"Exception fetching partitions: {e}")
+            return []
+        
     @requires_connection
     def remote_path_exists(self, path: str) -> bool:
         """Check if a remote path exists and is a directory."""
