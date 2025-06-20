@@ -13,6 +13,7 @@ from PyQt6.QtGui import QFont
 from models.project_model import Job
 from core.defaults import *
 from core.style import AppStyles
+from core.slurm_api import ConnectionState, SlurmAPI
 import uuid
 
 
@@ -27,7 +28,7 @@ class JobCreationDialog(QDialog):
         self.setWindowTitle("Create New Job")
         self.setModal(True)
         self.setMinimumSize(700, 600)
-        
+        self.slurm_api = SlurmAPI()
         # Apply dark theme
         self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
         
@@ -85,15 +86,28 @@ class JobCreationDialog(QDialog):
         layout.addRow("Job Name:", self.name_edit)
         
         # Account
-        self.account_edit = QLineEdit(self.job.account or "")
+        self.account_edit = QComboBox()
+        self.account_edit.setEditable(True)
         self.account_edit.setPlaceholderText("Account to charge")
+        if self.slurm_api.connection_status == ConnectionState.CONNECTED:
+            accounts = self.slurm_api.fetch_accounts()
+            if accounts:
+                self.account_edit.addItems(accounts)
+        self.account_edit.setCurrentText(self.job.account or "")
         layout.addRow("Account:", self.account_edit)
-        
+        self.account_edit.setCurrentIndex(0)
+
         # Partition
-        self.partition_edit = QLineEdit(self.job.partition or "")
+        self.partition_edit = QComboBox()
+        self.partition_edit.setEditable(True)
         self.partition_edit.setPlaceholderText("e.g., gpu, cpu, short")
+        if self.slurm_api.connection_status == ConnectionState.CONNECTED:
+            partitions = self.slurm_api.fetch_partitions()
+            if partitions:
+                self.partition_edit.addItems(partitions)
+        self.partition_edit.setCurrentText(self.job.partition or "")
         layout.addRow("Partition:", self.partition_edit)
-        
+        self.partition_edit.setCurrentIndex(0)
         # Working directory
         dir_layout = QHBoxLayout()
         self.working_dir_edit = QLineEdit(self.job.working_directory or "")
@@ -285,8 +299,6 @@ class JobCreationDialog(QDialog):
         
         # Nice
         self.nice_spin = QSpinBox()
-        # self.nice_spin.setMinimum(-10000)
-        # self.nice_spin.setMaximum(10000)
         self.nice_spin.setValue(self.job.nice or 0)
         self.nice_spin.setSpecialValueText("Default")
         layout.addRow("Nice:", self.nice_spin)
@@ -362,8 +374,8 @@ class JobCreationDialog(QDialog):
         """Connect all input signals to update the job and preview"""
         # Basic tab
         self.name_edit.textChanged.connect(self._update_job)
-        self.account_edit.textChanged.connect(self._update_job)
-        self.partition_edit.textChanged.connect(self._update_job)
+        self.account_edit.currentTextChanged.connect(self._update_job)
+        self.partition_edit.currentTextChanged.connect(self._update_job)
         self.working_dir_edit.textChanged.connect(self._update_job)
         self.venv_edit.textChanged.connect(self._update_job)
         self.script_edit.textChanged.connect(self._update_job)
@@ -416,8 +428,8 @@ class JobCreationDialog(QDialog):
         self.job.error_file = self.error_edit.text() or None
         
         # Advanced
-        self.job.account = self.account_edit.text() or None
-        self.job.partition = self.partition_edit.text() or None
+        self.job.account = self.account_edit.currentText() or None
+        self.job.partition = self.partition_edit.currentText() or None
         self.job.qos = self.qos_edit.text() or None
         self.job.array = self.array_edit.text() or None
         self.job.constraint = self.constraint_edit.text() or None

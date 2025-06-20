@@ -110,6 +110,9 @@ class SlurmAPI():
         self._client: Optional[paramiko.SSHClient]
         self._load_connection_config()
         self._initialized = True
+        self.accounts = None
+        self.partitions = None
+
 
     def _load_connection_config(self):
         try:
@@ -157,6 +160,11 @@ class SlurmAPI():
                 look_for_keys=False
             )
             self._set_connection_status(ConnectionState.CONNECTED)
+
+            # --- fetch some basic info ---
+            self.fetch_accounts()
+            self.fetch_partitions()
+            # -----------------------------
 
             return True
         except Exception as e:
@@ -240,7 +248,42 @@ class SlurmAPI():
 
         msg_out, _ = self.run_command("scontrol show reservation 2>/dev/null")
         return None if "No reservations in the system" in msg_out else msg_out
+   
+    @requires_connection
+    def fetch_accounts(self) -> List[str]:
+        """Fetch available accounts."""
+        if self.accounts:
+            return self.accounts
+        try:
+            # The command gives unique accounts already
+            msg_out, err_out = self.run_command("sacctmgr show associations format=Account -n -P")
+            if err_out:
+                print(f"Error fetching accounts: {err_out}")
+                return []
+            
+            self.accounts  = sorted(list(set(msg_out.splitlines())))
+            return self.accounts
+        except Exception as e:
+            print(f"Exception fetching accounts: {e}")
+            return []
 
+    @requires_connection
+    def fetch_partitions(self) -> List[str]:
+        """Fetch available partitions."""
+        if self.partitions:
+            return self.partitions
+        try:
+            msg_out, err_out = self.run_command("sinfo -h -o '%P'")
+            if err_out:
+                print(f"Error fetching partitions: {err_out}")
+                return []
+            msg_out = str(msg_out).replace("*", "")
+            self.partitions = sorted(list(set(msg_out.splitlines())))
+            return self.partitions
+        except Exception as e:
+            print(f"Exception fetching partitions: {e}")
+            return []
+        
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")
