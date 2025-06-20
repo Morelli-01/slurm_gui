@@ -3,7 +3,7 @@ Remote Directory Panel - MVC Architecture Implementation
 Separates data management, UI, and control logic for better maintainability.
 """
 
-import os
+import os, posixpath
 from typing import List, Optional, Dict, Any
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
@@ -14,6 +14,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QSize
 
 from core.defaults import *
+from core.slurm_api import ConnectionState, SlurmAPI
 from utils import script_dir
 from core.style import AppStyles
 from widgets.toast_widget import show_error_toast, show_warning_toast
@@ -35,9 +36,9 @@ class RemoteDirectoryModel(QObject):
     loadingStarted = pyqtSignal()
     loadingFinished = pyqtSignal()
     
-    def __init__(self, slurm_connection, initial_path: str = "/"):
+    def __init__(self, initial_path: str = "/"):
         super().__init__()
-        self.slurm_connection = slurm_connection
+        self.slurm_api = SlurmAPI()
         self._current_path = initial_path
         self._directories = []
         self._directory_cache: Dict[str, List[str]] = {}
@@ -59,7 +60,7 @@ class RemoteDirectoryModel(QObject):
     
     def load_directories(self, force_refresh: bool = False):
         """Load directories for current path"""
-        if not self.slurm_connection or not self.slurm_connection.check_connection():
+        if not self.slurm_api or not self.slurm_api.connection_status == ConnectionState.CONNECTED:
             self.errorOccurred.emit("Not connected to SLURM")
             return
             
@@ -76,12 +77,12 @@ class RemoteDirectoryModel(QObject):
     def _load_remote_directories(self):
         """Load directories from remote server"""
         try:
-            if not self.slurm_connection.remote_path_exists(self._current_path):
+            if not self.slurm_api.remote_path_exists(self._current_path):
                 self.errorOccurred.emit(f"Path does not exist: {self._current_path}")
                 self.loadingFinished.emit()
                 return
                 
-            directories = self.slurm_connection.list_remote_directories(self._current_path)
+            directories = self.slurm_api.list_remote_directories(self._current_path)
             directories.sort()
             
             # Cache the result
@@ -100,20 +101,20 @@ class RemoteDirectoryModel(QObject):
         if self._current_path == "/":
             return False
             
-        parent_path = os.path.dirname(self._current_path.rstrip('/'))
+        parent_path = posixpath.dirname(self._current_path.rstrip('/'))
         if not parent_path:
             parent_path = "/"
             
-        if self.slurm_connection.remote_path_exists(parent_path):
+        if self.slurm_api.remote_path_exists(parent_path):
             self.set_current_path(parent_path)
             return True
         return False
     
     def navigate_to_home(self) -> bool:
         """Navigate to home directory"""
-        if self.slurm_connection.remote_home:
-            home_path = self.slurm_connection.remote_home
-            if self.slurm_connection.remote_path_exists(home_path):
+        if self.slurm_api.remote_home:
+            home_path = self.slurm_api.remote_home
+            if self.slurm_api.remote_path_exists(home_path):
                 self.set_current_path(home_path)
                 return True
         return False
@@ -123,15 +124,15 @@ class RemoteDirectoryModel(QObject):
         if dir_name == "..":
             return self.navigate_up()
             
-        new_path = os.path.join(self._current_path, dir_name)
-        if self.slurm_connection.remote_path_exists(new_path):
+        new_path = posixpath.join(self._current_path, dir_name)
+        if self.slurm_api.remote_path_exists(new_path):
             self.set_current_path(new_path)
             return True
         return False
     
     def path_exists(self, path: str) -> bool:
         """Check if a path exists"""
-        return self.slurm_connection.remote_path_exists(path)
+        return self.slurm_api.remote_path_exists(path)
     
     def clear_cache(self):
         """Clear directory cache"""
@@ -155,7 +156,7 @@ class DirectoryWorker(QThread):
                 self.finished.emit([], self.path, False)
                 return
                 
-            dirs = self.model.slurm_connection.list_remote_directories(self.path)
+            dirs = self.model.slurm_api.list_remote_directories(self.path)
             dirs.sort()
             
             # Simulate progress for user feedback
@@ -343,13 +344,13 @@ class RemoteDirectoryView(QDialog):
         # Add parent directory if not at root
         if current_path != "/":
             up_item = QStandardItem("..")
-            up_item.setIcon(QIcon(os.path.join(script_dir, "src_static", "prev_folder.svg")))
+            up_item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "prev_folder.svg")))
             self.dir_list_model.appendRow(up_item)
 
         # Add directories
         for directory in directories:
             item = QStandardItem(directory)
-            item.setIcon(QIcon(os.path.join(script_dir, "src_static", "folder.svg")))
+            item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "folder.svg")))
             self.dir_list_model.appendRow(item)
 
     def update_filter(self, filter_text: str):
@@ -432,8 +433,8 @@ class RemoteDirectoryController(QObject):
         
         # Try fallback navigation
         if self.model.current_path != "/" and "Cannot access" in error_message:
-            if self.model.slurm_connection.remote_home:
-                self.model.set_current_path(self.model.slurm_connection.remote_home)
+            if self.model.slurm_api.remote_home:
+                self.model.set_current_path(self.model.slurm_api.remote_home)
             else:
                 self.model.set_current_path("/")
                 
@@ -498,11 +499,11 @@ class RemoteDirectoryDialog(QDialog):
     Provides the same interface as the original dialog.
     """
     
-    def __init__(self, slurm_connection, initial_path="/", parent=None):
+    def __init__(self, initial_path="/", parent=None):
         super().__init__(parent)
         
         # Create MVC components
-        self.model = RemoteDirectoryModel(slurm_connection, initial_path)
+        self.model = RemoteDirectoryModel(initial_path)
         self.view = RemoteDirectoryView(parent)
         self.controller = RemoteDirectoryController(self.model, self.view)
         

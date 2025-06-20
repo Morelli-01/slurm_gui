@@ -16,6 +16,9 @@ from core.style import AppStyles
 from core.slurm_api import ConnectionState, SlurmAPI
 import uuid
 
+from widgets.remote_directory_widget import RemoteDirectoryDialog
+from widgets.toast_widget import show_warning_toast
+
 
 class JobCreationDialog(QDialog):
     """Dialog for creating a new SLURM job with tabbed interface"""
@@ -453,23 +456,39 @@ class JobCreationDialog(QDialog):
         self.preview_text.setPlainText(script)
         
     def _browse_directory(self):
-        """Browse for working directory"""
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select Working Directory", 
-            self.working_dir_edit.text() or ""
+        """Browse for working directory on the remote cluster."""
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            show_warning_toast(self, "Connection Required", "Please connect to the cluster first.")
+            return
+
+        initial_path = self.working_dir_edit.text() or self.slurm_api.remote_home or "/"
+        
+        dialog = RemoteDirectoryDialog(
+            initial_path=initial_path,
+            parent=self
         )
-        if directory:
-            self.working_dir_edit.setText(directory)
+        if dialog.exec():
+            directory = dialog.get_selected_directory()
+            if directory:
+                self.working_dir_edit.setText(directory)
             
     def _browse_venv(self):
-        """Browse for virtual environment"""
-        directory = QFileDialog.getExistingDirectory(
-            self, "Select Virtual Environment", 
-            self.venv_edit.text() or ""
+        """Browse for virtual environment on the remote cluster."""
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            show_warning_toast(self, "Connection Required", "Please connect to the cluster first.")
+            return
+
+        initial_path = self.venv_edit.text() or self.slurm_api.remote_home or "/"
+        
+        dialog = RemoteDirectoryDialog(
+            initial_path=initial_path,
+            parent=self
         )
-        if directory:
-            self.venv_edit.setText(directory)
-            
+        if dialog.exec():
+            directory = dialog.get_selected_directory()
+            if directory:
+                self.venv_edit.setText(directory)
+                       
     def _copy_preview(self):
         """Copy the preview script to clipboard"""
         clipboard = QApplication.clipboard()

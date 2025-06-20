@@ -112,7 +112,7 @@ class SlurmAPI():
         self._initialized = True
         self.accounts = None
         self.partitions = None
-
+        self.remote_home: Optional[str] = None
 
     def _load_connection_config(self):
         try:
@@ -164,6 +164,7 @@ class SlurmAPI():
             # --- fetch some basic info ---
             self.fetch_accounts()
             self.fetch_partitions()
+            self.remote_home = self.get_home_directory()
             # -----------------------------
 
             return True
@@ -283,7 +284,37 @@ class SlurmAPI():
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
+    
+    @requires_connection
+    def remote_path_exists(self, path: str) -> bool:
+        """Check if a remote path exists and is a directory."""
+        command = f'if [ -d "{path}" ]; then echo "exists"; fi'
+        stdout, stderr = self.run_command(command)
+        return stdout.strip() == "exists"
+
+    @requires_connection
+    def list_remote_directories(self, path: str) -> List[str]:
+        """List directories in a given remote path."""
+        # The command finds all directories in the given path, at a max depth of 1, and prints their names.
+        command = f"find '{path}' -maxdepth 1 -mindepth 1 -type d -exec basename {{}} \\;"
+        stdout, stderr = self.run_command(command)
+        if stderr:
+            print(f"Error listing directories in '{path}': {stderr}")
+            return []
         
+        directories = stdout.strip().split('\n')
+        # Filter out empty strings that might result from splitting
+        return [d for d in directories if d]
+
+    @requires_connection
+    def get_home_directory(self) -> Optional[str]:
+        """Get the user's home directory on the remote server."""
+        stdout, stderr = self.run_command("echo $HOME")
+        if stderr or not stdout.strip():
+            print(f"Error fetching home directory: {stderr}")
+            return None
+        return stdout.strip()
+
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")
