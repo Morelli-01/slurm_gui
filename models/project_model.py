@@ -1,4 +1,4 @@
-from ast import Dict
+from ast import Dict, Str
 from dataclasses import dataclass, field
 from typing import List, Optional
 import uuid
@@ -21,7 +21,7 @@ class Job:
     account: Optional[str] = None
     array: Optional[str] = None
     working_directory: Optional[str] = None
-    constraint: Optional[str] = None
+    constraint: Optional[List[str]] = None
     cpus_per_task: Optional[int] = 1
     dependency: Optional[str] = None
     error_file: Optional[str] = None
@@ -35,6 +35,7 @@ class Job:
     oversubscribe: bool = False
     partition: Optional[str] = None
     qos: Optional[str] = None
+    nodelist: Optional[List[str]] = None
 
     # --- Custom Fields ---
     venv: Optional[str] = None
@@ -64,7 +65,11 @@ class Job:
         if self.working_directory:
             lines.append(f"#SBATCH --chdir={self.working_directory}")
         if self.constraint:
-            lines.append(f"#SBATCH --constraint={self.constraint}")
+            value = self.constraint[0]
+            if len(self.constraint)>=1:
+                for c in self.constraint[1:]:
+                    value += f"|{c}"
+            lines.append(f"#SBATCH --constraint=\'{value }\'")
         if self.cpus_per_task:
             lines.append(f"#SBATCH --cpus-per-task={self.cpus_per_task}")
         if self.dependency:
@@ -91,7 +96,8 @@ class Job:
             lines.append(f"#SBATCH --partition={self.partition}")
         if self.qos:
             lines.append(f"#SBATCH --qos={self.qos}")
-
+        if self.nodelist:
+            lines.append(f"#SBATCH --nodelist={self.nodelist}")
         # --- Custom Options ---
         if self.optional_sbatch:
             lines.append(self.optional_sbatch)
