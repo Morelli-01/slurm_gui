@@ -479,7 +479,7 @@ class JobCreationDialog(QDialog):
             return
 
         initial_path = self.venv_edit.text() or self.slurm_api.remote_home or "/"
-        
+
         dialog = RemoteDirectoryDialog(
             initial_path=initial_path,
             parent=self
@@ -487,6 +487,20 @@ class JobCreationDialog(QDialog):
         if dialog.exec():
             directory = dialog.get_selected_directory()
             if directory:
+                # Check for bin/activate in the selected directory (remote)
+                activate_path = os.path.join(directory, "bin", "activate")
+                exists = False
+                try:
+                    exists = self.slurm_api.remote_file_exists(activate_path)
+                except Exception:
+                    exists = False
+                if not exists:
+                    show_warning_toast(
+                        self,
+                        "Virtual Environment Not Detected",
+                        f"No 'bin/activate' found in '{directory}'.\nYou can still use this directory, but it may not be a valid Python virtual environment.",
+                        duration=1000
+                    )
                 self.venv_edit.setText(directory)
                        
     def _copy_preview(self):
@@ -515,6 +529,7 @@ class JobCreationDialog(QDialog):
             
         if not self.job.script_commands.strip():
             from widgets.toast_widget import show_warning_toast
+            import os
             show_warning_toast(self, "Validation Error", "Script commands are required")
             self.tab_widget.setCurrentIndex(0)
             self.script_edit.setFocus()

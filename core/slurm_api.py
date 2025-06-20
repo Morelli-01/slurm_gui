@@ -293,6 +293,13 @@ class SlurmAPI():
         return stdout.strip() == "exists"
 
     @requires_connection
+    def remote_file_exists(self, path: str) -> bool:
+        """Check if a remote file exists."""
+        command = f'if [ -f "{path}" ]; then echo "exists"; fi'
+        stdout, stderr = self.run_command(command)
+        return stdout.strip() == "exists"
+    
+    @requires_connection
     def list_remote_directories(self, path: str) -> List[str]:
         """List directories in a given remote path."""
         # The command finds all directories in the given path, at a max depth of 1, and prints their names.
