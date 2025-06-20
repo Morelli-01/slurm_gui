@@ -4,7 +4,9 @@ from core.style import AppStyles
 from utils import script_dir
 from models.project_model import Project, Job
 from typing import List
-import uuid # Import uuid for generating unique IDs
+import uuid
+
+from widgets.new_job_widget import JobCreationDialog # Import uuid for generating unique IDs
 
 
 class ActionButtonsWidget(QWidget):
@@ -117,23 +119,24 @@ class JobsTableView(QWidget):
         new_jobs_button = QPushButton(
             "New Job", table)  # Set self as parent
         new_jobs_button.setObjectName(BTN_GREEN)
-        new_jobs_button.clicked.connect( # Modified to emit new event
-            lambda: get_event_bus().emit(
-                Events.ADD_JOB,
-                {"project_name": table_name,
-                 "job_data": {
-                     "id": f"{uuid.uuid4().hex[:8]}", # Generate a unique ID
-                     "name": "New Job Template",
-                     "status": "NOT_SUBMITTED",
-                     "runtime": "0:00",
-                     "cpu": "1",
-                     "ram": "1M",
-                     "gpu": "0",
-                     "node": "N/A"
-                 }},
-                source="JobsPanelView.JobsTableView"
-            )
-        )
+        # new_jobs_button.clicked.connect( # Modified to emit new event
+        #     lambda: get_event_bus().emit(
+        #         Events.ADD_JOB,
+        #         {"project_name": table_name,
+        #          "job_data": {
+        #              "id": f"{uuid.uuid4().hex[:8]}", # Generate a unique ID
+        #              "name": "New Job Template",
+        #              "status": "NOT_SUBMITTED",
+        #              "runtime": "0:00",
+        #              "cpu": "1",
+        #              "ram": "1M",
+        #              "gpu": "0",
+        #              "node": "N/A"
+        #          }},
+        #         source="JobsPanelView.JobsTableView"
+        #     )
+        # )
+        new_jobs_button.clicked.connect(self._create_new_job)
         new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
         new_jobs_button.move(self.width() - new_jobs_button.width() - 20,
                                   self.height() - new_jobs_button.height() - 20)
@@ -243,16 +246,13 @@ class JobsTableView(QWidget):
         action_widget._job_status = getattr(job_data, "status", None)
         table.setCellWidget(row_position, actions_col, action_widget)
 
-    # def _add_job_to_table(self, table: QTableWidget, job_data: Job):
-    #     """Adds a single job row to the given table."""
-    #     row_position = table.rowCount()
-    #     table.verticalHeader().setDefaultSectionSize(50)
-    #     table.insertRow(row_position)
-    #     table.setItem(row_position, 0, QTableWidgetItem(job_data.id))
-    #     table.setItem(row_position, 1, QTableWidgetItem(job_data.name))
-    #     table.setItem(row_position, 2, QTableWidgetItem(job_data.status))
-    #     table.setItem(row_position, 3, QTableWidgetItem(job_data.runtime))
-    #     table.setItem(row_position, 4, QTableWidgetItem(job_data.cpu))
-    #     table.setItem(row_position, 5, QTableWidgetItem(job_data.ram))
-    #     table.setItem(row_position, 6, QTableWidgetItem(job_data.gpu))
-    #     table.setCellWidget(row_position, 7, ActionButtonsWidget())
+    def _create_new_job(self):
+        dialog = JobCreationDialog(self) 
+        if dialog.exec():
+            new_job_data = dialog.get_job()
+            if new_job_data:
+                print("Job created! sbatch script:")
+                print(new_job_data.create_sbatch_script())
+                # Here you would typically emit an event to the controller
+                # to add the job to the model and submit it via the SlurmAPI.
+                # self.event_bus.emit(Events.ADD_JOB, data={'job': new_job_data})
