@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QFormLayout, QLineEdit, QSpinBox, QTextEdit, QDialogButtonBox,
     QLabel, QComboBox, QCheckBox, QGroupBox, QPushButton,
-    QFileDialog, QPlainTextEdit, QApplication
+    QFileDialog, QPlainTextEdit, QApplication, QListWidget, QListWidgetItem, QDialog, QScrollArea, QFrame
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -18,6 +18,35 @@ import uuid
 
 from widgets.remote_directory_widget import RemoteDirectoryDialog
 from widgets.toast_widget import show_warning_toast
+
+
+class ConstraintDialog(QDialog):
+    def __init__(self, constraints, selected, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Constraints")
+        self.setMinimumWidth(350)
+        self.selected = set(selected)
+        layout = QVBoxLayout(self)
+        self.checkboxes = []
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        vbox = QVBoxLayout(content)
+        for c in constraints:
+            cb = QCheckBox(c)
+            if c in self.selected:
+                cb.setChecked(True)
+            vbox.addWidget(cb)
+            self.checkboxes.append(cb)
+        content.setLayout(vbox)
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        layout.addWidget(btns)
+    def get_selected(self):
+        return [cb.text() for cb in self.checkboxes if cb.isChecked()]
 
 
 class JobCreationDialog(QDialog):
@@ -43,6 +72,8 @@ class JobCreationDialog(QDialog):
             
         self._setup_ui()
         self._connect_signals()
+        self.account_edit.setCurrentIndex(0)
+        self.partition_edit.setCurrentIndex(0)
         self._update_preview()
         
     def _setup_ui(self):
@@ -97,7 +128,6 @@ class JobCreationDialog(QDialog):
                 self.account_edit.addItems(accounts)
         self.account_edit.setCurrentText(self.job.account or "")
         layout.addRow("Account:", self.account_edit)
-        self.account_edit.setCurrentIndex(0)
 
         # Partition
         self.partition_edit = QComboBox()
@@ -109,7 +139,7 @@ class JobCreationDialog(QDialog):
                 self.partition_edit.addItems(partitions)
         self.partition_edit.setCurrentText(self.job.partition or "")
         layout.addRow("Partition:", self.partition_edit)
-        self.partition_edit.setCurrentIndex(0)
+
         # Working directory
         dir_layout = QHBoxLayout()
         self.working_dir_edit = QLineEdit(self.job.working_directory or "")
@@ -268,31 +298,35 @@ class JobCreationDialog(QDialog):
         self.qos_edit.setEditable(True)
         qos_list = self.slurm_api.fetch_qos() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
         if qos_list:
+            self.qos_edit.addItem("")  # Ensure first item is blank
             self.qos_edit.addItems(qos_list)
-        if self.job.qos:
-            self.qos_edit.setCurrentText(self.job.qos)
+        self.qos_edit.setCurrentIndex(-1)  # No selection
         self.qos_edit.setPlaceholderText("Quality of Service")
+
         layout.addRow("QoS:", self.qos_edit)
         
-        # Constraint
-        self.constraint_edit = QComboBox()
-        self.constraint_edit.setEditable(True)
-        constraint_list = self.slurm_api.fetch_constraint() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
-        if constraint_list:
-            self.constraint_edit.addItems(constraint_list)
-        if self.job.constraint:
-            self.constraint_edit.setCurrentText(self.job.constraint)
-        self.constraint_edit.setPlaceholderText("e.g., gpu80gb, cpu_gen:cascadelake")
-        layout.addRow("Constraint:", self.constraint_edit)
+        # Constraint (custom dialog)
+        self.constraint_btn = QPushButton("Select Constraints")
+        self.constraint_btn.clicked.connect(self._open_constraint_dialog)
+        self.constraint_summary = QLabel()
+        self.constraint_summary.setStyleSheet("color: #8be9fd; font-style: italic;")
+        self._update_constraint_summary()
+        constraint_layout = QVBoxLayout()
+        constraint_layout.addWidget(self.constraint_btn)
+        constraint_layout.addWidget(self.constraint_summary)
+        constraint_frame = QFrame()
+        constraint_frame.setLayout(constraint_layout)
+        layout.addRow("Constraint(s):", constraint_frame)
+        self._all_constraints = self.slurm_api.fetch_constraint() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
         
         # Nodelist
         self.nodelist_edit = QComboBox()
         self.nodelist_edit.setEditable(True)
         nodelist_list = self.slurm_api.fetch_nodelist() if self.slurm_api.connection_status == ConnectionState.CONNECTED else []
         if nodelist_list:
+            self.nodelist_edit.addItem("")  # Ensure no default selection
             self.nodelist_edit.addItems(nodelist_list)
-        if getattr(self.job, 'nodelist', None):
-            self.nodelist_edit.setCurrentText(self.job.nodelist)
+        self.nodelist_edit.setCurrentIndex(-1)
         self.nodelist_edit.setPlaceholderText("e.g., node001, node[001-004], node00[1,3,5]")
         layout.addRow("Nodelist:", self.nodelist_edit)
         
@@ -327,6 +361,21 @@ class JobCreationDialog(QDialog):
         layout.addRow(self.optional_sbatch_edit)
         
         self.tab_widget.addTab(tab, "Advanced")
+        
+    def _open_constraint_dialog(self):
+        dlg = ConstraintDialog(self._all_constraints, self.job.constraint or [], self)
+        if dlg.exec():
+            selected = dlg.get_selected()
+            self.job.constraint = selected if selected else None
+            self._update_constraint_summary()
+            self._update_job()
+            self._update_preview()
+            
+    def _update_constraint_summary(self):
+        if self.job.constraint:
+            self.constraint_summary.setText(", ".join(self.job.constraint))
+        else:
+            self.constraint_summary.setText("No constraints selected")
         
     def _create_preview_tab(self):
         """Create the script preview tab"""
@@ -368,7 +417,9 @@ class JobCreationDialog(QDialog):
         # Basic tab
         self.name_edit.textChanged.connect(self._update_job)
         self.account_edit.currentTextChanged.connect(self._update_job)
+        self.account_edit.currentTextChanged.connect(self._update_preview)
         self.partition_edit.currentTextChanged.connect(self._update_job)
+        self.partition_edit.currentTextChanged.connect(self._update_preview)
         self.working_dir_edit.textChanged.connect(self._update_job)
         self.venv_edit.textChanged.connect(self._update_job)
         self.script_edit.textChanged.connect(self._update_job)
@@ -387,8 +438,9 @@ class JobCreationDialog(QDialog):
         
         # Advanced tab
         self.qos_edit.editTextChanged.connect(self._update_job)
-        self.constraint_edit.editTextChanged.connect(self._update_job)
+        self.qos_edit.editTextChanged.connect(self._update_preview)
         self.nodelist_edit.editTextChanged.connect(self._update_job)
+        self.nodelist_edit.editTextChanged.connect(self._update_preview)
         self.nice_spin.valueChanged.connect(self._update_job)
         self.nice_spin.valueChanged.connect(self._update_preview)
         self.oversubscribe_check.stateChanged.connect(self._update_job)
@@ -414,18 +466,18 @@ class JobCreationDialog(QDialog):
         # Files
         self.job.output_file = self.output_edit.text() or "~/.slurm_logs/out_%A.log"
         self.job.error_file = self.error_edit.text() or "~/.slurm_logs/err_%A.log"
-        
         # Advanced
         self.job.account = self.account_edit.currentText() or None
         self.job.partition = self.partition_edit.currentText() or None
-        self.job.qos = self.qos_edit.currentText() or None
+        qos_val = self.qos_edit.currentText().strip()
+        self.job.qos = qos_val if qos_val else None
+        nodelist_val = self.nodelist_edit.currentText().strip()
+        self.job.nodelist = nodelist_val if nodelist_val else None
         self.job.array = self.array_edit.text() or None
-        self.job.constraint = self.constraint_edit.currentText() or None
         self.job.dependency = self.dependency_edit.text() or None
         self.job.nice = self.nice_spin.value() if self.nice_spin.value() != 0 else None
         self.job.oversubscribe = self.oversubscribe_check.isChecked()
         self.job.optional_sbatch = self.optional_sbatch_edit.toPlainText() or None
-        
         # Update preview if on preview tab
         if self.tab_widget.currentIndex() == 5:  # Preview tab
             self._update_preview()
