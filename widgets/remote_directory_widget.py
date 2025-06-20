@@ -1,458 +1,323 @@
 """
-Remote Directory Panel - MVC Architecture Implementation
-Separates data management, UI, and control logic for better maintainability.
+Remote Directory Panel - Refactored with a modern MVC approach.
+Features asynchronous directory loading and an intuitive, unified path/filter bar.
 """
 
-import os, posixpath
-from typing import List, Optional, Dict, Any
-from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListView, QLineEdit,
-    QToolButton, QProgressBar, QLabel, QPushButton, QDialogButtonBox, QAbstractItemView
-)
-from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
-from PyQt6.QtCore import Qt, QSize, QSortFilterProxyModel
+import os
+import posixpath
+from typing import List, Optional
 
-from core.defaults import *
-from core.slurm_api import ConnectionState, SlurmAPI
-from utils import script_dir
+from PyQt6.QtCore import (QObject, QThread, pyqtSignal, Qt, QSize,
+                          QSortFilterProxyModel)
+from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QListView,
+                             QLineEdit, QToolButton, QProgressBar, QLabel,
+                             QDialogButtonBox, QAbstractItemView)
+
+from core.slurm_api import SlurmAPI, ConnectionState
 from core.style import AppStyles
+from utils import script_dir
 from widgets.toast_widget import show_error_toast, show_warning_toast
 
+# --- Constants ---
+UP_DIRECTORY_TEXT = ".."
+HOME_ICON_PATH = os.path.join(script_dir, "src_static", "home.svg")
+UP_ICON_PATH = os.path.join(script_dir, "src_static", "prev_folder.svg")
+REFRESH_ICON_PATH = os.path.join(script_dir, "src_static", "refresh.svg")
+FOLDER_ICON_PATH = os.path.join(script_dir, "src_static", "folder.svg")
+
+
 # ============================================================================
-# MODEL - Data and Business Logic
+# WORKER THREAD (for non-blocking remote operations)
+# ============================================================================
+
+class DirectoryLoaderThread(QThread):
+    """Worker thread to fetch remote directories without blocking the UI."""
+    result_ready = pyqtSignal(list)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, slurm_api: SlurmAPI, path: str, parent=None):
+        super().__init__(parent)
+        self.slurm_api = slurm_api
+        self.path = path
+
+    def run(self):
+        """Execute the remote command."""
+        try:
+            if not self.slurm_api.remote_path_exists(self.path):
+                self.error_occurred.emit(f"Path does not exist: {self.path}")
+                return
+
+            directories = self.slurm_api.list_remote_directories(self.path)
+            self.result_ready.emit(sorted(directories))
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to load directories: {str(e)}")
+
+
+# ============================================================================
+# MODEL (Handles data and state logic)
 # ============================================================================
 
 class RemoteDirectoryModel(QObject):
-    """
-    Model class handling directory data, caching, and SLURM operations.
-    Emits signals when data changes.
-    """
-    
-    # Data change signals
-    directoriesChanged = pyqtSignal(list)  # List of directory names
-    currentPathChanged = pyqtSignal(str)   # Current path
-    errorOccurred = pyqtSignal(str)        # Error message
-    loadingStarted = pyqtSignal()
-    loadingFinished = pyqtSignal()
-    
-    def __init__(self, initial_path: str = "/"):
+    """Manages the state and data for the remote directory browser."""
+    path_changed = pyqtSignal(str)
+    directories_changed = pyqtSignal(list)
+    status_changed = pyqtSignal(str)
+    loading_state_changed = pyqtSignal(bool)
+
+    def __init__(self, slurm_api: SlurmAPI, initial_path: Optional[str] = None):
         super().__init__()
-        self.slurm_api = SlurmAPI()
-        self._current_path = initial_path
-        self._directories = []
-        self._directory_cache: Dict[str, List[str]] = {}
-        
+        self.slurm_api = slurm_api
+        self._current_path: str = initial_path or self.slurm_api.remote_home or "/"
+        self._directory_cache: dict[str, list[str]] = {}
+        self._worker_thread: Optional[DirectoryLoaderThread] = None
+
     @property
     def current_path(self) -> str:
         return self._current_path
-    
-    @property 
-    def directories(self) -> List[str]:
-        return self._directories.copy()
-    
-    def set_current_path(self, path: str):
-        """Set current path and load directories"""
-        if path != self._current_path:
-            self._current_path = path
-            self.currentPathChanged.emit(path)
-            self.load_directories()
-    
-    def load_directories(self, force_refresh: bool = False):
-        """Load directories for current path"""
-        if not self.slurm_api or not self.slurm_api.connection_status == ConnectionState.CONNECTED:
-            self.errorOccurred.emit("Not connected to SLURM")
-            return
+
+    def set_path(self, new_path: str, force_refresh: bool = False):
+        """Sets the current path and fetches its contents asynchronously."""
+        new_path = posixpath.normpath(new_path)
+        if not new_path.endswith('/'):
+            new_path += '/'
             
-        # Check cache first
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            self.status_changed.emit("Error: Not connected.")
+            return
+        
+        # Only reload if the path is truly different
+        if new_path == self._current_path and not force_refresh:
+            return
+
+        if self._worker_thread and self._worker_thread.isRunning():
+            self._worker_thread.terminate()
+
+        self._current_path = new_path
+        self.path_changed.emit(self._current_path)
+
         if not force_refresh and self._current_path in self._directory_cache:
-            self._directories = self._directory_cache[self._current_path]
-            self.directoriesChanged.emit(self._directories)
+            cached_dirs = self._directory_cache[self._current_path]
+            self.directories_changed.emit(cached_dirs)
+            self.status_changed.emit(f"{len(cached_dirs)} items")
             return
-            
-        # Load from remote
-        self.loadingStarted.emit()
-        self._load_remote_directories()
-    
-    def _load_remote_directories(self):
-        """Load directories from remote server"""
-        try:
-            if not self.slurm_api.remote_path_exists(self._current_path):
-                self.errorOccurred.emit(f"Path does not exist: {self._current_path}")
-                self.loadingFinished.emit()
-                return
-                
-            directories = self.slurm_api.list_remote_directories(self._current_path)
-            directories.sort()
-            
-            # Cache the result
-            self._directory_cache[self._current_path] = directories
-            self._directories = directories
-            
-            self.directoriesChanged.emit(directories)
-            self.loadingFinished.emit()
-            
-        except Exception as e:
-            self.errorOccurred.emit(f"Failed to load directories: {str(e)}")
-            self.loadingFinished.emit()
-    
-    def navigate_up(self) -> bool:
-        """Navigate to parent directory"""
-        if self._current_path == "/":
-            return False
-            
+
+        self.loading_state_changed.emit(True)
+        self.status_changed.emit(f"Loading {self._current_path}...")
+
+        self._worker_thread = DirectoryLoaderThread(self.slurm_api, self._current_path)
+        self._worker_thread.result_ready.connect(self._on_load_success)
+        self._worker_thread.error_occurred.connect(self._on_load_error)
+        self._worker_thread.finished.connect(lambda: self.loading_state_changed.emit(False))
+        self._worker_thread.start()
+
+    def _on_load_success(self, directories: list[str]):
+        self._directory_cache[self._current_path] = directories
+        self.directories_changed.emit(directories)
+        self.status_changed.emit(f"{len(directories)} items")
+
+    def _on_load_error(self, error_message: str):
+        self.status_changed.emit(f"Error: {error_message}")
+        self.directories_changed.emit([])
+
+    def refresh(self):
+        self.set_path(self._current_path, force_refresh=True)
+
+    def navigate_up(self):
+        # Go to parent of current path, ensuring not to go above root
         parent_path = posixpath.dirname(self._current_path.rstrip('/'))
         if not parent_path:
             parent_path = "/"
-            
-        if self.slurm_api.remote_path_exists(parent_path):
-            self.set_current_path(parent_path)
-            return True
-        return False
-    
-    def navigate_to_home(self) -> bool:
-        """Navigate to home directory"""
+        self.set_path(parent_path)
+
+    def go_home(self):
         if self.slurm_api.remote_home:
-            home_path = self.slurm_api.remote_home
-            if self.slurm_api.remote_path_exists(home_path):
-                self.set_current_path(home_path)
-                return True
-        return False
-    
-    def navigate_to_subdirectory(self, dir_name: str) -> bool:
-        """Navigate to a subdirectory"""
-        if dir_name == "..":
-            return self.navigate_up()
+            self.set_path(self.slurm_api.remote_home)
             
-        new_path = posixpath.join(self._current_path, dir_name)
-        if self.slurm_api.remote_path_exists(new_path):
-            self.set_current_path(new_path)
-            return True
-        return False
-    
     def path_exists(self, path: str) -> bool:
-        """Check if a path exists"""
         return self.slurm_api.remote_path_exists(path)
-    
-    def clear_cache(self):
-        """Clear directory cache"""
-        self._directory_cache.clear()
 
 
 # ============================================================================
-# CONTROLLER - Coordination and Business Logic
+# CONTROLLER (Connects View and Model)
 # ============================================================================
-
 class RemoteDirectoryController(QObject):
-    """
-    Controller class coordinating between model and view.
-    Handles user interactions and business logic.
-    """
-    
     def __init__(self, model: RemoteDirectoryModel, view: 'RemoteDirectoryDialog'):
         super().__init__()
         self.model = model
         self.view = view
-        self._setup_connections()
-        self._initialize()
+        self._connect_signals()
+    
+    def _connect_signals(self):
+        # Model -> View connections
+        self.model.path_changed.connect(self.view.path_edit.setText)
+        self.model.directories_changed.connect(self.view.update_list_view)
+        self.model.status_changed.connect(self.view.status_label.setText)
+        self.model.loading_state_changed.connect(self.view.set_loading_state)
         
-    def _setup_connections(self):
-        """Setup signal-slot connections between model and view"""
-        # Model to View connections
-        self.model.currentPathChanged.connect(self.view.update_path_display)
-        self.model.directoriesChanged.connect(self._on_directories_changed)
-        self.model.errorOccurred.connect(self._on_error_occurred)
-        self.model.loadingStarted.connect(lambda: self.view.show_progress(True))
-        self.model.loadingFinished.connect(lambda: self.view.show_progress(False))
-        
-        # View to Controller connections
-        self.view.navigationRequested.connect(self._handle_navigation)
-        self.view.pathEntered.connect(self._handle_path_entry)
-        self.view.itemClicked.connect(self._handle_item_click)
-        self.view.itemDoubleClicked.connect(self._handle_item_double_click)
-        self.view.filterChanged.connect(self.view.update_filter)
-        self.view.dialogAccepted.connect(self._handle_dialog_accept)
-        
-    def _initialize(self):
-        """Initialize the controller"""
-        self.model.load_directories()
-        
-    def _on_directories_changed(self, directories: List[str]):
-        """Handle directory list changes"""
-        self.view.update_directories(directories, self.model.current_path)
-        
-        if not directories:
-            self.view.update_status(f"Directory {self.model.current_path} is empty")
+        # View -> Controller/Model connections
+        self.view.up_button.clicked.connect(self.model.navigate_up)
+        self.view.home_button.clicked.connect(self.model.go_home)
+        self.view.refresh_button.clicked.connect(self.model.refresh)
+        self.view.path_edit.textChanged.connect(self._on_path_text_changed)
+        self.view.path_edit.returnPressed.connect(self._on_path_return_pressed)
+        self.view.list_view.doubleClicked.connect(self._on_item_activated)
+        self.view.button_box.accepted.connect(self._on_accept)
+        self.view.button_box.rejected.connect(self.view.reject)
+
+    def _on_path_text_changed(self, text: str):
+        """Parses the path input to separate the base directory and the filter term."""
+        text = text.strip()
+        if not text:
+            return
+
+        base_path = self.model.current_path
+        filter_term = ""
+
+        if text.endswith('/'):
+            base_path = text
         else:
-            self.view.update_status(f"Found {len(directories)} directories")
-            
-    def _on_error_occurred(self, error_message: str):
-        """Handle model errors"""
-        self.view.update_status(f"Error: {error_message}")
-        self.view.show_error(error_message)
+            base_path = posixpath.dirname(text)
+            if not base_path.endswith('/'):
+                base_path += '/'
+            filter_term = posixpath.basename(text)
+
+        # Load the base directory if it has changed
+        if base_path != self.model.current_path:
+            self.model.set_path(base_path)
+
+        # Apply the filter
+        self.view.proxy_model.setFilterRegularExpression(filter_term)
+
+    def _on_path_return_pressed(self):
+        """Handles the Enter key in the path bar for smart navigation."""
+        path = self.view.path_edit.text()
         
-        # Try fallback navigation
-        if self.model.current_path != "/" and "Cannot access" in error_message:
-            if self.model.slurm_api.remote_home:
-                self.model.set_current_path(self.model.slurm_api.remote_home)
-            else:
-                self.model.set_current_path("/")
-                
-    def _handle_navigation(self, action: str):
-        """Handle navigation actions"""
-        if action == "up":
-            if not self.model.navigate_up():
-                self.view.show_warning("Already at root directory")
-        elif action == "home":
-            if not self.model.navigate_to_home():
-                self.view.show_warning("Home directory not found")
-        elif action == "refresh":
-            self.model.clear_cache()
-            self.model.load_directories(force_refresh=True)
-            
-    def _handle_path_entry(self, path: str):
-        """Handle manual path entry"""
-        path = path.strip()
-        if path and self.model.path_exists(path):
-            self.model.set_current_path(path)
-        else:
-            self.view.show_warning(f"Path '{path}' does not exist or is not accessible.")
-            self.view.update_path_display(self.model.current_path)
-            
-    def _handle_item_click(self, item_text: str):
-        """Handle item click"""
-        if item_text == "..":
-            parent_path = os.path.dirname(self.model.current_path.rstrip('/'))
-            selected_path = parent_path if parent_path else "/"
-        else:
-            selected_path = os.path.join(self.model.current_path, item_text)
-        
-        self.view.update_path_display(selected_path)
-        
-    def _handle_item_double_click(self, item_text: str):
-        """Handle item double click"""
-        if item_text == "..":
+        # If the path is a valid directory, navigate into it
+        if self.model.path_exists(path):
+             self.model.set_path(path)
+             return
+
+        # If not a directory, check if it's a filter with a single match
+        if self.view.proxy_model.rowCount() == 1:
+            match_index = self.view.proxy_model.index(0, 0)
+            item_text = self.view.proxy_model.data(match_index)
+            if item_text != UP_DIRECTORY_TEXT:
+                completed_path = posixpath.join(self.model.current_path, item_text)
+                self.model.set_path(completed_path)
+
+
+    def _on_item_activated(self, index):
+        """Handles double-clicking an item in the list."""
+        item_text = self.view.proxy_model.data(index)
+        if item_text == UP_DIRECTORY_TEXT:
             self.model.navigate_up()
         else:
-            if not self.model.navigate_to_subdirectory(item_text):
-                self.view.show_warning(f"'{item_text}' is not accessible.")
-                
-    def _handle_dialog_accept(self, selected_path: str):
-        """Handle dialog acceptance"""
-        if self.model.path_exists(selected_path):
-            self.accept()
+            new_path = posixpath.join(self.model.current_path, item_text)
+            self.model.set_path(new_path)
+
+    def _on_accept(self):
+        """Handles the 'OK' button click."""
+        path = self.view.get_selected_directory()
+        if self.model.path_exists(path):
+            self.view.accept()
         else:
-            self.view.show_warning("Please select a valid directory.")
-            
-    def get_selected_directory(self) -> str:
-        """Get the currently selected directory"""
-        return self.view.path_display_edit.text()
+            show_warning_toast(self.view, "Invalid Path", f"The path '{path}' does not exist.")
 
 # ============================================================================
-# DIALOG - View and User Interface
+# VIEW (The dialog window)
 # ============================================================================
 
 class RemoteDirectoryDialog(QDialog):
-    """
-    Dialog for Browse remote directories. This class now serves as the View.
-    """
-    
-    # User action signals
-    navigationRequested = pyqtSignal(str)  # "up", "home", "refresh"
-    directorySelected = pyqtSignal(str)    # Directory name
-    pathEntered = pyqtSignal(str)          # Manual path entry
-    itemClicked = pyqtSignal(str)          # Item clicked
-    itemDoubleClicked = pyqtSignal(str)    # Item double-clicked
-    filterChanged = pyqtSignal(str)        # Filter text
-    dialogAccepted = pyqtSignal(str)       # Selected path
-    
-    def __init__(self, initial_path="/", parent=None):
-        super().__init__(parent)
-        self._setup_ui()
+    """A clean, simple, and responsive remote directory browser dialog."""
 
-        # Create MVC components
-        self.model = RemoteDirectoryModel(initial_path)
+    def __init__(self, initial_path: Optional[str] = None, parent=None):
+        super().__init__(parent)
+        self.slurm_api = SlurmAPI()
+        self.model = RemoteDirectoryModel(self.slurm_api, initial_path)
+        
+        self._init_ui()
         self.controller = RemoteDirectoryController(self.model, self)
         
+        # Trigger initial load
+        self.model.set_path(self.model.current_path)
+
+    def _init_ui(self):
+        """Initialize the user interface."""
         self.setWindowTitle("Browse Remote Directory")
-        self.setMinimumSize(600, 400)
-        self._setup_stylesheet()
+        self.setMinimumSize(550, 450)
+        self.setStyleSheet(AppStyles.get_complete_stylesheet())
 
-    def _setup_stylesheet(self):
-        self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
-
-    def _setup_ui(self):
-        """Setup the user interface"""
         main_layout = QVBoxLayout(self)
 
-        # Navigation bar
-        nav_layout = self._create_navigation_bar()
-        main_layout.addLayout(nav_layout)
+        # --- Navigation Bar ---
+        nav_bar = QHBoxLayout()
+        self.up_button = self._create_tool_button(UP_ICON_PATH, "Go Up")
+        self.home_button = self._create_tool_button(HOME_ICON_PATH, "Go Home")
+        self.refresh_button = self._create_tool_button(REFRESH_ICON_PATH, "Refresh")
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText("Type a path to navigate or filter...")
 
-        # Progress bar
+        nav_bar.addWidget(self.up_button)
+        nav_bar.addWidget(self.home_button)
+        nav_bar.addWidget(self.refresh_button)
+        nav_bar.addWidget(QLabel("Path:"))
+        nav_bar.addWidget(self.path_edit)
+        main_layout.addLayout(nav_bar)
+
+        # --- Loading Indicator ---
         self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)
+        self.progress_bar.setRange(0, 0) # Indeterminate mode
         main_layout.addWidget(self.progress_bar)
 
-        # Filter bar
-        filter_layout = self._create_filter_bar()
-        main_layout.addLayout(filter_layout)
+        # --- Directory List View ---
+        self.list_view = QListView()
+        self.list_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.list_model = QStandardItemModel()
+        self.proxy_model = QSortFilterProxyModel()
+        self.proxy_model.setSourceModel(self.list_model)
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.list_view.setModel(self.proxy_model)
+        main_layout.addWidget(self.list_view)
 
-        # Directory list
-        self.dir_list_view = self._create_directory_list()
-        main_layout.addWidget(self.dir_list_view)
-
-        # Status label
-        self.status_label = QLabel("Ready")
+        # --- Status Label ---
+        self.status_label = QLabel("Initializing...")
         main_layout.addWidget(self.status_label)
-
-        # Button bar
-        self.button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        self.button_box.accepted.connect(self._select_current_path)
-        self.button_box.rejected.connect(self.reject)
+        
+        # --- Dialog Buttons ---
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         main_layout.addWidget(self.button_box)
 
-    def _create_navigation_bar(self) -> QHBoxLayout:
-        """Create navigation bar with up, home, refresh buttons"""
-        nav_layout = QHBoxLayout()
-        nav_layout.setSpacing(5)
+    def _create_tool_button(self, icon_path: str, tooltip: str) -> QToolButton:
+        button = QToolButton()
+        button.setIcon(QIcon(icon_path))
+        button.setIconSize(QSize(22, 22))
+        button.setToolTip(tooltip)
+        button.setFixedSize(32, 32)
+        return button
 
-        # Up button
-        self.up_button = QToolButton()
-        self.up_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "prev_folder.svg")))
-        self.up_button.setIconSize(QSize(24, 24))
-        self.up_button.setToolTip("Go Up")
-        self.up_button.setFixedSize(QSize(36, 36))
-        self.up_button.clicked.connect(lambda: self.navigationRequested.emit("up"))
-        nav_layout.addWidget(self.up_button)
+    def update_list_view(self, directories: list[str]):
+        """Populates the list view with new directory data."""
+        self.list_model.clear()
+        folder_icon = QIcon(FOLDER_ICON_PATH)
+        up_icon = QIcon(UP_ICON_PATH)
 
-        # Home button
-        self.home_button = QToolButton()
-        self.home_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "home.svg")))
-        self.home_button.setIconSize(QSize(24, 24))
-        self.home_button.setToolTip("Go to Home Directory")
-        self.home_button.setFixedSize(QSize(36, 36))
-        self.home_button.clicked.connect(lambda: self.navigationRequested.emit("home"))
-        nav_layout.addWidget(self.home_button)
+        if self.model.current_path != "/":
+            up_item = QStandardItem(up_icon, UP_DIRECTORY_TEXT)
+            self.list_model.appendRow(up_item)
 
-        # Refresh button
-        self.refresh_button = QToolButton()
-        self.refresh_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "refresh.svg")))
-        self.refresh_button.setIconSize(QSize(24, 24))
-        self.refresh_button.setToolTip("Refresh")
-        self.refresh_button.setFixedSize(QSize(36, 36))
-        self.refresh_button.clicked.connect(lambda: self.navigationRequested.emit("refresh"))
-        nav_layout.addWidget(self.refresh_button)
+        for dir_name in directories:
+            item = QStandardItem(folder_icon, dir_name)
+            self.list_model.appendRow(item)
 
-        # Path display
-        path_label = QLabel("Path:")
-        nav_layout.addWidget(path_label)
-
-        self.path_display_edit = QLineEdit()
-        self.path_display_edit.returnPressed.connect(
-            lambda: self.pathEntered.emit(self.path_display_edit.text()))
-        nav_layout.addWidget(self.path_display_edit)
-
-        return nav_layout
-
-    def _create_filter_bar(self) -> QHBoxLayout:
-        """Create filter bar"""
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter:"))
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Type to filter directories...")
-        self.search_input.textChanged.connect(self.filterChanged.emit)
-        self.search_input.setClearButtonEnabled(True)
-        filter_layout.addWidget(self.search_input)
-        
-        return filter_layout
-
-    def _create_directory_list(self) -> QListView:
-        """Create directory list view with model"""
-        self.dir_list_model = QStandardItemModel()
-        self.proxy_model = QSortFilterProxyModel()
-        self.proxy_model.setSourceModel(self.dir_list_model)
-        self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-
-        list_view = QListView()
-        list_view.setModel(self.proxy_model)
-        list_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        list_view.clicked.connect(self._on_item_clicked)
-        list_view.doubleClicked.connect(self._on_item_double_clicked)
-        
-        return list_view
-
-    def _on_item_clicked(self, index):
-        """Handle item click"""
-        source_index = self.proxy_model.mapToSource(index)
-        item_text = self.dir_list_model.itemFromIndex(source_index).text()
-        self.itemClicked.emit(item_text)
-
-    def _on_item_double_clicked(self, index):
-        """Handle item double click"""
-        source_index = self.proxy_model.mapToSource(index)
-        item_text = self.dir_list_model.itemFromIndex(source_index).text()
-        self.itemDoubleClicked.emit(item_text)
-
-    def _select_current_path(self):
-        """Emit dialog accepted with current path"""
-        current_path = self.path_display_edit.text()
-        if self.model.path_exists(current_path):
-            self.dialogAccepted.emit(current_path)
-            self.accept()
-        else:
-            self.show_warning(f"Path '{current_path}' is not a valid directory.")
+    def set_loading_state(self, is_loading: bool):
+        """Shows/hides the progress bar and enables/disables controls."""
+        self.progress_bar.setVisible(is_loading)
+        self.list_view.setEnabled(not is_loading)
+        self.path_edit.setEnabled(not is_loading)
+        self.up_button.setEnabled(not is_loading)
+        self.home_button.setEnabled(not is_loading)
 
     def get_selected_directory(self) -> str:
-        """Get the selected directory path"""
-        return self.controller.get_selected_directory()
-
-    # View update methods
-    def update_path_display(self, path: str):
-        """Update path in the display"""
-        self.path_display_edit.setText(path)
-
-    def update_directories(self, directories: List[str], current_path: str):
-        """Update directory list"""
-        self.dir_list_model.clear()
-        
-        # Add parent directory if not at root
-        if current_path != "/":
-            up_item = QStandardItem("..")
-            up_item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "prev_folder.svg")))
-            self.dir_list_model.appendRow(up_item)
-
-        # Add directories
-        for directory in directories:
-            item = QStandardItem(directory)
-            item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "folder.svg")))
-            self.dir_list_model.appendRow(item)
-
-    def update_filter(self, filter_text: str):
-        """Update directory filter"""
-        self.proxy_model.setFilterRegularExpression(filter_text)
-
-    def show_progress(self, visible: bool):
-        """Show/hide progress bar"""
-        self.progress_bar.setVisible(visible)
-
-    def update_progress(self, value: int):
-        """Update progress bar value"""
-        self.progress_bar.setValue(value)
-
-    def update_status(self, message: str):
-        """Update status message"""
-        self.status_label.setText(message)
-
-    def show_error(self, message: str):
-        """Show error message"""
-        show_error_toast(self, "Directory Error", message)
-
-    def show_warning(self, message: str):
-        """Show warning message"""
-        show_warning_toast(self, "Directory Warning", message)
+        """Public method to retrieve the result of the dialog."""
+        return self.path_edit.text().rstrip('/')
