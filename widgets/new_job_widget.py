@@ -444,7 +444,9 @@ class JobCreationDialog(QDialog):
         self.nice_spin.valueChanged.connect(self._update_job)
         self.nice_spin.valueChanged.connect(self._update_preview)
         self.oversubscribe_check.stateChanged.connect(self._update_job)
+        self.oversubscribe_check.stateChanged.connect(self._update_preview)
         self.optional_sbatch_edit.textChanged.connect(self._update_job)
+        self.optional_sbatch_edit.textChanged.connect(self._update_preview)
         
         # Update preview when switching to preview tab
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -546,9 +548,10 @@ class JobCreationDialog(QDialog):
         clipboard.setText(self.preview_text.toPlainText())
         
         # Show feedback
-        original_text = self.sender().text()
-        self.sender().setText("Copied!")
-        QTimer.singleShot(1500, lambda: self.sender().setText(original_text))
+        button = self.sender()
+        original_text = button.text()
+        button.setText("Copied!")
+        QTimer.singleShot(1500, lambda: button.setText(original_text))
         
     def get_job(self) -> Job:
         """Get the configured job object"""
