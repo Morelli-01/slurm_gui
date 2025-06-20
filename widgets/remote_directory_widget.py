@@ -7,11 +7,11 @@ import os, posixpath
 from typing import List, Optional, Dict, Any
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListView, QLineEdit, 
-    QToolButton, QProgressBar, QLabel, QPushButton
+    QDialog, QVBoxLayout, QHBoxLayout, QListView, QLineEdit,
+    QToolButton, QProgressBar, QLabel, QPushButton, QDialogButtonBox, QAbstractItemView
 )
-from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, QSize, QSortFilterProxyModel
 
 from core.defaults import *
 from core.slurm_api import ConnectionState, SlurmAPI
@@ -139,245 +139,6 @@ class RemoteDirectoryModel(QObject):
         self._directory_cache.clear()
 
 
-class DirectoryWorker(QThread):
-    """Background worker for loading directories without blocking UI"""
-    finished = pyqtSignal(list, str, bool)
-    progress = pyqtSignal(int)
-
-    def __init__(self, model: RemoteDirectoryModel, path: str):
-        super().__init__()
-        self.model = model
-        self.path = path
-
-    def run(self):
-        try:
-            path_exists = self.model.path_exists(self.path)
-            if not path_exists:
-                self.finished.emit([], self.path, False)
-                return
-                
-            dirs = self.model.slurm_api.list_remote_directories(self.path)
-            dirs.sort()
-            
-            # Simulate progress for user feedback
-            for i in range(1, 101):
-                self.progress.emit(i)
-                
-            self.finished.emit(dirs, self.path, True)
-        except Exception as e:
-            print(f"Directory worker error: {e}")
-            self.finished.emit([], self.path, False)
-
-
-# ============================================================================
-# VIEW - UI Components and Presentation
-# ============================================================================
-
-class RemoteDirectoryView(QDialog):
-    """
-    View class handling UI components and user interactions.
-    Emits signals for user actions.
-    """
-    
-    # User action signals
-    navigationRequested = pyqtSignal(str)  # "up", "home", "refresh"
-    directorySelected = pyqtSignal(str)    # Directory name
-    pathEntered = pyqtSignal(str)          # Manual path entry
-    itemClicked = pyqtSignal(str)          # Item clicked
-    itemDoubleClicked = pyqtSignal(str)    # Item double-clicked
-    filterChanged = pyqtSignal(str)        # Filter text
-    dialogAccepted = pyqtSignal(str)       # Selected path
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Browse Remote Directory")
-        self.setMinimumSize(600, 400)
-        self._setup_stylesheet()
-        self._setup_ui()
-        
-    def _setup_stylesheet(self):
-        self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
-
-    def _setup_ui(self):
-        """Setup the user interface"""
-        main_layout = QVBoxLayout(self)
-
-        # Navigation bar
-        nav_layout = self._create_navigation_bar()
-        main_layout.addLayout(nav_layout)
-
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
-
-        # Filter bar
-        filter_layout = self._create_filter_bar()
-        main_layout.addLayout(filter_layout)
-
-        # Directory list
-        self.dir_list_view = self._create_directory_list()
-        main_layout.addWidget(self.dir_list_view)
-
-        # Status label
-        self.status_label = QLabel("Ready")
-        main_layout.addWidget(self.status_label)
-
-        # Button bar
-        button_layout = self._create_button_bar()
-        main_layout.addLayout(button_layout)
-
-    def _create_navigation_bar(self) -> QHBoxLayout:
-        """Create navigation bar with up, home, refresh buttons"""
-        nav_layout = QHBoxLayout()
-        nav_layout.setSpacing(5)
-
-        # Up button
-        self.up_button = QToolButton()
-        self.up_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "prev_folder.svg")))
-        self.up_button.setIconSize(QSize(24, 24))
-        self.up_button.setToolTip("Go Up")
-        self.up_button.setFixedSize(QSize(36, 36))
-        self.up_button.clicked.connect(lambda: self.navigationRequested.emit("up"))
-        nav_layout.addWidget(self.up_button)
-
-        # Home button
-        self.home_button = QToolButton()
-        self.home_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "home.svg")))
-        self.home_button.setIconSize(QSize(24, 24))
-        self.home_button.setToolTip("Go to Home Directory")
-        self.home_button.setFixedSize(QSize(36, 36))
-        self.home_button.clicked.connect(lambda: self.navigationRequested.emit("home"))
-        nav_layout.addWidget(self.home_button)
-
-        # Refresh button
-        self.refresh_button = QToolButton()
-        self.refresh_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "refresh.svg")))
-        self.refresh_button.setIconSize(QSize(24, 24))
-        self.refresh_button.setToolTip("Refresh")
-        self.refresh_button.setFixedSize(QSize(36, 36))
-        self.refresh_button.clicked.connect(lambda: self.navigationRequested.emit("refresh"))
-        nav_layout.addWidget(self.refresh_button)
-
-        # Path display
-        path_label = QLabel("Path:")
-        nav_layout.addWidget(path_label)
-
-        self.path_display_edit = QLineEdit()
-        self.path_display_edit.returnPressed.connect(
-            lambda: self.pathEntered.emit(self.path_display_edit.text()))
-        nav_layout.addWidget(self.path_display_edit)
-
-        return nav_layout
-
-    def _create_filter_bar(self) -> QHBoxLayout:
-        """Create filter bar"""
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter:"))
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Type to filter directories...")
-        self.search_input.textChanged.connect(self.filterChanged.emit)
-        self.search_input.setClearButtonEnabled(True)
-        filter_layout.addWidget(self.search_input)
-        
-        return filter_layout
-
-    def _create_directory_list(self) -> QListView:
-        """Create directory list view with model"""
-        self.dir_list_model = QStandardItemModel()
-        self.proxy_model = QSortFilterProxyModel()
-        self.proxy_model.setSourceModel(self.dir_list_model)
-        self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-
-        list_view = QListView()
-        list_view.setModel(self.proxy_model)
-        list_view.clicked.connect(self._on_item_clicked)
-        list_view.doubleClicked.connect(self._on_item_double_clicked)
-        
-        return list_view
-
-    def _create_button_bar(self) -> QHBoxLayout:
-        """Create dialog button bar"""
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-
-        self.select_button = QPushButton("Select")
-        self.select_button.setObjectName("selectBtn")
-        self.select_button.clicked.connect(self._select_current_path)
-        button_layout.addWidget(self.select_button)
-
-        return button_layout
-
-    def _on_item_clicked(self, index):
-        """Handle item click"""
-        source_index = self.proxy_model.mapToSource(index)
-        item_text = self.dir_list_model.itemFromIndex(source_index).text()
-        self.itemClicked.emit(item_text)
-
-    def _on_item_double_clicked(self, index):
-        """Handle item double click"""
-        source_index = self.proxy_model.mapToSource(index)
-        item_text = self.dir_list_model.itemFromIndex(source_index).text()
-        self.itemDoubleClicked.emit(item_text)
-
-    def _select_current_path(self):
-        """Emit dialog accepted with current path"""
-        current_path = self.path_display_edit.text()
-        self.dialogAccepted.emit(current_path)
-
-    # View update methods
-    def update_path_display(self, path: str):
-        """Update path in the display"""
-        self.path_display_edit.setText(path)
-
-    def update_directories(self, directories: List[str], current_path: str):
-        """Update directory list"""
-        self.dir_list_model.clear()
-        
-        # Add parent directory if not at root
-        if current_path != "/":
-            up_item = QStandardItem("..")
-            up_item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "prev_folder.svg")))
-            self.dir_list_model.appendRow(up_item)
-
-        # Add directories
-        for directory in directories:
-            item = QStandardItem(directory)
-            item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "folder.svg")))
-            self.dir_list_model.appendRow(item)
-
-    def update_filter(self, filter_text: str):
-        """Update directory filter"""
-        self.proxy_model.setFilterRegularExpression(filter_text)
-
-    def show_progress(self, visible: bool):
-        """Show/hide progress bar"""
-        self.progress_bar.setVisible(visible)
-
-    def update_progress(self, value: int):
-        """Update progress bar value"""
-        self.progress_bar.setValue(value)
-
-    def update_status(self, message: str):
-        """Update status message"""
-        self.status_label.setText(message)
-
-    def show_error(self, message: str):
-        """Show error message"""
-        show_error_toast(self, "Directory Error", message)
-
-    def show_warning(self, message: str):
-        """Show warning message"""
-        show_warning_toast(self, "Directory Warning", message)
-
-
 # ============================================================================
 # CONTROLLER - Coordination and Business Logic
 # ============================================================================
@@ -388,11 +149,10 @@ class RemoteDirectoryController(QObject):
     Handles user interactions and business logic.
     """
     
-    def __init__(self, model: RemoteDirectoryModel, view: RemoteDirectoryView):
+    def __init__(self, model: RemoteDirectoryModel, view: 'RemoteDirectoryDialog'):
         super().__init__()
         self.model = model
         self.view = view
-        self.worker = None
         self._setup_connections()
         self._initialize()
         
@@ -480,7 +240,7 @@ class RemoteDirectoryController(QObject):
     def _handle_dialog_accept(self, selected_path: str):
         """Handle dialog acceptance"""
         if self.model.path_exists(selected_path):
-            self.view.accept()
+            self.accept()
         else:
             self.view.show_warning("Please select a valid directory.")
             
@@ -488,42 +248,211 @@ class RemoteDirectoryController(QObject):
         """Get the currently selected directory"""
         return self.view.path_display_edit.text()
 
-
 # ============================================================================
-# DIALOG FACADE - Simplified Interface
+# DIALOG - View and User Interface
 # ============================================================================
 
 class RemoteDirectoryDialog(QDialog):
     """
-    Simplified facade dialog that encapsulates the MVC architecture.
-    Provides the same interface as the original dialog.
+    Dialog for Browse remote directories. This class now serves as the View.
     """
+    
+    # User action signals
+    navigationRequested = pyqtSignal(str)  # "up", "home", "refresh"
+    directorySelected = pyqtSignal(str)    # Directory name
+    pathEntered = pyqtSignal(str)          # Manual path entry
+    itemClicked = pyqtSignal(str)          # Item clicked
+    itemDoubleClicked = pyqtSignal(str)    # Item double-clicked
+    filterChanged = pyqtSignal(str)        # Filter text
+    dialogAccepted = pyqtSignal(str)       # Selected path
     
     def __init__(self, initial_path="/", parent=None):
         super().__init__(parent)
-        
+        self._setup_ui()
+
         # Create MVC components
         self.model = RemoteDirectoryModel(initial_path)
-        self.view = RemoteDirectoryView(parent)
-        self.controller = RemoteDirectoryController(self.model, self.view)
+        self.controller = RemoteDirectoryController(self.model, self)
         
-        # Setup dialog
-        self.setWindowTitle(self.view.windowTitle())
-        self.setMinimumSize(self.view.minimumSize())
+        self.setWindowTitle("Browse Remote Directory")
+        self.setMinimumSize(600, 400)
+        self._setup_stylesheet()
+
+    def _setup_stylesheet(self):
+        self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
+
+    def _setup_ui(self):
+        """Setup the user interface"""
+        main_layout = QVBoxLayout(self)
+
+        # Navigation bar
+        nav_layout = self._create_navigation_bar()
+        main_layout.addLayout(nav_layout)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+
+        # Filter bar
+        filter_layout = self._create_filter_bar()
+        main_layout.addLayout(filter_layout)
+
+        # Directory list
+        self.dir_list_view = self._create_directory_list()
+        main_layout.addWidget(self.dir_list_view)
+
+        # Status label
+        self.status_label = QLabel("Ready")
+        main_layout.addWidget(self.status_label)
+
+        # Button bar
+        self.button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self._select_current_path)
+        self.button_box.rejected.connect(self.reject)
+        main_layout.addWidget(self.button_box)
+
+    def _create_navigation_bar(self) -> QHBoxLayout:
+        """Create navigation bar with up, home, refresh buttons"""
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(5)
+
+        # Up button
+        self.up_button = QToolButton()
+        self.up_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "prev_folder.svg")))
+        self.up_button.setIconSize(QSize(24, 24))
+        self.up_button.setToolTip("Go Up")
+        self.up_button.setFixedSize(QSize(36, 36))
+        self.up_button.clicked.connect(lambda: self.navigationRequested.emit("up"))
+        nav_layout.addWidget(self.up_button)
+
+        # Home button
+        self.home_button = QToolButton()
+        self.home_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "home.svg")))
+        self.home_button.setIconSize(QSize(24, 24))
+        self.home_button.setToolTip("Go to Home Directory")
+        self.home_button.setFixedSize(QSize(36, 36))
+        self.home_button.clicked.connect(lambda: self.navigationRequested.emit("home"))
+        nav_layout.addWidget(self.home_button)
+
+        # Refresh button
+        self.refresh_button = QToolButton()
+        self.refresh_button.setIcon(QIcon(os.path.join(script_dir, "src_static", "refresh.svg")))
+        self.refresh_button.setIconSize(QSize(24, 24))
+        self.refresh_button.setToolTip("Refresh")
+        self.refresh_button.setFixedSize(QSize(36, 36))
+        self.refresh_button.clicked.connect(lambda: self.navigationRequested.emit("refresh"))
+        nav_layout.addWidget(self.refresh_button)
+
+        # Path display
+        path_label = QLabel("Path:")
+        nav_layout.addWidget(path_label)
+
+        self.path_display_edit = QLineEdit()
+        self.path_display_edit.returnPressed.connect(
+            lambda: self.pathEntered.emit(self.path_display_edit.text()))
+        nav_layout.addWidget(self.path_display_edit)
+
+        return nav_layout
+
+    def _create_filter_bar(self) -> QHBoxLayout:
+        """Create filter bar"""
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter:"))
         
-        # Use view's layout
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.view)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Type to filter directories...")
+        self.search_input.textChanged.connect(self.filterChanged.emit)
+        self.search_input.setClearButtonEnabled(True)
+        filter_layout.addWidget(self.search_input)
         
-        # Connect view's dialog signals to this dialog
-        self.view.accepted.connect(self.accept)
-        self.view.rejected.connect(self.reject)
+        return filter_layout
+
+    def _create_directory_list(self) -> QListView:
+        """Create directory list view with model"""
+        self.dir_list_model = QStandardItemModel()
+        self.proxy_model = QSortFilterProxyModel()
+        self.proxy_model.setSourceModel(self.dir_list_model)
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+
+        list_view = QListView()
+        list_view.setModel(self.proxy_model)
+        list_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        list_view.clicked.connect(self._on_item_clicked)
+        list_view.doubleClicked.connect(self._on_item_double_clicked)
         
+        return list_view
+
+    def _on_item_clicked(self, index):
+        """Handle item click"""
+        source_index = self.proxy_model.mapToSource(index)
+        item_text = self.dir_list_model.itemFromIndex(source_index).text()
+        self.itemClicked.emit(item_text)
+
+    def _on_item_double_clicked(self, index):
+        """Handle item double click"""
+        source_index = self.proxy_model.mapToSource(index)
+        item_text = self.dir_list_model.itemFromIndex(source_index).text()
+        self.itemDoubleClicked.emit(item_text)
+
+    def _select_current_path(self):
+        """Emit dialog accepted with current path"""
+        current_path = self.path_display_edit.text()
+        if self.model.path_exists(current_path):
+            self.dialogAccepted.emit(current_path)
+            self.accept()
+        else:
+            self.show_warning(f"Path '{current_path}' is not a valid directory.")
+
     def get_selected_directory(self) -> str:
         """Get the selected directory path"""
         return self.controller.get_selected_directory()
-    
-    def exec(self) -> int:
-        """Execute the dialog"""
-        return self.view.exec()
+
+    # View update methods
+    def update_path_display(self, path: str):
+        """Update path in the display"""
+        self.path_display_edit.setText(path)
+
+    def update_directories(self, directories: List[str], current_path: str):
+        """Update directory list"""
+        self.dir_list_model.clear()
+        
+        # Add parent directory if not at root
+        if current_path != "/":
+            up_item = QStandardItem("..")
+            up_item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "prev_folder.svg")))
+            self.dir_list_model.appendRow(up_item)
+
+        # Add directories
+        for directory in directories:
+            item = QStandardItem(directory)
+            item.setIcon(QIcon(posixpath.join(script_dir, "src_static", "folder.svg")))
+            self.dir_list_model.appendRow(item)
+
+    def update_filter(self, filter_text: str):
+        """Update directory filter"""
+        self.proxy_model.setFilterRegularExpression(filter_text)
+
+    def show_progress(self, visible: bool):
+        """Show/hide progress bar"""
+        self.progress_bar.setVisible(visible)
+
+    def update_progress(self, value: int):
+        """Update progress bar value"""
+        self.progress_bar.setValue(value)
+
+    def update_status(self, message: str):
+        """Update status message"""
+        self.status_label.setText(message)
+
+    def show_error(self, message: str):
+        """Show error message"""
+        show_error_toast(self, "Directory Error", message)
+
+    def show_warning(self, message: str):
+        """Show warning message"""
+        show_warning_toast(self, "Directory Warning", message)
