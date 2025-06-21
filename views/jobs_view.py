@@ -6,7 +6,7 @@ from core.defaults import *
 from core.event_bus import Events, get_event_bus
 from core.style import AppStyles
 from main_application import show_warning_toast
-from models.project_model import Job, Project
+# from models.project_model import Project
 from utils import script_dir
 from widgets.new_job_widget import JobCreationDialog
 
@@ -15,7 +15,7 @@ from widgets.new_job_widget import JobCreationDialog
 class ActionButtonsWidget(QWidget):
     """Widget containing the seven action buttons for a job."""
 
-    def __init__(self, job: Job, parent=None):
+    def __init__(self, job, parent=None):
         super().__init__(parent)
         self.job = job
         self.setObjectName("actionContainer")
@@ -36,7 +36,7 @@ class ActionButtonsWidget(QWidget):
 
         self.cancelButton = QPushButton()
         self.cancelButton.setObjectName("actionCancelBtn")
-        self.cancelButton.setToolTip("Cancel Job")
+        self.cancelButton.setToolTip("Cancel/Delete Job")
         layout.addWidget(self.cancelButton)
 
         self.logsButton = QPushButton()
@@ -63,10 +63,28 @@ class ActionButtonsWidget(QWidget):
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
         self._update_button_states()
 
+    def update_status(self, new_status: str):
+        """Public method to update the job status and refresh button states."""
+        self.job.status = new_status
+        self._update_button_states()
+
     def _update_button_states(self):
         """Enable or disable buttons based on job status."""
-        is_not_submitted = self.job.status == NOT_SUBMITTED
+        status = self.job.status
+
+        is_not_submitted = (status == NOT_SUBMITTED)
+        is_active = status in [STATUS_RUNNING, STATUS_PENDING, STATUS_SUSPENDED, STATUS_COMPLETING, STATUS_PREEMPTED]
+        is_running = (status == STATUS_RUNNING)
+        can_be_deleted = status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, "CANCELLED"]
+        has_logs = not is_not_submitted
+
+        self.startButton.setEnabled(is_not_submitted)
+        self.stopButton.setEnabled(is_active)
+        self.cancelButton.setEnabled(can_be_deleted)
+        self.logsButton.setEnabled(has_logs)
+        self.duplicateButton.setEnabled(True)  # Always enabled
         self.modifyButton.setEnabled(is_not_submitted)
+        self.terminalButton.setEnabled(is_running)
 
     def _on_modify_clicked(self):
         """Emit an event to modify the job."""
@@ -81,14 +99,14 @@ class ActionButtonsWidget(QWidget):
 
     def _on_cancel_clicked(self):
         """Emit an event to delete the job."""
-        if self.job.status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED]:
+        if self.job.status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, "CANCELLED"]:
             get_event_bus().emit(
                 Events.DEL_JOB,
                 data={"project_name": self.job.project_name, "job_id": self.job.id},
                 source="ActionButtonsWidget",
             )
         else:
-            show_warning_toast(self, "Warning", f"You cannot delete a job in {self.job.status} status")
+            show_warning_toast(self, "Warning", f"Cannot delete a job in '{self.job.status}' state. Please stop or cancel it first.")
 
 class JobsTableView(QWidget):
     """
