@@ -289,7 +289,8 @@ class Events:
     MODIFY_JOB = "job.modify"
     DEL_JOB = "job.del_job"
     DUPLICATE_JOB = "job.duplicate"
-    
+    STOP_JOB = "job.stop"
+
     # Data events
     DATA_READY = "cluster_job.data_ready"
     # UI events

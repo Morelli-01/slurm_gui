@@ -355,6 +355,20 @@ class SlurmAPI:
             print(f"Error fetching home directory: {stderr}")
             return None
         return stdout.strip()
+   
+    @requires_connection
+    def cancel_job(self, job_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """Cancels a job using scancel."""
+        if not job_id or not str(job_id).isdigit():
+            return None, f"Invalid Job ID: {job_id}"
+
+        command = f"scancel {job_id}"
+        stdout, stderr = self.run_command(command)
+
+        if stderr:
+            return None, stderr
+
+        return stdout, None
     
     @requires_connection
     def submit_job(self, job: Job) -> Tuple[Optional[str], Optional[str]]:

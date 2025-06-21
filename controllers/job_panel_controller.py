@@ -26,6 +26,8 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.DEL_JOB, self._handle_delete_job)
         self.event_bus.subscribe(Events.DUPLICATE_JOB, self._handle_duplicate_job) 
         self.event_bus.subscribe(Events.JOB_SUBMITTED, self._handle_submit_job)
+        self.event_bus.subscribe(Events.STOP_JOB, self._handle_stop_job)
+
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
@@ -98,6 +100,22 @@ class JobsPanelController:
                 show_success_toast(self.view, "Job Submitted", f"Job submitted successfully with ID: {new_job_id}")
             else:
                 show_error_toast(self.view, "Submission Failed", f"Error: {error}")
+    
+    def _handle_stop_job(self, event: Event):
+        """Handle job cancellation (scancel) request."""
+        job_id = event.data["job_id"]
+        slurm_api = SlurmAPI()
+        
+        if slurm_api.connection_status != ConnectionState.CONNECTED:
+            show_error_toast(self.view, "Connection Error", "Not connected to the cluster.")
+            return
+
+        stdout, stderr = slurm_api.cancel_job(job_id)
+
+        if stderr:
+            show_error_toast(self.view, "Stop Job Failed", f"Could not stop job {job_id}: {stderr}")
+        else:
+            show_success_toast(self.view, "Job Stop Requested", f"Cancel signal sent to job {job_id}.")
 
     def _shutdown(self, event):
         """Handle connection status changes."""

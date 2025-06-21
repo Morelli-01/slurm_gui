@@ -61,6 +61,7 @@ class ActionButtonsWidget(QWidget):
         layout.addWidget(self.terminalButton)
         
         self.startButton.clicked.connect(self._on_submit_clicked)
+        self.stopButton.clicked.connect(self._on_stop_clicked)
         self.duplicateButton.clicked.connect(self._on_duplicate_clicked)
         self.modifyButton.clicked.connect(self._on_modify_clicked)
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
@@ -78,7 +79,7 @@ class ActionButtonsWidget(QWidget):
         is_not_submitted = (status == NOT_SUBMITTED)
         is_active = status in [STATUS_RUNNING, STATUS_PENDING, STATUS_SUSPENDED, STATUS_COMPLETING, STATUS_PREEMPTED]
         is_running = (status == STATUS_RUNNING)
-        can_be_deleted = status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, "CANCELLED"]
+        can_be_deleted = status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, CANCELLED]
         has_logs = not is_not_submitted
 
         self.startButton.setEnabled(is_not_submitted)
@@ -88,6 +89,18 @@ class ActionButtonsWidget(QWidget):
         self.duplicateButton.setEnabled(True)  # Always enabled
         self.modifyButton.setEnabled(is_not_submitted)
         self.terminalButton.setEnabled(is_running)
+    
+    def _on_stop_clicked(self):
+        """Emit an event to stop (scancel) the job."""
+        is_active = self.job.status in [STATUS_RUNNING, STATUS_PENDING, STATUS_SUSPENDED, STATUS_COMPLETING, STATUS_PREEMPTED]
+        if is_active:
+            get_event_bus().emit(
+                Events.STOP_JOB,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
+        else:
+            show_warning_toast(self, "Warning", f"Cannot stop a job in '{self.job.status}' state.")
 
     def _on_modify_clicked(self):
         """Emit an event to modify the job."""
