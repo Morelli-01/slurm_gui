@@ -213,3 +213,14 @@ class JobsModel:
                         Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                     )
                     break
+    
+    def remove_job_from_project(self, project_name: str, job_id: str):
+        """Removes a job from a specific project."""
+        project = next((p for p in self.projects if p.name == project_name), None)
+        if project:
+            job_to_remove = next((j for j in project.jobs if j.id == job_id), None)
+            if job_to_remove:
+                project.jobs.remove(job_to_remove)
+                self.event_bus.emit(
+                    Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
+                )

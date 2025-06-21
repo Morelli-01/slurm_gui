@@ -22,6 +22,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.DEL_PROJECT, self._handle_delete_project)
         self.event_bus.subscribe(Events.PROJECT_SELECTED, self._handle_project_selection)
         self.event_bus.subscribe(Events.MODIFY_JOB, self._handle_modify_job)
+        self.event_bus.subscribe(Events.DEL_JOB, self._handle_delete_job)
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
@@ -63,6 +64,17 @@ class JobsPanelController:
         """Update the active project in the model."""
         name = event.data["project"]
         self.model.set_active_project(name)
+    
+    def _handle_delete_job(self, event):
+        """Confirm and delete a job."""
+        project_name = event.data["project_name"]
+        job_id = event.data["job_id"]
+        job = self.model.get_job_by_id(project_name, job_id)
+        if not job:
+            return
+        self.model.remove_job_from_project(project_name, job_id)
+
+            
 
     def _shutdown(self, event):
         """Handle connection status changes."""

@@ -5,6 +5,7 @@ from typing import List
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
 from core.style import AppStyles
+from main_application import show_warning_toast
 from models.project_model import Job, Project
 from utils import script_dir
 from widgets.new_job_widget import JobCreationDialog
@@ -14,7 +15,7 @@ from widgets.new_job_widget import JobCreationDialog
 class ActionButtonsWidget(QWidget):
     """Widget containing the seven action buttons for a job."""
 
-    def __init__(self, job, parent=None):
+    def __init__(self, job: Job, parent=None):
         super().__init__(parent)
         self.job = job
         self.setObjectName("actionContainer")
@@ -59,22 +60,35 @@ class ActionButtonsWidget(QWidget):
         layout.addWidget(self.terminalButton)
         
         self.modifyButton.clicked.connect(self._on_modify_clicked)
+        self.cancelButton.clicked.connect(self._on_cancel_clicked)
         self._update_button_states()
 
     def _update_button_states(self):
         """Enable or disable buttons based on job status."""
-        is_not_submitted = self.job.status == "NOT_SUBMITTED"
+        is_not_submitted = self.job.status == NOT_SUBMITTED
         self.modifyButton.setEnabled(is_not_submitted)
 
     def _on_modify_clicked(self):
         """Emit an event to modify the job."""
-        if self.job.status == "NOT_SUBMITTED":
+        if self.job.status == NOT_SUBMITTED:
             get_event_bus().emit(
                 Events.MODIFY_JOB,
                 data={"project_name": self.job.project_name, "job_id": self.job.id},
                 source="ActionButtonsWidget",
             )
+        else:
+            show_warning_toast(self, "Warning", "Only unsubmitted jobs can be edited!")
 
+    def _on_cancel_clicked(self):
+        """Emit an event to delete the job."""
+        if self.job.status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED]:
+            get_event_bus().emit(
+                Events.DEL_JOB,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
+        else:
+            show_warning_toast(self, "Warning", f"You cannot delete a job in {self.job.status} status")
 
 class JobsTableView(QWidget):
     """
