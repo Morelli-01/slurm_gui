@@ -240,7 +240,19 @@ class JobsModel:
             show_success_toast(None, "Job Duplicated", f"Created a copy of '{original_job.name}'.", duration=1000)
         else:
             show_error_toast(None, "Error", "Could not find the job or project to duplicate.")
-
+    
+    def update_job_after_submission(self, project_name: str, temp_job_id: str, new_slurm_id: str):
+        """Updates a job's ID and status after successful submission."""
+        project = next((p for p in self.projects if p.name == project_name), None)
+        if project:
+            job_to_update = self.get_job_by_id(project_name, temp_job_id)
+            if job_to_update:
+                job_to_update.id = new_slurm_id
+                job_to_update.status = "PENDING"
+                self.event_bus.emit(
+                    Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
+                )
+              
     def remove_job_from_project(self, project_name: str, job_id: str):
         """Removes a job from a specific project."""
         project = next((p for p in self.projects if p.name == project_name), None)

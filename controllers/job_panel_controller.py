@@ -3,6 +3,7 @@ from models.project_model import JobsModel
 from views.jobs_panel_view import JobsPanelView
 from core.event_bus import get_event_bus, Events, Event
 from core.slurm_api import *
+from widgets.toast_widget import show_error_toast, show_success_toast
 
 
 class JobsPanelController:
@@ -24,6 +25,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.MODIFY_JOB, self._handle_modify_job)
         self.event_bus.subscribe(Events.DEL_JOB, self._handle_delete_job)
         self.event_bus.subscribe(Events.DUPLICATE_JOB, self._handle_duplicate_job) 
+        self.event_bus.subscribe(Events.JOB_SUBMITTED, self._handle_submit_job)
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
@@ -80,6 +82,22 @@ class JobsPanelController:
         project_name = event.data["project_name"]
         job_id = event.data["job_id"]
         self.model.duplicate_job(project_name, job_id)
+    
+    def _handle_submit_job(self, event: Event):
+        """Handle job submission."""
+        project_name = event.data["project_name"]
+        job_id = event.data["job_id"]
+        job_to_submit = self.model.get_job_by_id(project_name, job_id)
+
+        if job_to_submit:
+            slurm_api = SlurmAPI()
+            new_job_id, error = slurm_api.submit_job(job_to_submit)
+            
+            if new_job_id:
+                self.model.update_job_after_submission(project_name, job_id, new_job_id)
+                show_success_toast(self.view, "Job Submitted", f"Job submitted successfully with ID: {new_job_id}")
+            else:
+                show_error_toast(self.view, "Submission Failed", f"Error: {error}")
 
     def _shutdown(self, event):
         """Handle connection status changes."""

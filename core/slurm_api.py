@@ -1,13 +1,16 @@
 import configparser
+import re
 import threading
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum, auto
 import functools
 from typing import Any, Callable, Dict, List, Optional, Tuple
+import uuid
 import paramiko
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
+from models.project_model import Job
 from utils import settings_path, parse_duration
 
 
@@ -412,7 +415,58 @@ class SlurmAPI:
             print(f"Error fetching home directory: {stderr}")
             return None
         return stdout.strip()
+    
+    @requires_connection
+    def submit_job(self, job: Job) -> Tuple[Optional[str], Optional[str]]:
+        """Creates a temporary script, sbaches it, and returns the job ID or an error."""
+        script_content = job.create_sbatch_script()
+        
+        sftp = None
+        local_path = None
+        remote_path = f"/tmp/slurm_gui_job_{uuid.uuid4().hex[:8]}.sh"
 
+        try:
+            # 1. Create a local temporary file
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".sh", encoding='utf-8') as tmp:
+                tmp.write(script_content)
+                local_path = tmp.name
+
+            # 2. Define remote path and upload
+            sftp = self._client.open_sftp()
+            sftp.put(local_path, remote_path)
+            sftp.close()
+            sftp = None
+
+            # 3. Sbatch the remote file
+            sbatch_output, sbatch_error = self.run_command(f"sbatch {remote_path}")
+
+            # 4. Parse output
+            if sbatch_error:
+                return None, sbatch_error
+            
+            match = re.search(r"Submitted batch job (\d+)", sbatch_output)
+            if match:
+                new_job_id = match.group(1)
+                return new_job_id, None
+            else:
+                return None, sbatch_output or "sbatch command did not return a job ID."
+
+        except Exception as e:
+            return None, str(e)
+        finally:
+            # 5. Cleanup
+            if local_path and os.path.exists(local_path):
+                os.unlink(local_path)
+            if self.connection_status == ConnectionState.CONNECTED:
+                try:
+                    self.run_command(f"rm {remote_path}")
+                except Exception:
+                    pass # Ignore cleanup errors if connection is lost
+            if sftp:
+                try: 
+                    sftp.close()
+                except Exception:
+                    pass
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")

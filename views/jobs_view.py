@@ -59,7 +59,8 @@ class ActionButtonsWidget(QWidget):
         self.terminalButton.setObjectName("actionTerminalBtn")
         self.terminalButton.setToolTip("Open Terminal on Node")
         layout.addWidget(self.terminalButton)
-
+        
+        self.startButton.clicked.connect(self._on_submit_clicked)
         self.duplicateButton.clicked.connect(self._on_duplicate_clicked)
         self.modifyButton.clicked.connect(self._on_modify_clicked)
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
@@ -117,7 +118,18 @@ class ActionButtonsWidget(QWidget):
             data={"project_name": self.job.project_name, "job_id": self.job.id},
             source="ActionButtonsWidget",
         )
-        
+   
+    def _on_submit_clicked(self):
+        """Emit an event to submit the job."""
+        if self.job.status == NOT_SUBMITTED:
+            get_event_bus().emit(
+                Events.JOB_SUBMITTED,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
+        else:
+            show_warning_toast(self, "Warning", "Job has already been submitted.")
+
 class JobsTableView(QWidget):
     """
     View to display jobs for projects. It manages a dictionary of QTableWidgets,
