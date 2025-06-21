@@ -1,9 +1,10 @@
 from ast import Dict
+import copy
 from dataclasses import dataclass, field
 from typing import List, Optional
 import uuid
 from core.event_bus import get_event_bus, Events
-from widgets.toast_widget import show_error_toast
+from widgets.toast_widget import show_error_toast, show_success_toast
 
 # In a new file: models/job.py
 import os
@@ -214,6 +215,32 @@ class JobsModel:
                     )
                     break
     
+    def duplicate_job(self, project_name: str, job_id: str):
+        """Finds a job, creates a duplicate, and adds it to the project."""
+        original_job = self.get_job_by_id(project_name, job_id)
+        project = next((p for p in self.projects if p.name == project_name), None)
+
+        if original_job and project:
+            # Create a deep copy to avoid shared references
+            new_job = copy.deepcopy(original_job)
+
+            # Modify the new job
+            new_job.id = uuid.uuid4().hex[:8].upper()
+            new_job.name = f"{original_job.name}_copy"
+            new_job.status = "NOT_SUBMITTED"
+            new_job.dependency = None  # Clear dependencies
+
+            # Add the duplicated job to the project
+            project.jobs.append(new_job)
+
+            # Emit event to update the UI
+            self.event_bus.emit(
+                Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
+            )
+            show_success_toast(None, "Job Duplicated", f"Created a copy of '{original_job.name}'.", duration=1000)
+        else:
+            show_error_toast(None, "Error", "Could not find the job or project to duplicate.")
+
     def remove_job_from_project(self, project_name: str, job_id: str):
         """Removes a job from a specific project."""
         project = next((p for p in self.projects if p.name == project_name), None)

@@ -23,6 +23,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.PROJECT_SELECTED, self._handle_project_selection)
         self.event_bus.subscribe(Events.MODIFY_JOB, self._handle_modify_job)
         self.event_bus.subscribe(Events.DEL_JOB, self._handle_delete_job)
+        self.event_bus.subscribe(Events.DUPLICATE_JOB, self._handle_duplicate_job) 
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
@@ -74,7 +75,11 @@ class JobsPanelController:
             return
         self.model.remove_job_from_project(project_name, job_id)
 
-            
+    def _handle_duplicate_job(self, event: Event):
+        """Handle job duplication request."""
+        project_name = event.data["project_name"]
+        job_id = event.data["job_id"]
+        self.model.duplicate_job(project_name, job_id)
 
     def _shutdown(self, event):
         """Handle connection status changes."""

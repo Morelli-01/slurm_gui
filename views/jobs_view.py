@@ -59,7 +59,8 @@ class ActionButtonsWidget(QWidget):
         self.terminalButton.setObjectName("actionTerminalBtn")
         self.terminalButton.setToolTip("Open Terminal on Node")
         layout.addWidget(self.terminalButton)
-        
+
+        self.duplicateButton.clicked.connect(self._on_duplicate_clicked)
         self.modifyButton.clicked.connect(self._on_modify_clicked)
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
         self._update_button_states()
@@ -108,7 +109,15 @@ class ActionButtonsWidget(QWidget):
             )
         else:
             show_warning_toast(self, "Warning", f"Cannot delete a job in '{self.job.status}' state. Please stop or cancel it first.")
-
+    
+    def _on_duplicate_clicked(self):
+        """Emit an event to duplicate the job."""
+        get_event_bus().emit(
+            Events.DUPLICATE_JOB,
+            data={"project_name": self.job.project_name, "job_id": self.job.id},
+            source="ActionButtonsWidget",
+        )
+        
 class JobsTableView(QWidget):
     """
     View to display jobs for projects. It manages a dictionary of QTableWidgets,
