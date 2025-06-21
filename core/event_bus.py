@@ -290,6 +290,7 @@ class Events:
     DEL_JOB = "job.del_job"
     DUPLICATE_JOB = "job.duplicate"
     STOP_JOB = "job.stop"
+    OPEN_JOB_TERMINAL = "job.open_terminal"
 
     # Data events
     DATA_READY = "cluster_job.data_ready"

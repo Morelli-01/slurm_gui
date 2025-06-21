@@ -34,6 +34,7 @@ class SSHConnectionDetails:
     username: str
     password: str
     port: int = 22
+    command_to_run: Optional[str] = None
     
     def __post_init__(self):
         if not self.host or not self.username:
@@ -148,6 +149,9 @@ class TerminalHelper(QObject):
                     if connection.port != 22:
                         putty_cmd.extend(["-P", str(connection.port)])
                     
+                    if connection.command_to_run:
+                        putty_cmd.extend(["-t", connection.command_to_run])
+
                     subprocess.Popen(putty_cmd)
                     return True
                 else:
@@ -166,11 +170,11 @@ class TerminalHelper(QObject):
                 f"Failed to open Windows terminal: {str(e)}")
             return False
     
+
     def _open_macos_terminal(self, connection: SSHConnectionDetails,
                             parent_widget=None) -> bool:
-        """Open terminal on macOS using sshpass for automatic SSH login"""
+        """Open terminal on macOS using a temporary script to ensure proper TTY allocation."""
         try:
-            # Check if sshpass is available
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
                 self._show_error(parent_widget,
@@ -178,54 +182,43 @@ class TerminalHelper(QObject):
                     "sshpass is required for automatic password entry. "
                     "Please install sshpass (e.g., 'brew install sshpass').")
                 return False
-            
-            # Build the sshpass command
+
             ssh_cmd = self._build_ssh_command(connection, sshpass_path)
+
+            # Create a temporary script to avoid osascript quoting issues
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False, prefix="slurmgui_") as tmp:
+                # The script will execute the ssh command and then remove itself
+                tmp.write("#!/bin/bash\n")
+                tmp.write(f"{ssh_cmd}\n")
+                script_path = tmp.name
             
-            # List of terminal emulators to try for macOS
-            terminals = [
-                # Default Terminal.app
-                ["open", "-a", "Terminal", f"{ssh_cmd}"],
-                ["open", "-a", "iTerm", f"{ssh_cmd}"],  # iTerm2
-                # AppleScript fallback
-                ["osascript", "-e", 
-                 f'tell application "Terminal" to do script "{ssh_cmd}"'],
-            ]
+            os.chmod(script_path, 0o755) # Make the script executable
+            self._temp_files.append(script_path)
+
+            # Use osascript to run the script in a new Terminal window
+            applescript = f"""
+            tell application "Terminal"
+                activate
+                do script "{script_path}"
+            end tell
+            """
             
-            for terminal_cmd in terminals:
-                try:
-                    subprocess.Popen(terminal_cmd)
-                    return True
-                except FileNotFoundError:
-                    continue
+            subprocess.Popen(["osascript", "-e", applescript])
             
-            # If no terminal emulator found, try AppleScript approach
-            try:
-                applescript = f"""
-                tell application "Terminal"
-                    activate
-                    do script "{ssh_cmd}"
-                end tell
-                """
-                subprocess.Popen(["osascript", "-e", applescript])
-                return True
-            except Exception as e:
-                self._show_error(parent_widget,
-                    "No Terminal Found",
-                    f"No supported terminal emulator found: {str(e)}")
-                return False
-                
+            # Schedule the script for cleanup after a delay
+            self._schedule_cleanup(script_path)
+            return True
+
         except Exception as e:
             self._show_error(parent_widget,
                 "macOS Terminal Error",
                 f"Failed to open macOS terminal: {str(e)}")
             return False
-    
+
     def _open_linux_terminal(self, connection: SSHConnectionDetails,
                             parent_widget=None) -> bool:
-        """Open terminal on Linux using sshpass for automatic SSH login"""
+        """Open terminal on Linux, executing sshpass directly to preserve TTY."""
         try:
-            # Check if sshpass is available
             sshpass_path = shutil.which("sshpass")
             if not sshpass_path:
                 self._show_error(parent_widget,
@@ -233,28 +226,41 @@ class TerminalHelper(QObject):
                     "sshpass is required for automatic password entry. "
                     "Please install sshpass (e.g., 'sudo apt install sshpass').")
                 return False
+
+            # Build the command and arguments as a list
+            command_parts = [
+                sshpass_path,
+                "-p", connection.password,
+                "ssh"
+            ]
+            if connection.command_to_run:
+                command_parts.append("-t") # Force pseudo-terminal allocation
+
+            command_parts.append(f"{connection.username}@{connection.host}")
+
+            if connection.port != 22:
+                command_parts.extend(["-p", str(connection.port)])
             
-            # Build the sshpass command
-            ssh_cmd = self._build_ssh_command(connection, sshpass_path)
+            if connection.command_to_run:
+                command_parts.append(connection.command_to_run)
             
-            # List of terminal emulators to try
+            # Terminal emulators and their command execution syntax
+            # Some prefer a list of args, some prefer a single command string.
             terminals = [
-                ["gnome-terminal", "--", "bash", "-c", f"{ssh_cmd}"],
-                ["konsole", "-e", "bash", "-c", f"{ssh_cmd}"],
-                ["xfce4-terminal", "-e", f"bash -c {ssh_cmd}"],
-                ["lxterminal", "-e", f"bash -c {ssh_cmd}"],
-                ["mate-terminal", "-e", f"bash -c {ssh_cmd}"],
-                ["terminator", "-e", f"bash -c {ssh_cmd}"],
-                ["alacritty", "-e", "bash", "-c", f"{ssh_cmd}"],
-                ["kitty", "bash", "-c", f"{ssh_cmd}"],
-                ["xterm", "-e", f"bash -c {ssh_cmd}"],
+                ["gnome-terminal", "--"] + command_parts,
+                ["konsole", "-e"] + command_parts,
+                ["xterm", "-e"] + command_parts,
+                ["terminator", "-e", " ".join(f"'{p}'" for p in command_parts)], # Join with quotes
+                ["xfce4-terminal", "-e", " ".join(f"'{p}'" for p in command_parts)],
+                ["alacritty", "-e"] + command_parts,
+                ["kitty", "--"] + command_parts,
             ]
             
             for terminal_cmd in terminals:
                 try:
                     subprocess.Popen(terminal_cmd)
                     return True
-                except FileNotFoundError:
+                except (FileNotFoundError, Exception):
                     continue
             
             self._show_error(parent_widget,
@@ -267,7 +273,7 @@ class TerminalHelper(QObject):
                 "Linux Terminal Error",
                 f"Failed to open Linux terminal: {str(e)}")
             return False
-    
+
     def _find_putty(self) -> Optional[str]:
         """Find PuTTY executable on Windows"""
         for path in self.config.putty_paths:
@@ -283,6 +289,10 @@ class TerminalHelper(QObject):
         
         if connection.port != 22:
             ssh_cmd += f" -p {connection.port}"
+        
+        if connection.command_to_run:
+            # Properly quote the command to run to handle spaces and special characters
+            ssh_cmd += f" \"{connection.command_to_run.replace('\"', '\\\"')}\""
             
         return ssh_cmd
     

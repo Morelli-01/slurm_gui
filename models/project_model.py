@@ -26,14 +26,14 @@ class Job:
     constraint: Optional[List[str]] = None
     cpus_per_task: Optional[int] = 1
     dependency: Optional[str] = None
-    error_file: Optional[str] = "~/.slurm_logs/err_%A.log"
+    error_file: Optional[str] = None
     gpus: Optional[str] = None
     gpus_per_task: Optional[str] = None
     mem: Optional[str] = "1G"  # Default to 1GB
     nice: Optional[int] = None
     nodes: Optional[str] = 1
     ntasks: Optional[int] = 1
-    output_file: Optional[str] = "~/.slurm_logs/out_%A.log"
+    output_file: Optional[str] = None
     oversubscribe: bool = False
     partition: Optional[str] = None
     qos: Optional[str] = None
@@ -49,7 +49,17 @@ class Job:
     id: Optional[str] = None
     status: str = "NOT_SUBMITTED"
     elapsed: str = "00:00:00"
-
+    
+    def __post_init__(self):
+        if self.error_file is None or self.output_file is None:
+            # Import here to avoid circular import at module level
+            from core.slurm_api import SlurmAPI
+            remote_home = SlurmAPI().remote_home or "~/"
+            if self.error_file is None:
+                self.error_file = f"{remote_home}/.slurm_logs/err_%A.log"
+            if self.output_file is None:
+                self.output_file = f"{remote_home}/.slurm_logs/out_%A.log"
+    
     def create_sbatch_script(self) -> str:
         """
         Generates the content for an sbatch submission script based on the

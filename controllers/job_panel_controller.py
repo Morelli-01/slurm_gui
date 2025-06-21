@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+from core.terminal_helper import SSHConnectionDetails, TerminalHelper
 from models.project_model import JobsModel
 from views.jobs_panel_view import JobsPanelView
 from core.event_bus import get_event_bus, Events, Event
 from core.slurm_api import *
-from widgets.toast_widget import show_error_toast, show_success_toast
+from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
 
 
 class JobsPanelController:
@@ -27,6 +28,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.DUPLICATE_JOB, self._handle_duplicate_job) 
         self.event_bus.subscribe(Events.JOB_SUBMITTED, self._handle_submit_job)
         self.event_bus.subscribe(Events.STOP_JOB, self._handle_stop_job)
+        self.event_bus.subscribe(Events.OPEN_JOB_TERMINAL, self._handle_open_job_terminal)
 
 
     def _on_project_list_changed(self, event: Event):
@@ -116,6 +118,33 @@ class JobsPanelController:
             show_error_toast(self.view, "Stop Job Failed", f"Could not stop job {job_id}: {stderr}")
         else:
             show_success_toast(self.view, "Job Stop Requested", f"Cancel signal sent to job {job_id}.")
+    
+    def _handle_open_job_terminal(self, event: Event):
+        """Handle request to open a terminal for a running job."""
+        job_id = event.data["job_id"]
+        
+        slurm_api = SlurmAPI()
+        if slurm_api.connection_status != ConnectionState.CONNECTED:
+            show_warning_toast(self.view, "Connection Required", "Please establish a SLURM connection first.")
+            return
+            
+        try:
+            helper = TerminalHelper()
+            # Construct the command to attach to the job
+            srun_command = f"srun --jobid={job_id} --pty bash"
+            
+            # Create connection details with the command to run
+            connection_details = SSHConnectionDetails(
+                host=slurm_api._config.host,
+                username=slurm_api._config.username,
+                password=slurm_api._config.password,
+                command_to_run=srun_command
+            )
+            
+            helper.open_ssh_terminal(connection_details, parent_widget=self.view)
+            
+        except Exception as e:
+            show_error_toast(self.view, "Terminal Error", f"Failed to open terminal: {str(e)}")
 
     def _shutdown(self, event):
         """Handle connection status changes."""

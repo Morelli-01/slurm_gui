@@ -65,6 +65,8 @@ class ActionButtonsWidget(QWidget):
         self.duplicateButton.clicked.connect(self._on_duplicate_clicked)
         self.modifyButton.clicked.connect(self._on_modify_clicked)
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
+        self.terminalButton.clicked.connect(self._on_terminal_clicked)
+
         self._update_button_states()
 
     def update_status(self, new_status: str):
@@ -142,6 +144,17 @@ class ActionButtonsWidget(QWidget):
             )
         else:
             show_warning_toast(self, "Warning", "Job has already been submitted.")
+   
+    def _on_terminal_clicked(self):
+        """Emit an event to open a terminal for the job."""
+        if self.job.status == STATUS_RUNNING:
+            get_event_bus().emit(
+                Events.OPEN_JOB_TERMINAL,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
+        else:
+            show_warning_toast(self, "Warning", "Terminal can only be opened for running jobs.")
 
 class JobsTableView(QWidget):
     """

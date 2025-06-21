@@ -51,7 +51,7 @@ class ToastConfiguration:
     max_toasts: int = 5
     spacing: int = 15
     toast_width: int = 380
-    margin: int = 20
+    margin: int = 5
     animation_duration: int = 400
 
 # ============================================================================
@@ -640,7 +640,7 @@ class ToastController(QObject):
         if is_window_visible and main_window:
             # Position relative to main window
             parent_geometry = main_window.geometry()
-            x = parent_geometry.width() - config.toast_width - config.margin
+            x = parent_geometry.width() - config.toast_width - config.margin - 13
             y = parent_geometry.height() - config.margin
             
             # Calculate Y position based on existing toasts

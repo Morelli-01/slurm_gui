@@ -369,13 +369,13 @@ class JobCreationDialog(QDialog):
         layout.addRow("Nodelist:", self.nodelist_edit)
         
         # Output file
-        self.output_edit = QLineEdit(self.job.output_file or "~/.slurm_logs/out_%A.log")
-        self.output_edit.setPlaceholderText("e.g., ~/.slurm_logs/out_%A.log")
+        self.output_edit = QLineEdit(self.job.output_file or f"{self.slurm_api.remote_home}/.slurm_logs/out_%A.log")
+        self.output_edit.setPlaceholderText(f"e.g., {self.slurm_api.remote_home}/.slurm_logs/out_%A.log")
         layout.addRow("Output File:", self.output_edit)
         
         # Error file
-        self.error_edit = QLineEdit(self.job.error_file or "~/.slurm_logs/err_%A.log")
-        self.error_edit.setPlaceholderText("e.g., ~/.slurm_logs/err_%A.log")
+        self.error_edit = QLineEdit(self.job.error_file or f"{self.slurm_api.remote_home}/.slurm_logs/err_%A.log")
+        self.error_edit.setPlaceholderText(f"e.g., {self.slurm_api.remote_home}/.slurm_logs/err_%A.log")
         layout.addRow("Error File:", self.error_edit)
         
         # Nice
@@ -509,8 +509,8 @@ class JobCreationDialog(QDialog):
         self.job.gpus = str(self.gpus_spin.value()) if self.gpus_spin.value() > 0 else None
         self.job.gpus_per_task = str(self.gpus_per_task_spin.value()) if self.gpus_per_task_spin.value() > 0 else None
         # Files
-        self.job.output_file = self.output_edit.text() or "~/.slurm_logs/out_%A.log"
-        self.job.error_file = self.error_edit.text() or "~/.slurm_logs/err_%A.log"
+        self.job.output_file = self.output_edit.text() or f"{self.slurm_api.remote_home}/.slurm_logs/out_%A.log"
+        self.job.error_file = self.error_edit.text() or f"{self.slurm_api.remote_home}/.slurm_logs/err_%A.log"
         # Advanced
         self.job.account = self.account_edit.currentText() or None
         self.job.partition = self.partition_edit.currentText() or None
