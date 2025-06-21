@@ -74,6 +74,7 @@ class JobCreationDialog(QDialog):
         self._connect_signals()
         self.account_edit.setCurrentIndex(0)
         self.partition_edit.setCurrentIndex(0)
+        self._update_job()
         self._update_preview()
         
     def _setup_ui(self):
@@ -244,49 +245,82 @@ class JobCreationDialog(QDialog):
         layout.setSpacing(15)
         
         # Job Arrays
-        array_group = QGroupBox("Job Arrays")
-        array_layout = QFormLayout(array_group)
+        self.array_group = QGroupBox("Job Arrays")
+        self.array_group.setCheckable(True)
+        self.array_group.setChecked(False)
+        array_layout = QFormLayout(self.array_group)
+        array_layout.setSpacing(10)
+
+        self.array_start_spin = QSpinBox()
+        self.array_start_spin.setRange(0, 999999)
+        self.array_start_spin.setValue(1)
+        array_layout.addRow("Start Index:", self.array_start_spin)
+
+        self.array_end_spin = QSpinBox()
+        self.array_end_spin.setRange(0, 999999)
+        self.array_end_spin.setValue(10)
+        array_layout.addRow("End Index:", self.array_end_spin)
+
+        self.array_step_spin = QSpinBox()
+        self.array_step_spin.setRange(1, 999999)
+        self.array_step_spin.setValue(1)
+        array_layout.addRow("Step:", self.array_step_spin)
+
+        self.array_concurrency_spin = QSpinBox()
+        self.array_concurrency_spin.setRange(0, 1024)
+        self.array_concurrency_spin.setValue(0)
+        self.array_concurrency_spin.setToolTip("Maximum number of tasks to run at once (0 for no limit)")
+        array_layout.addRow("Concurrency Limit (%):", self.array_concurrency_spin)
         
-        self.array_edit = QLineEdit(self.job.array or "")
-        self.array_edit.setPlaceholderText("e.g., 1-10, 1-100:10, 1,3,5,7")
-        array_layout.addRow("Array Specification:", self.array_edit)
-        
-        array_info = QLabel(
-            "<b>Array Examples:</b><br>"
-            "• 1-10: Run 10 array tasks (1 through 10)<br>"
-            "• 1-100:10: Run every 10th task from 1 to 100<br>"
-            "• 1,3,5,7: Run specific task IDs<br>"
-            "• 0-15%4: Run max 4 tasks at a time"
-        )
-        array_info.setStyleSheet("color: #8be9fd; padding: 10px; background: rgba(68, 71, 90, 0.5); border-radius: 5px;")
-        array_layout.addRow(array_info)
-        
-        layout.addWidget(array_group)
+        layout.addWidget(self.array_group)
         
         # Job Dependencies
         dep_group = QGroupBox("Job Dependencies")
         dep_layout = QFormLayout(dep_group)
         
-        self.dependency_edit = QLineEdit(self.job.dependency or "")
-        self.dependency_edit.setPlaceholderText("e.g., afterok:12345, afterany:12345:12346")
-        dep_layout.addRow("Dependency:", self.dependency_edit)
+        self.dep_type_combo = QComboBox()
+        self.dep_type_combo.addItems(["", "afterok", "afterany", "afternotok", "singleton"])
+        dep_layout.addRow("Dependency Type:", self.dep_type_combo)
+
+        self.dep_job_list = QListWidget()
+        self.dep_job_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.dep_job_list.setMaximumHeight(150)
+        dep_layout.addRow("On Jobs:", self.dep_job_list)
         
-        dep_info = QLabel(
-            "<b>Dependency Types:</b><br>"
-            "• afterok:jobid - Start after job completes successfully<br>"
-            "• afternotok:jobid - Start after job fails<br>"
-            "• afterany:jobid - Start after job completes (any exit)<br>"
-            "• after:jobid - Start after job begins<br>"
-            "• singleton - Only one job with this name at a time"
-        )
-        dep_info.setStyleSheet("color: #8be9fd; padding: 10px; background: rgba(68, 71, 90, 0.5); border-radius: 5px;")
-        dep_layout.addRow(dep_info)
-        
+        self._load_user_jobs()
         layout.addWidget(dep_group)
         layout.addStretch()
         
         self.tab_widget.addTab(tab, "Dependencies & Arrays")
-        
+
+    def _load_user_jobs(self):
+        """Fetches the user's jobs and populates the dependency list."""
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            self.dep_job_list.addItem("Not connected to Slurm")
+            self.dep_job_list.setEnabled(False)
+            return
+
+        try:
+            all_jobs = self.slurm_api.fetch_job_queue()
+            current_user = self.slurm_api._config.username
+            user_jobs = [j for j in all_jobs if j.get('User') == current_user]
+
+            if not user_jobs:
+                self.dep_job_list.addItem("No running/pending jobs found for user")
+                self.dep_job_list.setEnabled(False)
+                return
+
+            for job in user_jobs:
+                job_id = job.get("Job ID")
+                job_name = job.get("Job Name", "unnamed")
+                item = QListWidgetItem(f"{job_name} ({job_id})")
+                item.setData(Qt.ItemDataRole.UserRole, job_id)
+                self.dep_job_list.addItem(item)
+        except Exception as e:
+            self.dep_job_list.addItem("Error fetching jobs")
+            self.dep_job_list.setEnabled(False)
+            print(f"Error fetching user jobs for dependency list: {e}")
+
     def _create_advanced_tab(self):
         """Create the advanced settings tab"""
         tab = QWidget()
@@ -415,44 +449,49 @@ class JobCreationDialog(QDialog):
     def _connect_signals(self):
         """Connect all input signals to update the job and preview"""
         # Basic tab
-        self.name_edit.textChanged.connect(self._update_job)
-        self.account_edit.currentTextChanged.connect(self._update_job)
-        self.account_edit.currentTextChanged.connect(self._update_preview)
-        self.partition_edit.currentTextChanged.connect(self._update_job)
-        self.partition_edit.currentTextChanged.connect(self._update_preview)
-        self.working_dir_edit.textChanged.connect(self._update_job)
-        self.venv_edit.textChanged.connect(self._update_job)
-        self.script_edit.textChanged.connect(self._update_job)
+        self.name_edit.textChanged.connect(self._handle_input_change)
+        self.account_edit.currentTextChanged.connect(self._handle_input_change)
+        self.partition_edit.currentTextChanged.connect(self._handle_input_change)
+        self.working_dir_edit.textChanged.connect(self._handle_input_change)
+        self.venv_edit.textChanged.connect(self._handle_input_change)
+        self.script_edit.textChanged.connect(self._handle_input_change)
         
         # Resources tab
-        self.cpus_spin.valueChanged.connect(self._update_job)
-        self.ntasks_spin.valueChanged.connect(self._update_job)
-        self.nodes_spin.valueChanged.connect(self._update_job)
-        self.mem_spin.valueChanged.connect(self._update_job)
-        self.gpus_spin.valueChanged.connect(self._update_job)
-        self.gpus_per_task_spin.valueChanged.connect(self._update_job)
+        self.cpus_spin.valueChanged.connect(self._handle_input_change)
+        self.ntasks_spin.valueChanged.connect(self._handle_input_change)
+        self.nodes_spin.valueChanged.connect(self._handle_input_change)
+        self.mem_spin.valueChanged.connect(self._handle_input_change)
+        self.gpus_spin.valueChanged.connect(self._handle_input_change)
+        self.gpus_per_task_spin.valueChanged.connect(self._handle_input_change)
         
         # Dependencies & Arrays tab
-        self.array_edit.textChanged.connect(self._update_job)
-        self.dependency_edit.textChanged.connect(self._update_job)
+        self.array_group.toggled.connect(self._handle_input_change)
+        self.array_start_spin.valueChanged.connect(self._handle_input_change)
+        self.array_end_spin.valueChanged.connect(self._handle_input_change)
+        self.array_step_spin.valueChanged.connect(self._handle_input_change)
+        self.array_concurrency_spin.valueChanged.connect(self._handle_input_change)
+        self.dep_type_combo.currentTextChanged.connect(self._handle_input_change)
+        self.dep_job_list.itemSelectionChanged.connect(self._handle_input_change)
         
         # Advanced tab
-        self.qos_edit.editTextChanged.connect(self._update_job)
-        self.qos_edit.editTextChanged.connect(self._update_preview)
-        self.nodelist_edit.editTextChanged.connect(self._update_job)
-        self.nodelist_edit.editTextChanged.connect(self._update_preview)
-        self.nice_spin.valueChanged.connect(self._update_job)
-        self.nice_spin.valueChanged.connect(self._update_preview)
-        self.oversubscribe_check.stateChanged.connect(self._update_job)
-        self.oversubscribe_check.stateChanged.connect(self._update_preview)
-        self.optional_sbatch_edit.textChanged.connect(self._update_job)
-        self.optional_sbatch_edit.textChanged.connect(self._update_preview)
+        self.qos_edit.editTextChanged.connect(self._handle_input_change)
+        self.nodelist_edit.editTextChanged.connect(self._handle_input_change)
+        self.nice_spin.valueChanged.connect(self._handle_input_change)
+        self.oversubscribe_check.stateChanged.connect(self._handle_input_change)
+        self.optional_sbatch_edit.textChanged.connect(self._handle_input_change)
         
         # Update preview when switching to preview tab
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
         
+    def _handle_input_change(self, *args):
+        """Called when any input value changes to update the job and preview."""
+        self._update_job()
+        # If the user is currently looking at the preview, refresh it.
+        if self.tab_widget.currentIndex() == 4: # Preview tab index
+            self._update_preview()
+
     def _update_job(self):
-        """Update the job object from UI inputs"""
+        """Update the job object from UI inputs. This method ONLY updates the object."""
         # Basic
         self.job.name = self.name_edit.text() or "my_slurm_job"
         self.job.working_directory = self.working_dir_edit.text() or None
@@ -475,22 +514,62 @@ class JobCreationDialog(QDialog):
         self.job.qos = qos_val if qos_val else None
         nodelist_val = self.nodelist_edit.currentText().strip()
         self.job.nodelist = nodelist_val if nodelist_val else None
-        self.job.array = self.array_edit.text() or None
-        self.job.dependency = self.dependency_edit.text() or None
+        
+        # Job Array
+        if self.array_group.isChecked():
+            start = self.array_start_spin.value()
+            end = self.array_end_spin.value()
+            step = self.array_step_spin.value()
+            limit = self.array_concurrency_spin.value()
+
+            if start > end:
+                self.array_end_spin.setValue(start)
+                end = start
+            
+            array_spec = f"{start}-{end}"
+            
+            if step > 1:
+                array_spec += f":{step}"
+                
+            if limit > 0:
+                array_spec += f"%{limit}"
+                
+            self.job.array = array_spec
+        else:
+            self.job.array = None
+
+        # Job Dependency
+        dep_type = self.dep_type_combo.currentText()
+        is_singleton = (dep_type == 'singleton')
+        self.dep_job_list.setEnabled(not is_singleton)
+
+        if not dep_type:
+            self.job.dependency = None
+        elif is_singleton:
+            self.job.dependency = 'singleton'
+            self.dep_job_list.blockSignals(True)
+            self.dep_job_list.clearSelection()
+            self.dep_job_list.blockSignals(False)
+        else:
+            selected_items = self.dep_job_list.selectedItems()
+            if not selected_items:
+                self.job.dependency = None
+            else:
+                job_ids = [str(item.data(Qt.ItemDataRole.UserRole)) for item in selected_items]
+                self.job.dependency = f"{dep_type}:{':'.join(job_ids)}"
+
         self.job.nice = self.nice_spin.value() if self.nice_spin.value() != 0 else None
         self.job.oversubscribe = self.oversubscribe_check.isChecked()
         self.job.optional_sbatch = self.optional_sbatch_edit.toPlainText() or None
-        # Update preview if on preview tab
-        if self.tab_widget.currentIndex() == 5:  # Preview tab
-            self._update_preview()
-            
+
     def _on_tab_changed(self, index):
         """Handle tab change"""
-        if index == 5:  # Preview tab
+        if index == 4:  # Preview tab is now at index 4
+            self._update_job()
             self._update_preview()
             
     def _update_preview(self):
-        """Update the script preview"""
+        """Update the script preview from the self.job object."""
         script = self.job.create_sbatch_script()
         self.preview_text.setPlainText(script)
         

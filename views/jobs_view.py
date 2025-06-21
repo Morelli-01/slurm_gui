@@ -119,23 +119,7 @@ class JobsTableView(QWidget):
         new_jobs_button = QPushButton(
             "New Job", table)  # Set self as parent
         new_jobs_button.setObjectName(BTN_GREEN)
-        # new_jobs_button.clicked.connect( # Modified to emit new event
-        #     lambda: get_event_bus().emit(
-        #         Events.ADD_JOB,
-        #         {"project_name": table_name,
-        #          "job_data": {
-        #              "id": f"{uuid.uuid4().hex[:8]}", # Generate a unique ID
-        #              "name": "New Job Template",
-        #              "status": "NOT_SUBMITTED",
-        #              "runtime": "0:00",
-        #              "cpu": "1",
-        #              "ram": "1M",
-        #              "gpu": "0",
-        #              "node": "N/A"
-        #          }},
-        #         source="JobsPanelView.JobsTableView"
-        #     )
-        # )
+
         new_jobs_button.clicked.connect(self._create_new_job)
         new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
         new_jobs_button.move(self.width() - new_jobs_button.width() - 20,
