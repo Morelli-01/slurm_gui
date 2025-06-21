@@ -66,7 +66,8 @@ class JobCreationDialog(QDialog):
         
         # Create the job object
         self.job = Job()
-        self.job.id = str(uuid.uuid4())
+        # Generate a short fake ID (8 hex chars)
+        self.job.id = uuid.uuid4().hex[:8].capitalize()
         if project_name:
             self.job.project_name = project_name
             
@@ -648,7 +649,6 @@ class JobCreationDialog(QDialog):
             
         if not self.job.script_commands.strip():
             from widgets.toast_widget import show_warning_toast
-            import os
             show_warning_toast(self, "Validation Error", "Script commands are required")
             self.tab_widget.setCurrentIndex(0)
             self.script_edit.setFocus()

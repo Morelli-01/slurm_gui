@@ -1,12 +1,13 @@
+import uuid
+from functools import partial
+from typing import List
+
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
 from core.style import AppStyles
+from models.project_model import Job, Project
 from utils import script_dir
-from models.project_model import Project, Job
-from typing import List
-import uuid
-
-from widgets.new_job_widget import JobCreationDialog # Import uuid for generating unique IDs
+from widgets.new_job_widget import JobCreationDialog
 
 
 class ActionButtonsWidget(QWidget):
@@ -17,7 +18,7 @@ class ActionButtonsWidget(QWidget):
         self.setObjectName("actionContainer")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4) 
+        layout.setSpacing(4)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.startButton = QPushButton()
@@ -81,15 +82,22 @@ class JobsTableView(QWidget):
         self.stacked_widget.setCurrentWidget(self.placeholder_widget)
         self._apply_stylesheet()
 
-    def _create_new_table(self, table_name = ''):
+    def _create_new_table(self, table_name=""):
         """Creates and configures a new QTableWidget."""
-        headers =  ["Job ID", "Job Name", "Status", "Runtime", "CPU", "RAM", "GPU", "Actions"]
+        headers = [
+            "Job ID",
+            "Job Name",
+            "Status",
+            "Runtime",
+            "CPU",
+            "RAM",
+            "GPU",
+            "Actions",
+        ]
         table = QTableWidget()
         table.setObjectName(table_name)
         table.setColumnCount(8)
-        table.setHorizontalHeaderLabels(
-           headers
-        )
+        table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Stretch
         )
@@ -97,9 +105,10 @@ class JobsTableView(QWidget):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.verticalHeader().setVisible(False)
         table.setAlternatingRowColors(True)
-        table.setSizePolicy(QSizePolicy.Policy.Expanding,
-                           QSizePolicy.Policy.Expanding)
-        
+        table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
         h = table.horizontalHeader()
         h.setStretchLastSection(False)
         for i, head in enumerate(headers):
@@ -107,23 +116,22 @@ class JobsTableView(QWidget):
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
                 table.setColumnWidth(i, 240)  # Reduced width for smaller buttons
             elif head in ["CPU", "GPU", "RAM"]:
-                h.setSectionResizeMode(
-                    i, QHeaderView.ResizeMode.ResizeToContents)
+                h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
                 table.setColumnWidth(i, 70)
             elif head == "Job Name":
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
             else:
-                h.setSectionResizeMode(
-                    i, QHeaderView.ResizeMode.ResizeToContents)
-                
-        new_jobs_button = QPushButton(
-            "New Job", table)  # Set self as parent
+                h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        new_jobs_button = QPushButton("New Job", table)  # Set self as parent
         new_jobs_button.setObjectName(BTN_GREEN)
 
-        new_jobs_button.clicked.connect(self._create_new_job)
+        new_jobs_button.clicked.connect(partial(self._create_new_job, table_name))
         new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
-        new_jobs_button.move(self.width() - new_jobs_button.width() - 20,
-                                  self.height() - new_jobs_button.height() - 20)
+        new_jobs_button.move(
+            self.width() - new_jobs_button.width() - 20,
+            self.height() - new_jobs_button.height() - 20,
+        )
         return table
 
     def _apply_stylesheet(self):
@@ -135,7 +143,7 @@ class JobsTableView(QWidget):
         style += AppStyles.get_job_action_styles()
 
         self.setStyleSheet(style)
-        
+
     def update_projects(self, projects: List[Project]):
         """Synchronizes the tables with the list of projects from the model."""
         current_projects = set(p.name for p in projects)
@@ -143,7 +151,7 @@ class JobsTableView(QWidget):
 
         for project_name in existing_tables - current_projects:
             self.remove_project_table(project_name)
-        
+
         for project in projects:
             if project.name not in self.tables:
                 self.add_project_table(project.name)
@@ -199,16 +207,6 @@ class JobsTableView(QWidget):
         # Use to_table_row if available, else fallback to attributes
         if hasattr(job_data, "to_table_row"):
             row_values = job_data.to_table_row()
-        else:
-            row_values = [
-                getattr(job_data, "id", ""),
-                getattr(job_data, "name", ""),
-                getattr(job_data, "status", ""),
-                getattr(job_data, "runtime", ""),
-                getattr(job_data, "cpu", ""),
-                getattr(job_data, "ram", ""),
-                getattr(job_data, "gpu", ""),
-            ]
 
         for col in range(actions_col):
             val = row_values[col] if col < len(row_values) else ""
@@ -218,11 +216,6 @@ class JobsTableView(QWidget):
             if col == 2:  # Status column
                 if hasattr(self, "_apply_state_color"):
                     self._apply_state_color(item)
-
-            # item.setTextAlignment(
-            #         Qt.AlignmentFlag.AlignVCenter
-            #     )
-
             table.setItem(row_position, col, item)
 
         # Add action buttons
@@ -230,13 +223,13 @@ class JobsTableView(QWidget):
         action_widget._job_status = getattr(job_data, "status", None)
         table.setCellWidget(row_position, actions_col, action_widget)
 
-    def _create_new_job(self):
-        dialog = JobCreationDialog(self) 
+    def _create_new_job(self, project_name):
+        dialog = JobCreationDialog(self, project_name=project_name)
         if dialog.exec():
             new_job_data = dialog.get_job()
             if new_job_data:
-                print("Job created! sbatch script:")
-                print(new_job_data.create_sbatch_script())
-                # Here you would typically emit an event to the controller
-                # to add the job to the model and submit it via the SlurmAPI.
-                # self.event_bus.emit(Events.ADD_JOB, data={'job': new_job_data})
+                get_event_bus().emit(
+                    Events.ADD_JOB,
+                    data={"project_name": project_name, "job_data": new_job_data},
+                    source="JobsTableView",
+                )
