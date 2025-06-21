@@ -14,67 +14,7 @@ from models.project_model import Job
 from utils import settings_path, parse_duration
 
 
-JOB_CODES = {
-    "CD": "COMPLETED",
-    "CG": "COMPLETING",
-    "F": "FAILED",
-    "PD": "PENDING",
-    "PR": "PREEMPTED",
-    "R": "RUNNING",
-    "S": "SUSPENDED",
-    "ST": "STOPPED",
-    "CA": "CANCELLED",
-    "TO": "TIMEOUT",
-    "NF": "NODE_FAIL",
-    "RV": "REVOKED",
-    "SE": "SPECIAL_EXIT",
-    "OOM": "OUT_OF_MEMORY",
-    "BF": "BOOT_FAIL",
-    "DL": "DEADLINE",
-    "OT": "OTHER",
-}
 
-
-class SlurmWorker(QThread):
-    """Worker thread for SLURM operations using Qt signals for thread-safety."""
-
-    # Define signals for thread-safe communication to the main thread.
-    # The 'object' type can carry any Python object (like a dict).
-    data_ready = pyqtSignal(object)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, slurm_api, refresh_interval_seconds=5):
-        super().__init__()
-        self.slurm_api = slurm_api
-        self.refresh_interval = refresh_interval_seconds
-        self._stop_requested = False
-
-    def run(self):
-        """Fetch data and emit signals with the results."""
-        try:
-            if self.slurm_api.connection_status != ConnectionState.CONNECTED:
-                return
-
-            nodes_data = self.slurm_api.fetch_nodes_info()
-            queue_jobs = self.slurm_api.fetch_job_queue()
-
-            # Emit the signal with the fetched data payload
-            self.data_ready.emit({
-                "nodes": nodes_data or [],
-                "jobs": queue_jobs or []
-            })
-
-        except Exception as e:
-            error_message = f"Worker thread error: {e}"
-            print(error_message)
-            # Emit the error signal
-            self.error_occurred.emit(error_message)
-
-    def stop(self):
-        """Stop the worker thread"""
-        self._stop_requested = True
-        self.quit()  # QThread method to quit the event loop
-        # self.wait()  # Wait for the thread to finish cleanly
 
 
 class ConnectionState(Enum):
@@ -467,6 +407,56 @@ class SlurmAPI:
                     sftp.close()
                 except Exception:
                     pass
+    
+    @requires_connection
+    def fetch_job_details_sacct(self, job_ids: List[str]) -> List[Dict[str, Any]]:
+        """Fetch detailed job information using sacct for a list of job IDs."""
+        if not job_ids:
+            return []
+
+        job_id_str = ",".join(job_ids)
+        format_str = "JobID,JobName,State,ExitCode,Start,End,Elapsed,AllocCPUS,ReqMem,MaxRSS,NodeList,Reason,DerivedExitCode"
+        cmd = f"sacct -j {job_id_str} --format={format_str} --parsable2 --noheader"
+
+        out, err = self.run_command(cmd)
+        if err:
+            print(f"Error running sacct: {err}")
+            return []
+
+        job_details = []
+        lines = out.strip().splitlines()
+
+        for line in lines:
+            if '.' in line.split('|')[0]:
+                continue
+            
+            parts = line.strip().split('|')
+            if len(parts) < 13:
+                continue
+
+            try:
+                details = {
+                    "JobID": parts[0],
+                    "JobName": parts[1],
+                    "State": parts[2].strip().split(" ")[0],
+                    "ExitCode": parts[3],
+                    "Start": parts[4],
+                    "End": parts[5],
+                    "Elapsed": parts[6],
+                    "AllocCPUS": parts[7],
+                    "ReqMem": parts[8],
+                    "MaxRSS": parts[9],
+                    "NodeList": parts[10],
+                    "Reason": parts[11],
+                    "DerivedExitCode": parts[12],
+                }
+                job_details.append(details)
+            except IndexError as e:
+                print(f"Error parsing sacct line: '{line}'. Error: {e}")
+                continue
+        
+        return job_details
+    
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")

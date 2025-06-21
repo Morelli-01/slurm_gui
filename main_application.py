@@ -1,3 +1,4 @@
+from core.slurm_worker import SlurmWorker
 from widgets.job_queue_widget import JobQueueWidget
 import re
 from datetime import datetime
@@ -17,7 +18,7 @@ from utils import *
 from core.style import AppStyles
 from core.defaults import *
 from widgets.cluster_status_widget import ClusterStatusWidget
-from core.slurm_api import ConnectionState, SlurmAPI, SlurmWorker
+from core.slurm_api import ConnectionState, SlurmAPI
 from core.event_bus import EventPriority, Events, get_event_bus
 import platform
 from functools import partial, wraps
@@ -131,12 +132,10 @@ class SlurmJobManagerApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
-
         # Initialize SLURM connection
         self.slurm_api = SlurmAPI()
-        self.slurm_worker = SlurmWorker(self.slurm_api)
-        self.slurm_worker.data_ready.connect(self.handle_worker_data)
-        self.slurm_worker.error_occurred.connect(self.handle_worker_error)
+
+
         
         self.setWindowTitle(APP_TITLE)
 
@@ -180,6 +179,9 @@ class SlurmJobManagerApp(QMainWindow):
 
         # Create panels
         self.create_jobs_panel()
+        self.slurm_worker = SlurmWorker(self.slurm_api, self.jobs_panel.model)
+        self.slurm_worker.data_ready.connect(self.handle_worker_data)
+        self.slurm_worker.error_occurred.connect(self.handle_worker_error)
         self.create_cluster_panel()
         self.create_settings_panel()
 
@@ -189,6 +191,7 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.event_bus = get_event_bus()
         self._event_bus_subscription()
+        
 
         # Attempt to connect immediately
         try:
@@ -224,7 +227,8 @@ class SlurmJobManagerApp(QMainWindow):
         self.slurm_worker.wait(1000)
 
         self.slurm_api = SlurmAPI.reset_instance()
-        self.slurm_worker = SlurmWorker(self.slurm_api)
+        self.slurm_worker = SlurmWorker(self.slurm_api, self.jobs_panel.model)
+
         self.slurm_worker.data_ready.connect(self.handle_worker_data)
         self.slurm_worker.error_occurred.connect(self.handle_worker_error)
 
@@ -342,17 +346,19 @@ class SlurmJobManagerApp(QMainWindow):
 
     def update_ui_with_data(self, event):
         """Updates the UI with new data from SLURM."""
-        nodes_data = event.data["nodes"]
-        queue_jobs = event.data["jobs"]
+        nodes_data = event.data.get("nodes")
+        queue_jobs = event.data.get("jobs")
+        job_details = event.data.get("job_details")
 
-        # Update job queue with incremental updates
+        if job_details:
+             self.jobs_panel.controller.model.update_jobs_from_sacct(job_details)
+
         print("Updating job queue...")
-        if hasattr(self, "job_queue_widget"):
+        if hasattr(self, "job_queue_widget") and queue_jobs:
             self.job_queue_widget.update_queue_status(queue_jobs)
 
-        # Update cluster status
         print("Updating cluster status...")
-        if hasattr(self, "cluster_status_overview_widget"):
+        if hasattr(self, "cluster_status_overview_widget") and nodes_data:
             self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
 
     # --- Navigation Bar ---

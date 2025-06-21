@@ -29,6 +29,26 @@ STUDENTS_JOBS_KEYWORD = [
     "ai4bio"
 ]
 
+JOB_CODES = {
+    "CD": "COMPLETED",
+    "CG": "COMPLETING",
+    "F": "FAILED",
+    "PD": "PENDING",
+    "PR": "PREEMPTED",
+    "R": "RUNNING",
+    "S": "SUSPENDED",
+    "ST": "STOPPED",
+    "CA": "CANCELLED",
+    "TO": "TIMEOUT",
+    "NF": "NODE_FAIL",
+    "RV": "REVOKED",
+    "SE": "SPECIAL_EXIT",
+    "OOM": "OUT_OF_MEMORY",
+    "BF": "BOOT_FAIL",
+    "DL": "DEADLINE",
+    "OT": "OTHER",
+}
+
 BTN_GREEN = "btnGreen"
 BTN_RED = "btnRed"
 BTN_BLUE = "btnBlue"
@@ -107,22 +127,4 @@ STATE_COLORS = {
     NOT_SUBMITTED.lower(): COLOR_GRAY,
 }
 
-scroll_bar_stylesheet = """
-            QScrollBar:vertical {
-                border: none;
-                background: #2A2F3A;
-                width: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #5D6167;
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-        """
+

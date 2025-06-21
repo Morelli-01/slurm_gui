@@ -1,10 +1,9 @@
-from ast import Dict
 import copy
 from dataclasses import dataclass, field
-from typing import List, Optional
 import uuid
 from core.event_bus import get_event_bus, Events
 from widgets.toast_widget import show_error_toast, show_success_toast
+from typing import Dict, List, Any, Optional, Set
 
 # In a new file: models/job.py
 import os
@@ -49,6 +48,7 @@ class Job:
     # --- Internal State ---
     id: Optional[str] = None
     status: str = "NOT_SUBMITTED"
+    elapsed: str = "00:00:00"
 
     def create_sbatch_script(self) -> str:
         """
@@ -118,7 +118,7 @@ class Job:
         return os.linesep.join(lines)
 
     def to_table_row(self):
-        return [ self.id, self.name, self.status, "00:00:00", self.cpus_per_task,self.mem, self.gpus if self.gpus != None else "0"]
+        return [ self.id, self.name, self.status, self.elapsed, self.cpus_per_task,self.mem, self.gpus if self.gpus != None else "0"]
 @dataclass
 class Project:
     """Data structure for a project, containing a name and a list of jobs."""
@@ -263,3 +263,42 @@ class JobsModel:
                 self.event_bus.emit(
                     Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                 )
+
+    def get_active_job_ids(self) -> List[str]:
+        """Scans all projects and returns a list of job IDs that are in an active state."""
+        active_ids = []
+        inactive_states = {"NOT_SUBMITTED", "COMPLETED", "FAILED", "CANCELLED", "STOPPED", "TIMEOUT"}
+        for project in self.projects:
+            for job in project.jobs:
+                if job.id and job.id.isdigit() and job.status.upper() not in inactive_states:
+                    active_ids.append(job.id)
+        return list(set(active_ids))
+
+    def update_jobs_from_sacct(self, job_updates: List[Dict[str, Any]]):
+        """Updates job statuses and details from a list of sacct query results."""
+        updated = False
+        for update in job_updates:
+            job_id = update.get("JobID")
+            if not job_id:
+                continue
+            
+            found_job = None
+            for project in self.projects:
+                job = self.get_job_by_id(project.name, job_id)
+                if job:
+                    found_job = job
+                    break
+            
+            if found_job:
+                new_status = update.get("State", found_job.status).upper()
+                new_elapsed = update.get("Elapsed", found_job.elapsed)
+
+                if found_job.status != new_status or found_job.elapsed != new_elapsed:
+                    found_job.status = new_status
+                    found_job.elapsed = new_elapsed
+                    updated = True
+
+        if updated:
+            self.event_bus.emit(
+                Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
+            )
