@@ -192,3 +192,24 @@ class JobsModel:
             )
         else:
             show_error_toast(self, "Error", f"Project '{project_name}' not found.")
+    
+    def get_job_by_id(self, project_name: str, job_id: str) -> Optional[Job]:
+        """Retrieves a job by its ID from a specific project."""
+        project = next((p for p in self.projects if p.name == project_name), None)
+        if project:
+            for job in project.jobs:
+                if job.id == job_id:
+                    return job
+        return None
+
+    def update_job_in_project(self, project_name: str, job_id: str, modified_job_data: Job):
+        """Updates a job in the specified project."""
+        project = next((p for p in self.projects if p.name == project_name), None)
+        if project:
+            for i, job in enumerate(project.jobs):
+                if job.id == job_id:
+                    project.jobs[i] = modified_job_data
+                    self.event_bus.emit(
+                        Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
+                    )
+                    break

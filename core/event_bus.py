@@ -286,6 +286,7 @@ class Events:
     JOB_COMPLETED = "job.completed"
     JOB_FAILED = "job.failed"
     ADD_JOB = "job.add"
+    MODIFY_JOB = "job.modify"
     
     # Data events
     DATA_READY = "cluster_job.data_ready"

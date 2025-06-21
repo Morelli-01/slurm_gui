@@ -2,14 +2,7 @@
 Job Creation Dialog - Simple tabbed interface for creating SLURM jobs
 """
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QFormLayout, QLineEdit, QSpinBox, QTextEdit, QDialogButtonBox,
-    QLabel, QComboBox, QCheckBox, QGroupBox, QPushButton,
-    QFileDialog, QPlainTextEdit, QApplication, QListWidget, QListWidgetItem, QDialog, QScrollArea, QFrame
-)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+
 from models.project_model import Job
 from core.defaults import *
 from core.style import AppStyles
@@ -52,12 +45,19 @@ class ConstraintDialog(QDialog):
 class JobCreationDialog(QDialog):
     """Dialog for creating a new SLURM job with tabbed interface"""
     
-    jobCreated = pyqtSignal(object)  # Emits Job object
-    
-    def __init__(self, parent=None, project_name=None):
+    def __init__(self, parent=None, project_name=None, job_to_modify=None):
         super().__init__(parent)
         self.project_name = project_name
-        self.setWindowTitle("Create New Job")
+        self.job_to_modify = job_to_modify
+        
+        if self.job_to_modify:
+            self.setWindowTitle("Modify Job")
+            self.job = self.job_to_modify
+        else:
+            self.setWindowTitle("Create New Job")
+            self.job = Job()
+            self.job.id = uuid.uuid4().hex[:8].capitalize()
+
         self.setModal(True)
         self.setMinimumSize(700, 600)
         self.slurm_api = SlurmAPI()
@@ -72,9 +72,12 @@ class JobCreationDialog(QDialog):
             self.job.project_name = project_name
             
         self._setup_ui()
+        if self.job_to_modify:
+            self._populate_fields_from_job()
         self._connect_signals()
-        self.account_edit.setCurrentIndex(0)
-        self.partition_edit.setCurrentIndex(0)
+        if not self.job_to_modify:
+            self.account_edit.setCurrentIndex(0)
+            self.partition_edit.setCurrentIndex(0)
         self._update_job()
         self._update_preview()
         
@@ -636,7 +639,45 @@ class JobCreationDialog(QDialog):
     def get_job(self) -> Job:
         """Get the configured job object"""
         return self.job
-        
+    
+    def _populate_fields_from_job(self):
+        """Fills the dialog's fields with the data from the job to modify."""
+        if not self.job_to_modify:
+            return
+
+        job = self.job_to_modify
+
+        # Basic Tab
+        self.name_edit.setText(job.name)
+        self.account_edit.setCurrentText(job.account or "")
+        self.partition_edit.setCurrentText(job.partition or "")
+        self.working_dir_edit.setText(job.working_directory or "")
+        self.venv_edit.setText(job.venv or "")
+        self.script_edit.setPlainText(job.script_commands)
+
+        # Resources Tab
+        self.cpus_spin.setValue(job.cpus_per_task or 1)
+        self.ntasks_spin.setValue(job.ntasks or 1)
+        self.nodes_spin.setValue(int(job.nodes) if str(job.nodes).isdigit() else 1)
+        if job.mem and 'G' in job.mem:
+            self.mem_spin.setValue(int(job.mem.replace('G', '')))
+        else:
+            self.mem_spin.setValue(1) # default
+        self.gpus_spin.setValue(int(job.gpus) if job.gpus and str(job.gpus).isdigit() else 0)
+        self.gpus_per_task_spin.setValue(int(job.gpus_per_task) if job.gpus_per_task and str(job.gpus_per_task).isdigit() else 0)
+
+        # Advanced Tab
+        self.qos_edit.setCurrentText(job.qos or "")
+        if job.nodelist:
+            self.nodelist_edit.setCurrentText(','.join(job.nodelist))
+        self.output_edit.setText(job.output_file or "")
+        self.error_edit.setText(job.error_file or "")
+        self.nice_spin.setValue(job.nice or 0)
+        self.oversubscribe_check.setChecked(job.oversubscribe or False)
+        self.optional_sbatch_edit.setPlainText(job.optional_sbatch or "")
+        if job.constraint:
+            self.job.constraint = job.constraint
+            self._update_constraint_summary()
     def accept(self):
         """Validate and accept the dialog"""
         # Basic validation
@@ -654,6 +695,4 @@ class JobCreationDialog(QDialog):
             self.script_edit.setFocus()
             return
             
-        # Emit signal and close
-        self.jobCreated.emit(self.job)
         super().accept()

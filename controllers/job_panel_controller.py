@@ -21,6 +21,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.ADD_PROJECT, self.model.add_project)
         self.event_bus.subscribe(Events.DEL_PROJECT, self._handle_delete_project)
         self.event_bus.subscribe(Events.PROJECT_SELECTED, self._handle_project_selection)
+        self.event_bus.subscribe(Events.MODIFY_JOB, self._handle_modify_job)
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
@@ -42,6 +43,21 @@ class JobsPanelController:
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.model.remove_project(name)
+    
+    def _handle_modify_job(self, event: Event):
+        """Brings up the job modification dialog."""
+        project_name = event.data["project_name"]
+        job_id = event.data["job_id"]
+        
+        job_to_modify = self.model.get_job_by_id(project_name, job_id)
+        
+        if job_to_modify and job_to_modify.status == "NOT_SUBMITTED":
+            from widgets.new_job_widget import JobCreationDialog
+            dialog = JobCreationDialog(parent=self.view, project_name=project_name, job_to_modify=job_to_modify)
+            if dialog.exec():
+                modified_job = dialog.get_job()
+                if modified_job:
+                    self.model.update_job_in_project(project_name, job_id, modified_job)
 
     def _handle_project_selection(self, event):
         """Update the active project in the model."""

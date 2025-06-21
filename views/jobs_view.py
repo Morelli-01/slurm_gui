@@ -10,11 +10,13 @@ from utils import script_dir
 from widgets.new_job_widget import JobCreationDialog
 
 
+
 class ActionButtonsWidget(QWidget):
     """Widget containing the seven action buttons for a job."""
 
-    def __init__(self, parent=None):
+    def __init__(self, job, parent=None):
         super().__init__(parent)
+        self.job = job
         self.setObjectName("actionContainer")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -55,6 +57,23 @@ class ActionButtonsWidget(QWidget):
         self.terminalButton.setObjectName("actionTerminalBtn")
         self.terminalButton.setToolTip("Open Terminal on Node")
         layout.addWidget(self.terminalButton)
+        
+        self.modifyButton.clicked.connect(self._on_modify_clicked)
+        self._update_button_states()
+
+    def _update_button_states(self):
+        """Enable or disable buttons based on job status."""
+        is_not_submitted = self.job.status == "NOT_SUBMITTED"
+        self.modifyButton.setEnabled(is_not_submitted)
+
+    def _on_modify_clicked(self):
+        """Emit an event to modify the job."""
+        if self.job.status == "NOT_SUBMITTED":
+            get_event_bus().emit(
+                Events.MODIFY_JOB,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
 
 
 class JobsTableView(QWidget):
@@ -219,7 +238,7 @@ class JobsTableView(QWidget):
             table.setItem(row_position, col, item)
 
         # Add action buttons
-        action_widget = ActionButtonsWidget()
+        action_widget = ActionButtonsWidget(job=job_data)
         action_widget._job_status = getattr(job_data, "status", None)
         table.setCellWidget(row_position, actions_col, action_widget)
 
