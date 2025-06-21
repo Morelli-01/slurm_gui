@@ -5,7 +5,8 @@ from typing import List
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
 from core.style import AppStyles
-from main_application import show_warning_toast
+from models.project_model import Job, Project
+from widgets.toast_widget import show_warning_toast
 # from models.project_model import Project
 from utils import script_dir
 from widgets.new_job_widget import JobCreationDialog
