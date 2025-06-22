@@ -12,9 +12,8 @@ from core.defaults import *
 from core.event_bus import Events, get_event_bus
 from models.project_model import Job
 from utils import settings_path, parse_duration
-
-
-
+import tempfile
+import os
 
 
 class ConnectionState(Enum):
@@ -483,6 +482,35 @@ class SlurmAPI:
 
         return stdout, None
     
+    @requires_connection
+    def create_remote_directory(self, remote_path: str):
+        """Creates a directory on the remote server, including parent directories."""
+        if self.remote_path_exists(remote_path):
+            return
+            
+        command = f'mkdir -p "{remote_path}"'
+        stdout, stderr = self.run_command(command)
+        if stderr:
+            raise Exception(f"Failed to create remote directory '{remote_path}': {stderr}")
+
+    @requires_connection
+    def write_remote_file(self, remote_path: str, content: str):
+        """Writes content to a file on the remote server."""
+        sftp = None
+        local_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", encoding='utf-8') as tmp:
+                tmp.write(content)
+                local_path = tmp.name
+
+            sftp = self._client.open_sftp()
+            sftp.put(local_path, remote_path)
+        finally:
+            if sftp:
+                sftp.close()
+            if local_path and os.path.exists(local_path):
+                os.unlink(local_path)
+
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")

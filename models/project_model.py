@@ -2,8 +2,10 @@ import copy
 from dataclasses import dataclass, field
 import uuid
 from core.event_bus import get_event_bus, Events
-from widgets.toast_widget import show_error_toast, show_success_toast
+from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
 from typing import Dict, List, Any, Optional, Set
+import json
+import dataclasses
 
 # In a new file: models/job.py
 import os
@@ -59,6 +61,15 @@ class Job:
                 self.error_file = f"{remote_home}/.slurm_logs/err_%A.log"
             if self.output_file is None:
                 self.output_file = f"{remote_home}/.slurm_logs/out_%A.log"
+
+    def to_dict(self):
+        """Converts the Job object to a dictionary for JSON serialization."""
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Creates a Job instance from a dictionary."""
+        return cls(**data)
     
     def create_sbatch_script(self) -> str:
         """
@@ -136,6 +147,19 @@ class Project:
     name: str
     jobs: List[Job] = field(default_factory=list)
 
+    def to_dict(self):
+        """Converts the Project object to a dictionary for JSON serialization."""
+        return {
+            "name": self.name,
+            "jobs": [job.to_dict() for job in self.jobs]
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """Creates a Project instance from a dictionary."""
+        jobs = [Job.from_dict(job_data) for job_data in data.get("jobs", [])]
+        return cls(name=data["name"], jobs=jobs)
+
     def get_job_stats(self) -> dict:
         """Counts the number of jobs in each status category."""
         stats = {
@@ -152,6 +176,62 @@ class Project:
         return stats
 
 
+class ProjectStorer:
+    """Handles saving and loading of projects to/from a remote JSON file."""
+    REMOTE_PROJECTS_DIR = ".slurm_gui"
+    REMOTE_PROJECTS_FILENAME = "projects.json"
+
+    def __init__(self, slurm_api):
+        self.slurm_api = slurm_api
+        self.remote_file_path = None
+
+    def _get_remote_path(self):
+        if not self.remote_file_path:
+            if not self.slurm_api.remote_home:
+                self.slurm_api.remote_home = self.slurm_api.get_home_directory()
+            if self.slurm_api.remote_home:
+                remote_dir = f"{self.slurm_api.remote_home}/{self.REMOTE_PROJECTS_DIR}"
+                self.remote_file_path = f"{remote_dir}/{self.REMOTE_PROJECTS_FILENAME}"
+        return self.remote_file_path
+
+    def save(self, projects: List[Project]):
+        from core.slurm_api import ConnectionState
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            return
+
+        remote_path = self._get_remote_path()
+        if not remote_path:
+            return
+
+        try:
+            projects_data = [p.to_dict() for p in projects]
+            json_data = json.dumps(projects_data, indent=4)
+            
+            remote_dir = os.path.dirname(remote_path)
+            self.slurm_api.create_remote_directory(remote_dir)
+            self.slurm_api.write_remote_file(remote_path, json_data)
+        except Exception as e:
+            show_error_toast(None, "Save Failed", f"Could not save projects: {e}")
+
+    def load(self) -> List[Project]:
+        from core.slurm_api import ConnectionState
+        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+            return []
+
+        remote_path = self._get_remote_path()
+        if not remote_path:
+            return []
+            
+        content, err = self.slurm_api.read_remote_file(remote_path)
+        if err or not content:
+            return []
+
+        try:
+            projects_data = json.loads(content)
+            return [Project.from_dict(p_data) for p_data in projects_data]
+        except (json.JSONDecodeError, TypeError):
+            return []
+
 class JobsModel:
     """Model to manage projects and jobs."""
 
@@ -159,10 +239,28 @@ class JobsModel:
         self.projects: List[Project] = []
         self.active_project: Optional[Project] = None
         self.event_bus = get_event_bus()
+        self._is_loading = False
+        from core.slurm_api import SlurmAPI
+        self.project_storer = ProjectStorer(SlurmAPI())
         self._event_bus_subscription()
 
     def _event_bus_subscription(self):
         self.event_bus.subscribe(Events.ADD_JOB, self.add_job_to_active_project)
+        # The controller will now handle triggering the load on connection.
+
+    def save_to_remote(self):
+        """Saves the current project list to the remote server."""
+        if not self._is_loading:
+            self.project_storer.save(self.projects)
+
+    def load_from_remote(self):
+        """Loads projects from the remote server and updates the model."""
+        self._is_loading = True
+        self.projects = self.project_storer.load()
+        self.event_bus.emit(Events.PROJECT_LIST_CHANGED, data={"projects": self.projects})
+        self._is_loading = False
+        show_success_toast(None, "Projects Loaded", "Loaded projects from remote.", duration=2000)
+
 
     def add_project(self, event: Dict):
         """Adds a new project and emits an event."""
@@ -173,8 +271,9 @@ class JobsModel:
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
+            self.save_to_remote()
         else:
-            show_error_toast(self, "Error", "Project already exist")
+            show_error_toast(None, "Error", "Project already exist")
 
     def remove_project(self, name: str):
         """Removes a project and emits an event."""
@@ -184,6 +283,7 @@ class JobsModel:
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
+            self.save_to_remote()
 
     def set_active_project(self, name: str):
         """Sets the currently active project and emits an event."""
@@ -201,8 +301,9 @@ class JobsModel:
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
+            self.save_to_remote()
         else:
-            show_error_toast(self, "Error", f"Project '{project_name}' not found.")
+            show_error_toast(None, "Error", f"Project '{project_name}' not found.")
     
     def get_job_by_id(self, project_name: str, job_id: str) -> Optional[Job]:
         """Retrieves a job by its ID from a specific project."""
@@ -223,6 +324,7 @@ class JobsModel:
                     self.event_bus.emit(
                         Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                     )
+                    self.save_to_remote()
                     break
     
     def duplicate_job(self, project_name: str, job_id: str):
@@ -247,6 +349,7 @@ class JobsModel:
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
+            self.save_to_remote()
             show_success_toast(None, "Job Duplicated", f"Created a copy of '{original_job.name}'.", duration=1000)
         else:
             show_error_toast(None, "Error", "Could not find the job or project to duplicate.")
@@ -262,6 +365,7 @@ class JobsModel:
                 self.event_bus.emit(
                     Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                 )
+                self.save_to_remote()
               
     def remove_job_from_project(self, project_name: str, job_id: str):
         """Removes a job from a specific project."""
@@ -273,6 +377,7 @@ class JobsModel:
                 self.event_bus.emit(
                     Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                 )
+                self.save_to_remote()
 
     def get_active_job_ids(self) -> List[str]:
         """Scans all projects and returns a list of job IDs that are in an active state."""
@@ -312,3 +417,4 @@ class JobsModel:
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
+            self.save_to_remote()

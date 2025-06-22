@@ -20,7 +20,7 @@ class JobsPanelController:
         self.event_bus.subscribe(
             Events.PROJECT_LIST_CHANGED, self._on_project_list_changed
         )
-        self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self._shutdown)
+        self.event_bus.subscribe(Events.CONNECTION_STATE_CHANGED, self._handle_connection_change)
         self.event_bus.subscribe(Events.ADD_PROJECT, self.model.add_project)
         self.event_bus.subscribe(Events.DEL_PROJECT, self._handle_delete_project)
         self.event_bus.subscribe(Events.PROJECT_SELECTED, self._handle_project_selection)
@@ -32,6 +32,17 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.OPEN_JOB_TERMINAL, self._handle_open_job_terminal)
         self.event_bus.subscribe(Events.VIEW_LOGS, self._handle_view_logs)
 
+    def _handle_connection_change(self, event: Event):
+        new_state = event.data["new_state"]
+        if new_state == ConnectionState.CONNECTED:
+            self.model.load_from_remote()
+        elif new_state == ConnectionState.DISCONNECTED:
+            self.view.shutdown_ui(is_connected=False)
+        
+        if new_state == ConnectionState.DISCONNECTED:
+            self.view.shutdown_ui(is_connected=False)
+        elif new_state == ConnectionState.CONNECTED:
+            self.view.shutdown_ui(is_connected=True)
 
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""

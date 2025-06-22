@@ -156,6 +156,7 @@ class ActionButtonsWidget(QWidget):
             )
         else:
             show_warning_toast(self, "Warning", "Terminal can only be opened for running jobs.")
+    
     def _on_logs_clicked(self):
         """Emit an event to view the job's logs."""
         get_event_bus().emit(
