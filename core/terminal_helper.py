@@ -292,7 +292,7 @@ class TerminalHelper(QObject):
         
         if connection.command_to_run:
             # Properly quote the command to run to handle spaces and special characters
-            ssh_cmd += f" \"{connection.command_to_run.replace('\"', '\\\"')}\""
+            ssh_cmd += f" \"{connection.command_to_run}\""
             
         return ssh_cmd
     

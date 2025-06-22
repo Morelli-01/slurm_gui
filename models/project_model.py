@@ -125,7 +125,7 @@ class Job:
         lines.append(self.script_commands)
 
         # Join lines with the appropriate separator for the OS
-        return os.linesep.join(lines)
+        return "\n".join(lines)
 
     def to_table_row(self):
         return [ self.id, self.name, self.status, self.elapsed, self.cpus_per_task,self.mem, self.gpus if self.gpus != None else "0"]

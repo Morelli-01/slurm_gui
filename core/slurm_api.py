@@ -42,10 +42,7 @@ def requires_connection(func: Callable) -> Callable:
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        if (
-            not hasattr(self, "connection_status")
-            or self.connection_status != ConnectionState.CONNECTED
-        ):
+        if self.connection_status != ConnectionState.CONNECTED:
             print("SlurmAPI is not connected!")
             return None
         return func(self, *args, **kwargs)
@@ -370,6 +367,8 @@ class SlurmAPI:
 
         return stdout, None
     
+
+
     @requires_connection
     def submit_job(self, job: Job) -> Tuple[Optional[str], Optional[str]]:
         """Creates a temporary script, sbaches it, and returns the job ID or an error."""
@@ -381,7 +380,7 @@ class SlurmAPI:
 
         try:
             # 1. Create a local temporary file
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".sh", encoding='utf-8') as tmp:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".sh", encoding='utf-8', newline='') as tmp:
                 tmp.write(script_content)
                 local_path = tmp.name
 
