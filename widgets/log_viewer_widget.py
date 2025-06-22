@@ -1,4 +1,5 @@
 import os
+import re
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTabWidget, QWidget, QPlainTextEdit, QPushButton, QHBoxLayout, QLabel
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
@@ -92,6 +93,28 @@ class LogViewerDialog(QDialog):
         # Load log files
         self._update_logs()
 
+    def _process_log_for_display(self, content: str) -> str:
+        """
+        Processes log content to correctly render progress bars and carriage returns.
+        """
+        if not content:
+            return ""
+
+        # Remove ANSI escape codes
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        content = ansi_escape.sub('', content)
+
+        # Normalize line endings
+        content = content.replace('\r\n', '\n')
+        
+        lines = content.split('\n')
+        final_lines = []
+        for line in lines:
+            # The last part of a \r-split line is the final visual state.
+            final_lines.append(line.split('\r')[-1])
+            
+        return '\n'.join(final_lines)
+
     def _update_logs(self):
         """Fetches and displays the latest content of the log files."""
         # Update error log
@@ -101,7 +124,8 @@ class LogViewerDialog(QDialog):
             if err:
                 self.error_view.setPlainText(f"Could not load log file:\n{error_path}\n\nError:\n{err}")
             else:
-                self.error_view.setPlainText(content)
+                processed_content = self._process_log_for_display(content)
+                self.error_view.setPlainText(processed_content)
         else:
             self.error_view.setPlainText("Error log path not defined for this job.")
 
@@ -112,7 +136,8 @@ class LogViewerDialog(QDialog):
             if err:
                 self.output_view.setPlainText(f"Could not load log file:\n{output_path}\n\nError:\n{err}")
             else:
-                self.output_view.setPlainText(content)
+                processed_content = self._process_log_for_display(content)
+                self.output_view.setPlainText(processed_content)
         else:
             self.output_view.setPlainText("Output log path not defined for this job.")
 
