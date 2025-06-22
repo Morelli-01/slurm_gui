@@ -4,6 +4,7 @@ from models.project_model import JobsModel
 from views.jobs_panel_view import JobsPanelView
 from core.event_bus import get_event_bus, Events, Event
 from core.slurm_api import *
+from widgets.log_viewer_widget import LogViewerDialog
 from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
 
 
@@ -29,6 +30,7 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.JOB_SUBMITTED, self._handle_submit_job)
         self.event_bus.subscribe(Events.STOP_JOB, self._handle_stop_job)
         self.event_bus.subscribe(Events.OPEN_JOB_TERMINAL, self._handle_open_job_terminal)
+        self.event_bus.subscribe(Events.VIEW_LOGS, self._handle_view_logs)
 
 
     def _on_project_list_changed(self, event: Event):
@@ -145,7 +147,21 @@ class JobsPanelController:
             
         except Exception as e:
             show_error_toast(self.view, "Terminal Error", f"Failed to open terminal: {str(e)}")
+    
+    def _handle_view_logs(self, event: Event):
+        """Handles the request to view job logs."""
+        project_name = event.data["project_name"]
+        job_id = event.data["job_id"]
+        job = self.model.get_job_by_id(project_name, job_id)
 
+        if not job:
+            show_error_toast(self.view, "Error", f"Could not find job with ID {job_id}.")
+            return
+
+        # Create and show the log viewer dialog
+        dialog = LogViewerDialog(job, parent=self.view)
+        dialog.exec()
+        
     def _shutdown(self, event):
         """Handle connection status changes."""
         new_state = event.data["new_state"]

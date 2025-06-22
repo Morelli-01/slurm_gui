@@ -66,6 +66,7 @@ class ActionButtonsWidget(QWidget):
         self.modifyButton.clicked.connect(self._on_modify_clicked)
         self.cancelButton.clicked.connect(self._on_cancel_clicked)
         self.terminalButton.clicked.connect(self._on_terminal_clicked)
+        self.logsButton.clicked.connect(self._on_logs_clicked)
 
         self._update_button_states()
 
@@ -87,7 +88,7 @@ class ActionButtonsWidget(QWidget):
         self.startButton.setEnabled(is_not_submitted)
         self.stopButton.setEnabled(is_active)
         self.cancelButton.setEnabled(can_be_deleted)
-        self.logsButton.setEnabled(has_logs)
+        self.logsButton.setEnabled(True)
         self.duplicateButton.setEnabled(True)  # Always enabled
         self.modifyButton.setEnabled(is_not_submitted)
         self.terminalButton.setEnabled(is_running)
@@ -155,6 +156,13 @@ class ActionButtonsWidget(QWidget):
             )
         else:
             show_warning_toast(self, "Warning", "Terminal can only be opened for running jobs.")
+    def _on_logs_clicked(self):
+        """Emit an event to view the job's logs."""
+        get_event_bus().emit(
+                Events.VIEW_LOGS,
+                data={"project_name": self.job.project_name, "job_id": self.job.id},
+                source="ActionButtonsWidget",
+            )
 
 class JobsTableView(QWidget):
     """

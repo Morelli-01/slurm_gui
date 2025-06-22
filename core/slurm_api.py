@@ -367,8 +367,6 @@ class SlurmAPI:
 
         return stdout, None
     
-
-
     @requires_connection
     def submit_job(self, job: Job) -> Tuple[Optional[str], Optional[str]]:
         """Creates a temporary script, sbaches it, and returns the job ID or an error."""
@@ -469,6 +467,21 @@ class SlurmAPI:
                 continue
         
         return job_details
+    
+    @requires_connection
+    def read_remote_file(self, remote_path: str) -> Tuple[Optional[str], Optional[str]]:
+        """Reads the content of a file on the remote server."""
+        if not remote_path:
+            return None, "Remote path is not specified."
+
+        command = f"cat {remote_path}"
+        stdout, stderr = self.run_command(command)
+
+        if stderr:
+            # Return stderr as the error message, e.g., "No such file or directory"
+            return None, stderr
+
+        return stdout, None
     
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
