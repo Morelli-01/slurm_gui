@@ -184,22 +184,24 @@ class ProjectStorer:
     REMOTE_PROJECTS_DIR = ".slurm_gui"
     REMOTE_PROJECTS_FILENAME = "projects.json"
 
-    def __init__(self, slurm_api):
-        self.slurm_api = slurm_api
+    def __init__(self):
         self.remote_file_path = None
 
     def _get_remote_path(self):
+        from core.slurm_api import SlurmAPI
+        slurm_api = SlurmAPI()
         if not self.remote_file_path:
-            if not self.slurm_api.remote_home:
-                self.slurm_api.remote_home = self.slurm_api.get_home_directory()
-            if self.slurm_api.remote_home:
-                remote_dir = f"{self.slurm_api.remote_home}/{self.REMOTE_PROJECTS_DIR}"
+            if not slurm_api.remote_home:
+                slurm_api.remote_home = slurm_api.get_home_directory()
+            if slurm_api.remote_home:
+                remote_dir = f"{slurm_api.remote_home}/{self.REMOTE_PROJECTS_DIR}"
                 self.remote_file_path = f"{remote_dir}/{self.REMOTE_PROJECTS_FILENAME}"
         return self.remote_file_path
 
     def save(self, projects: List[Project]):
-        from core.slurm_api import ConnectionState
-        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+        from core.slurm_api import ConnectionState, SlurmAPI
+        slurm_api = SlurmAPI()
+        if slurm_api.connection_status != ConnectionState.CONNECTED:
             return
 
         remote_path = self._get_remote_path()
@@ -211,21 +213,22 @@ class ProjectStorer:
             json_data = json.dumps(projects_data, indent=4)
             
             remote_dir = os.path.dirname(remote_path)
-            self.slurm_api.create_remote_directory(remote_dir)
-            self.slurm_api.write_remote_file(remote_path, json_data)
+            slurm_api.create_remote_directory(remote_dir)
+            slurm_api.write_remote_file(remote_path, json_data)
         except Exception as e:
             show_error_toast(None, "Save Failed", f"Could not save projects: {e}")
 
     def load(self) -> List[Project]:
-        from core.slurm_api import ConnectionState
-        if self.slurm_api.connection_status != ConnectionState.CONNECTED:
+        from core.slurm_api import ConnectionState, SlurmAPI
+        slurm_api = SlurmAPI()
+        if slurm_api.connection_status != ConnectionState.CONNECTED:
             return []
 
         remote_path = self._get_remote_path()
         if not remote_path:
             return []
             
-        content, err = self.slurm_api.read_remote_file(remote_path)
+        content, err = slurm_api.read_remote_file(remote_path)
         if err or not content:
             return []
 
@@ -243,8 +246,7 @@ class JobsModel:
         self.active_project: Optional[Project] = None
         self.event_bus = get_event_bus()
         self._is_loading = False
-        from core.slurm_api import SlurmAPI
-        self.project_storer = ProjectStorer(SlurmAPI())
+        self.project_storer = ProjectStorer()
         self._event_bus_subscription()
 
     def _event_bus_subscription(self):
@@ -429,3 +431,4 @@ class JobsModel:
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
             self.save_to_remote()
+
