@@ -175,7 +175,6 @@ class Project:
                 stats[job.status] += 1
         return stats
 
-
 class ProjectStorer:
     """Handles saving and loading of projects to/from a remote JSON file."""
     REMOTE_PROJECTS_DIR = ".slurm_gui"

@@ -231,14 +231,14 @@ class JobsTableView(QWidget):
             else:
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
-        new_jobs_button = QPushButton("New Job", table)  # Set self as parent
-        new_jobs_button.setObjectName(BTN_GREEN)
+        self.new_jobs_button = QPushButton("New Job", table)  # Set self as parent
+        self.new_jobs_button.setObjectName(BTN_GREEN)
 
-        new_jobs_button.clicked.connect(partial(self._create_new_job, table_name))
-        new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
-        new_jobs_button.move(
-            self.width() - new_jobs_button.width() - 20,
-            self.height() - new_jobs_button.height() - 20,
+        self.new_jobs_button.clicked.connect(partial(self._create_new_job, table_name))
+        self.new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
+        self.new_jobs_button.move(
+            self.width() - self.new_jobs_button.width() - 20,
+            self.height() - self.new_jobs_button.height() - 20,
         )
         return table
 
@@ -330,6 +330,15 @@ class JobsTableView(QWidget):
         action_widget = ActionButtonsWidget(job=job_data)
         action_widget._job_status = getattr(job_data, "status", None)
         table.setCellWidget(row_position, actions_col, action_widget)
+    
+    def resizeEvent(self, event):
+        """Override resize event to reposition the button."""
+        super().resizeEvent(event)
+        # Position the button in the bottom-right corner of the visible area (viewport)
+        self.new_jobs_button.move(
+            self.width() - self.new_jobs_button.width() - 20,
+            self.height() - self.new_jobs_button.height() - 20
+        )
 
     def _create_new_job(self, project_name):
         dialog = JobCreationDialog(self, project_name=project_name)
