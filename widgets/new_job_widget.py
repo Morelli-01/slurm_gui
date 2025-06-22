@@ -386,6 +386,11 @@ class JobCreationDialog(QDialog):
         self.oversubscribe_check.setChecked(self.job.oversubscribe)
         layout.addRow(self.oversubscribe_check)
         
+        # Discord Notifications
+        self.discord_notify_check = QCheckBox("Enable Discord Notifications")
+        self.discord_notify_check.setChecked(self.job.discord_notifications)
+        layout.addRow(self.discord_notify_check)
+        
         # Optional sbatch options
         layout.addRow(QLabel("Additional SBATCH Options:"))
         self.optional_sbatch_edit = QTextEdit()
@@ -480,6 +485,7 @@ class JobCreationDialog(QDialog):
         self.nodelist_edit.editTextChanged.connect(self._handle_input_change)
         self.nice_spin.valueChanged.connect(self._handle_input_change)
         self.oversubscribe_check.stateChanged.connect(self._handle_input_change)
+        self.discord_notify_check.stateChanged.connect(self._handle_input_change)
         self.optional_sbatch_edit.textChanged.connect(self._handle_input_change)
         
         # Update preview when switching to preview tab
@@ -562,6 +568,7 @@ class JobCreationDialog(QDialog):
 
         self.job.nice = self.nice_spin.value() if self.nice_spin.value() != 0 else None
         self.job.oversubscribe = self.oversubscribe_check.isChecked()
+        self.job.discord_notifications = self.discord_notify_check.isChecked()
         self.job.optional_sbatch = self.optional_sbatch_edit.toPlainText() or None
 
     def _on_tab_changed(self, index):
@@ -672,6 +679,7 @@ class JobCreationDialog(QDialog):
         self.error_edit.setText(job.error_file or "")
         self.nice_spin.setValue(job.nice or 0)
         self.oversubscribe_check.setChecked(job.oversubscribe or False)
+        self.discord_notify_check.setChecked(job.discord_notifications or False)
         self.optional_sbatch_edit.setPlainText(job.optional_sbatch or "")
         if job.constraint:
             self.job.constraint = job.constraint

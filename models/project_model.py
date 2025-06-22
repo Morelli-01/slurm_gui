@@ -46,6 +46,7 @@ class Job:
     project_name: Optional[str] = None  # To link the job to a project in the GUI
     optional_sbatch: Optional[str] = None
     script_commands: str = "echo 'Hello from SLURM!'"
+    discord_notifications: bool = False
 
     # --- Internal State ---
     id: Optional[str] = None
@@ -126,6 +127,58 @@ class Job:
             lines.append(self.optional_sbatch)
 
         lines.append("")  # Blank line before commands
+
+        if self.discord_notifications:
+            from models.settings_model import SettingsModel
+            settings = SettingsModel()
+            webhook_url = settings._notification_settings.get('discord_webhook_url')
+            if settings._notification_settings.get('discord_enabled') and webhook_url:
+                lines.append("# --- Discord Notifications ---")
+                lines.append(f'DISCORD_WEBHOOK_URL="{webhook_url}"')
+                discord_script = '''
+_CANCELLED=0
+function send_discord_notification() {
+    local status_message="$1"
+    local color_code="$2"
+    local job_name="${SLURM_JOB_NAME}"
+    local job_id="${SLURM_JOB_ID}"
+    local timestamp=$(date --iso-8601=seconds)
+    local exit_code_info=""
+    if [ ! -z "$3" ]; then
+      exit_code_info=$(printf '{"name": "Exit Code", "value": "%s", "inline": true},' "$3")
+    fi
+
+    local json_payload
+    json_payload=$(printf '{"embeds": [{"title": "Job Status: %s", "color": %s, "fields": [%s{"name": "Job Name", "value": "%s", "inline": true}, {"name": "Job ID", "value": "%s", "inline": true}], "timestamp": "%s", "footer": {"text": "SlurmAIO"}}]}' "$status_message" "$color_code" "$exit_code_info" "$job_name" "$job_id" "$timestamp")
+    
+    curl -H "Content-Type: application/json" -X POST -d "$json_payload" "$DISCORD_WEBHOOK_URL" --silent --fail-with-body &>/dev/null &
+}
+
+function handle_cancel() {
+    _CANCELLED=1
+    send_discord_notification "🛑 CANCELLED / TIMEOUT" "8421504"
+}
+trap handle_cancel SIGTERM
+
+function handle_exit() {
+    local exit_code=$?
+    if [ $_CANCELLED -eq 1 ]; then
+        exit $exit_code
+    fi
+
+    if [ $exit_code -eq 0 ]; then
+        send_discord_notification "✅ COMPLETED" "65280"
+    else
+        send_discord_notification "❌ FAILED" "16711680" "$exit_code"
+    fi
+}
+trap handle_exit EXIT
+
+send_discord_notification "🚀 STARTED" "3447003"
+'''
+                lines.append(discord_script)
+
+
         lines.append("# --- Your commands start here ---")
 
         # Add setup for virtual environment if specified
@@ -431,4 +484,3 @@ class JobsModel:
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
             self.save_to_remote()
-
