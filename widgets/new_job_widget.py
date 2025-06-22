@@ -8,6 +8,7 @@ from core.defaults import *
 from core.style import AppStyles
 from core.slurm_api import ConnectionState, SlurmAPI
 import uuid
+import copy
 
 from widgets.remote_directory_widget import RemoteDirectoryDialog
 from widgets.toast_widget import show_warning_toast
@@ -45,17 +46,22 @@ class ConstraintDialog(QDialog):
 class JobCreationDialog(QDialog):
     """Dialog for creating a new SLURM job with tabbed interface"""
     
-    def __init__(self, parent=None, project_name=None, job_to_modify=None):
+    def __init__(self, parent=None, project_name=None, job_to_modify=None, cached_job=None):
         super().__init__(parent)
         self.project_name = project_name
         self.job_to_modify = job_to_modify
         
-        if self.job_to_modify:
+        if job_to_modify:
             self.setWindowTitle("Modify Job")
-            self.job = self.job_to_modify
+            self.job = job_to_modify
         else:
             self.setWindowTitle("Create New Job")
-            self.job = Job()
+            if cached_job:
+                self.job = copy.deepcopy(cached_job)
+                self.job.name = f"{self.job.name}_new"
+                self.job.dependency = None
+            else:
+                self.job = Job()
             self.job.id = uuid.uuid4().hex[:8].capitalize()
 
         self.setModal(True)
@@ -63,17 +69,9 @@ class JobCreationDialog(QDialog):
         self.slurm_api = SlurmAPI()
         # Apply dark theme
         self.setStyleSheet(AppStyles.get_complete_stylesheet(THEME_DARK))
-        
-        # Create the job object
-        self.job = Job()
-        # Generate a short fake ID (8 hex chars)
-        self.job.id = uuid.uuid4().hex[:8].capitalize()
-        if project_name:
-            self.job.project_name = project_name
             
         self._setup_ui()
-        if self.job_to_modify:
-            self._populate_fields_from_job()
+        self._populate_fields_from_job()
         self._connect_signals()
         if not self.job_to_modify:
             self.account_edit.setCurrentIndex(0)
@@ -88,7 +86,7 @@ class JobCreationDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title_label = QLabel("Create New SLURM Job")
+        title_label = QLabel(self.windowTitle())
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title_label)
         
@@ -497,7 +495,7 @@ class JobCreationDialog(QDialog):
     def _update_job(self):
         """Update the job object from UI inputs. This method ONLY updates the object."""
         # Basic
-        self.job.name = self.name_edit.text() or "my_slurm_job"
+        self.job.name = self.name_edit.text() or "new_job"
         self.job.working_directory = self.working_dir_edit.text() or None
         self.job.venv = self.venv_edit.text() or None
         self.job.script_commands = self.script_edit.toPlainText()
@@ -641,11 +639,8 @@ class JobCreationDialog(QDialog):
         return self.job
     
     def _populate_fields_from_job(self):
-        """Fills the dialog's fields with the data from the job to modify."""
-        if not self.job_to_modify:
-            return
-
-        job = self.job_to_modify
+        """Fills the dialog's fields with the data from self.job."""
+        job = self.job
 
         # Basic Tab
         self.name_edit.setText(job.name)
@@ -668,8 +663,11 @@ class JobCreationDialog(QDialog):
 
         # Advanced Tab
         self.qos_edit.setCurrentText(job.qos or "")
-        if job.nodelist:
+        if job.nodelist and isinstance(job.nodelist, list):
             self.nodelist_edit.setCurrentText(','.join(job.nodelist))
+        elif job.nodelist:
+             self.nodelist_edit.setCurrentText(job.nodelist)
+
         self.output_edit.setText(job.output_file or "")
         self.error_edit.setText(job.error_file or "")
         self.nice_spin.setValue(job.nice or 0)
@@ -678,6 +676,7 @@ class JobCreationDialog(QDialog):
         if job.constraint:
             self.job.constraint = job.constraint
             self._update_constraint_summary()
+
     def accept(self):
         """Validate and accept the dialog"""
         # Basic validation

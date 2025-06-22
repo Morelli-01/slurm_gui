@@ -21,7 +21,7 @@ class Job:
     """
 
     # --- sbatch Options ---
-    name: str = "my_slurm_job"
+    name: str = "new_job"
     account: Optional[str] = None
     array: Optional[str] = None
     working_directory: Optional[str] = None
@@ -146,19 +146,23 @@ class Project:
 
     name: str
     jobs: List[Job] = field(default_factory=list)
+    cached_job: Optional[Job] = None
 
     def to_dict(self):
         """Converts the Project object to a dictionary for JSON serialization."""
         return {
             "name": self.name,
-            "jobs": [job.to_dict() for job in self.jobs]
+            "jobs": [job.to_dict() for job in self.jobs],
+            "cached_job": self.cached_job.to_dict() if self.cached_job else None
         }
 
     @classmethod
     def from_dict(cls, data: dict):
         """Creates a Project instance from a dictionary."""
         jobs = [Job.from_dict(job_data) for job_data in data.get("jobs", [])]
-        return cls(name=data["name"], jobs=jobs)
+        cached_job_data = data.get("cached_job")
+        cached_job = Job.from_dict(cached_job_data) if cached_job_data else None
+        return cls(name=data["name"], jobs=jobs, cached_job=cached_job)
 
     def get_job_stats(self) -> dict:
         """Counts the number of jobs in each status category."""
@@ -297,6 +301,10 @@ class JobsModel:
         if project:
             job_to_add.project_name = project.name
             project.jobs.append(job_to_add)
+            project.cached_job = copy.deepcopy(job_to_add)
+            project.cached_job.id = None
+            project.cached_job.status = "NOT_SUBMITTED"
+            project.cached_job.dependency = None
             self.event_bus.emit(
                 Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
             )
@@ -320,6 +328,10 @@ class JobsModel:
             for i, job in enumerate(project.jobs):
                 if job.id == job_id:
                     project.jobs[i] = modified_job_data
+                    project.cached_job = copy.deepcopy(modified_job_data)
+                    project.cached_job.id = None
+                    project.cached_job.status = "NOT_SUBMITTED"
+                    project.cached_job.dependency = None
                     self.event_bus.emit(
                         Events.PROJECT_LIST_CHANGED, data={"projects": self.projects}
                     )

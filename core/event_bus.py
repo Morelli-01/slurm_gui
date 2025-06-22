@@ -292,6 +292,7 @@ class Events:
     STOP_JOB = "job.stop"
     OPEN_JOB_TERMINAL = "job.open_terminal"
     VIEW_LOGS = "job.view_logs"
+    CREATE_JOB_DIALOG_REQUESTED = "job.create_dialog_requested"
 
     # Data events
     DATA_READY = "cluster_job.data_ready"
@@ -312,4 +313,3 @@ class Events:
     NOTIF_SAVE_REQ = "settings.view.notification_changed"
     DISCORD_TEST_REQ = "settings.view.discord_test_btn"
     
-     

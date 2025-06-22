@@ -6,7 +6,8 @@ from core.event_bus import get_event_bus, Events, Event
 from core.slurm_api import *
 from widgets.log_viewer_widget import LogViewerDialog
 from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
-
+from widgets.new_job_widget import JobCreationDialog
+import copy
 
 class JobsPanelController:
     def __init__(self, model: JobsModel, view: JobsPanelView):
@@ -31,6 +32,29 @@ class JobsPanelController:
         self.event_bus.subscribe(Events.STOP_JOB, self._handle_stop_job)
         self.event_bus.subscribe(Events.OPEN_JOB_TERMINAL, self._handle_open_job_terminal)
         self.event_bus.subscribe(Events.VIEW_LOGS, self._handle_view_logs)
+        self.event_bus.subscribe(Events.CREATE_JOB_DIALOG_REQUESTED, self._handle_create_job_dialog_request)
+
+    def _handle_create_job_dialog_request(self, event: Event):
+        """Handles the request to open the new job dialog."""
+        project_name = event.data["project_name"]
+        project = next((p for p in self.model.projects if p.name == project_name), None)
+        
+        cached_job = project.cached_job if project else None
+        
+        dialog = JobCreationDialog(
+            parent=self.view, 
+            project_name=project_name, 
+            cached_job=cached_job
+        )
+        
+        if dialog.exec():
+            new_job_data = dialog.get_job()
+            if new_job_data:
+                self.event_bus.emit(
+                    Events.ADD_JOB,
+                    data={"project_name": project_name, "job_data": new_job_data},
+                    source="JobsPanelController",
+                )
 
     def _handle_connection_change(self, event: Event):
         new_state = event.data["new_state"]
@@ -73,7 +97,6 @@ class JobsPanelController:
         job_to_modify = self.model.get_job_by_id(project_name, job_id)
         
         if job_to_modify and job_to_modify.status == "NOT_SUBMITTED":
-            from widgets.new_job_widget import JobCreationDialog
             dialog = JobCreationDialog(parent=self.view, project_name=project_name, job_to_modify=job_to_modify)
             if dialog.exec():
                 modified_job = dialog.get_job()

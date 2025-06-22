@@ -341,12 +341,9 @@ class JobsTableView(QWidget):
         )
 
     def _create_new_job(self, project_name):
-        dialog = JobCreationDialog(self, project_name=project_name)
-        if dialog.exec():
-            new_job_data = dialog.get_job()
-            if new_job_data:
-                get_event_bus().emit(
-                    Events.ADD_JOB,
-                    data={"project_name": project_name, "job_data": new_job_data},
-                    source="JobsTableView",
-                )
+        get_event_bus().emit(
+            Events.CREATE_JOB_DIALOG_REQUESTED,
+            data={"project_name": project_name},
+            source="JobsTableView",
+        )
+
