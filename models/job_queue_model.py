@@ -11,7 +11,7 @@ class JobQueueTableModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._jobs: List[Dict[str, Any]] = []
-        self._headers: List[str] = []
+        self._headers: List[str] = JOB_QUEUE_FIELDS
         self._displayable_fields: Dict[str, bool] = {}
 
     def rowCount(self, parent=None) -> int:
@@ -66,7 +66,7 @@ class JobQueueTableModel(QAbstractTableModel):
         """Sets which columns are available and visible."""
         self.beginResetModel()
         self._displayable_fields = fields
-        self._headers = [field for field, is_visible in fields.items() if is_visible]
+        # This model is no longer responsible for headers based on visibility
         self.endResetModel()
 
 
@@ -101,4 +101,3 @@ class JobQueueModel:
         self.visible_fields = [
             field for field in JOB_QUEUE_FIELDS if self.displayable_fields.get(field, False)
         ]
-

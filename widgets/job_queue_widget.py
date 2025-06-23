@@ -20,16 +20,23 @@ class JobQueueWidget(QGroupBox):
     def _event_bus_subscription(self):
         get_event_bus().subscribe(
             Events.DISPLAY_SAVE_REQ,
-            callback=lambda event: self.controller.model.load_settings() or self.controller.view.setup_columns(
-                self.controller.model.displayable_fields,
-                self.controller.model.visible_fields
-            ),
+            callback=self._handle_display_settings_change,
             priority=EventPriority.LOW
         )
         get_event_bus().subscribe(
             Events.CONNECTION_STATE_CHANGED,
             self.controller._shutdown
         )
+
+    def _handle_display_settings_change(self, event):
+        """
+        Handles the event fired when display settings are saved.
+        It reloads the settings in the model and instructs the view to update its columns.
+        """
+        # 1. Reload the settings in the settings_model
+        self.controller.settings_model.load_settings()
+        # 2. Update the view's columns based on the newly loaded settings
+        self.controller.view.setup_columns(self.controller.settings_model.displayable_fields)
 
     # Public API - proxy to controller/view
     def update_queue_status(self, jobs_data):
@@ -46,12 +53,10 @@ class JobQueueWidget(QGroupBox):
         self.controller.filter_table_by_user(keywords, negative=negative)
 
     def filter_table(self, kw: str):
-        if not isinstance(kw, list):
-            kw = [kw]
-        self.controller.view.filter_rows(kw)
+        self.controller.filter_table(kw)
 
     def show_all_rows(self):
-        self.controller.view.filter_rows([], 0)
+        self.controller.filter_table("")
 
     # If you need to access the view for layout, do it from outside this widget:
     @property

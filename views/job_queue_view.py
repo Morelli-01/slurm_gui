@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QTableView
 from core.defaults import *
 from PyQt6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt
 import traceback
+from typing import Dict
 
 
 class JobQueueView(QTableView):  # Changed from QWidget
@@ -97,14 +98,18 @@ class JobQueueView(QTableView):  # Changed from QWidget
         if current_index.isValid():
             self.selectColumn(current_index.column())
 
-    def setup_columns(self, model: QAbstractTableModel):
+    def setup_columns(self, displayable_fields: Dict[str, bool]):
         """Hides or shows columns based on settings."""
-        for i in range(model.columnCount()):
-             header_name = model.headerData(i, Qt.Orientation.Horizontal)
-             if header_name == "Job Name":
-                self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-             else:
-                self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        source_model = self.model().sourceModel()
+        for i in range(source_model.columnCount()):
+             header_name = source_model.headerData(i, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+             is_visible = displayable_fields.get(header_name, True)
+             self.setColumnHidden(i, not is_visible)
+             if is_visible:
+                 if header_name == "Job Name":
+                    self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+                 else:
+                    self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
 
     def shutdown_ui(self, is_connected=False):
