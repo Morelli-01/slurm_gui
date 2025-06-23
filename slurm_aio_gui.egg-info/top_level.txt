@@ -1,7 +1,0 @@
-controllers
-core
-main_application
-models
-utils
-views
-widgets

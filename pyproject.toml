@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slurm-aio-gui"
-version = "0.1.2"
+version = "0.1.5"
 authors = [{ name = "Morelli-01", email = "nicolamorelli30008@gmail.com" }]
 description = "A modern, cross-platform GUI for managing and monitoring SLURM clusters."
 readme = "README.md"
@@ -46,12 +46,12 @@ dependencies = [
 
 # This part tells setuptools how to find your packages and entry point
 [tool.setuptools]
-packages = ["controllers", "core", "models", "views", "widgets"]
+packages = ["controllers", "core", "models", "views", "widgets", "src_static"]
 py-modules = ["utils", "main_application"]
 
 [tool.setuptools.package-data]
 "core" = ["py.typed"]
-"src_static" = ["*.*", "*.svg"]
+"src_static" = ["*.*", "*.svg", "*.ini", "*.txt", "*.png"]
 
 [project.gui-scripts]
-slurm-aio = "main_application:main"
+slurm-aio-gui = "main_application:main"
