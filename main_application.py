@@ -135,8 +135,6 @@ class SlurmJobManagerApp(QMainWindow):
         # Initialize SLURM connection
         self.slurm_api = SlurmAPI()
 
-
-        
         self.setWindowTitle(APP_TITLE)
 
         # Set window size - Qt 6 handles DPI scaling automatically
@@ -191,7 +189,6 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.event_bus = get_event_bus()
         self._event_bus_subscription()
-        
 
         # Attempt to connect immediately
         try:
@@ -255,12 +252,18 @@ class SlurmJobManagerApp(QMainWindow):
         It then emits an event on the event bus, which will now be processed
         synchronously and safely in the main GUI thread.
         """
-        self.event_bus.emit(Events.DATA_READY, data=data_dict, source="SlurmJobManagerApp")
+        self.event_bus.emit(
+            Events.DATA_READY, data=data_dict, source="SlurmJobManagerApp"
+        )
 
     def handle_worker_error(self, error_message):
         """This slot receives error messages from the SlurmWorker thread safely."""
         show_error_toast(self, "Worker Thread Error", error_message)
-        self.event_bus.emit(Events.ERROR_OCCURRED, data={"error": error_message}, source="SlurmJobManagerApp")
+        self.event_bus.emit(
+            Events.ERROR_OCCURRED,
+            data={"error": error_message},
+            source="SlurmJobManagerApp",
+        )
 
     def set_connection_status(self, event_data):
         """connection status handling"""
@@ -351,7 +354,7 @@ class SlurmJobManagerApp(QMainWindow):
         job_details = event.data.get("job_details")
 
         if job_details:
-             self.jobs_panel.controller.model.update_jobs_from_sacct(job_details)
+            self.jobs_panel.controller.model.update_jobs_from_sacct(job_details)
 
         print("Updating job queue...")
         if hasattr(self, "job_queue_widget") and queue_jobs:
@@ -455,11 +458,15 @@ class SlurmJobManagerApp(QMainWindow):
             return
 
         try:
-            
+
             helper = TerminalHelper()
-            connection = SSHConnectionDetails(self.slurm_api._config.host, self.slurm_api._config.username, self.slurm_api._config.password)
+            connection = SSHConnectionDetails(
+                self.slurm_api._config.host,
+                self.slurm_api._config.username,
+                self.slurm_api._config.password,
+            )
             helper.open_ssh_terminal(connection, parent_widget=self)
-            
+
         except Exception as e:
             show_error_toast(
                 self, "Terminal Error", f"Failed to open terminal: {str(e)}"
@@ -469,7 +476,7 @@ class SlurmJobManagerApp(QMainWindow):
 
     def create_jobs_panel(self):
         """Creates the main panel for submitting and viewing jobs."""
-        self.jobs_panel = JobsPanelWidget() # <-- Changed this line
+        self.jobs_panel = JobsPanelWidget()  # <-- Changed this line
         self.stacked_widget.addWidget(self.jobs_panel)
 
     def create_cluster_panel(self):
@@ -641,6 +648,7 @@ class SlurmJobManagerApp(QMainWindow):
 
 # --- Main Execution ---
 
+
 def main():
     if "linux" in platform.system().lower():
         if os.environ.get("XDG_SESSION_TYPE") != "wayland":
@@ -793,5 +801,6 @@ def main():
         window.show()
         sys.exit(app.exec())
 
+
 if __name__ == "__main__":
-    main()  
+    main()

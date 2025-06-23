@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: slurm-aio-gui
-Version: 0.1.1
+Version: 0.1.2
 Summary: A modern, cross-platform GUI for managing and monitoring SLURM clusters.
 Author-email: Morelli-01 <nicolamorelli30008@gmail.com>
 License: MIT License
