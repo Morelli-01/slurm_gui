@@ -18,7 +18,9 @@ A modern, cross-platform GUI for managing and monitoring SLURM clusters, designe
 
 *Visualization of the cluster status and the jobs panel.*
 
-![Cluster Status and Jobs Panel](https://via.placeholder.com/1200x700.png?text=Visualization+of+Cluster+Status+and+Jobs+Panel)
+![Cluster Status Panel]()
+
+![Jobs Panel]()
 
 ## 🚀 Getting Started
 
