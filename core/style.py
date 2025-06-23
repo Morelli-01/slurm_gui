@@ -774,8 +774,9 @@ class AppStyles:
     
     @classmethod
     def get_job_queue_style(self):
+        # --- MODIFICATION: Style QTableView to look like the old QTableWidget ---
         return f"""
-            QGroupBox {{
+            JobQueueWidget QGroupBox {{
                 border: 2px solid {COLOR_DARK_BORDER};
                 border-radius: 8px;
                 margin-top: 10px;
@@ -783,7 +784,7 @@ class AppStyles:
                 font-weight: bold;
                 color: {COLOR_DARK_FG};
             }}
-            QGroupBox::title {{
+            JobQueueWidget QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 0 3px;
@@ -791,32 +792,34 @@ class AppStyles:
                 color: {COLOR_DARK_FG};
                 margin-left: 5px;
             }}
-            QTableWidget {{
+            JobQueueWidget QTableView {{
                 background-color: {COLOR_DARK_BG};
                 color: {COLOR_DARK_FG};
                 selection-background-color: {COLOR_DARK_BG_HOVER};
-                selection-color: {COLOR_DARK_FG};
+                selection-color: {COLOR_GREEN};
                 border: 1px solid {COLOR_DARK_BORDER};
-                border-radius: 5px;
-                gridline-color: {COLOR_DARK_BORDER};
-                font-size: 16px;
+                border-radius: 8px;
+                gridline-color: transparent; /* Hide grid lines for a cleaner look */
+                font-size: 14px;
+                alternate-background-color: {COLOR_DARK_BG_ALT}; /* For row separation */
             }}
-            QHeaderView::section {{
+            JobQueueWidget QHeaderView::section {{
                 background-color: {COLOR_DARK_BG_ALT};
                 color: {COLOR_DARK_FG};
-                padding: 5px;
-                border: 1px solid {COLOR_DARK_BORDER};
+                padding: 8px;
+                border: none;
                 border-bottom: 2px solid {COLOR_BLUE};
                 font-weight: bold;
             }}
-            QTableWidget::item {{
-                padding: 5px;
+            JobQueueWidget QTableView::item {{
+                padding: 8px; /* Give cells more vertical space */
+                border-style: none; /* No borders around individual cells */
+                font-weight: bold;
             }}
-            QTableWidget::item:selected {{
+            JobQueueWidget QTableView::item:selected {{
                 background-color: {COLOR_DARK_BG_HOVER};
-                color: {COLOR_DARK_FG};
+                color: {COLOR_BLUE}; /* Highlight selected text */
             }}
-
         """
 
     @classmethod

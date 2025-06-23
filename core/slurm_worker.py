@@ -39,24 +39,39 @@ class SlurmWorker(QThread):
         self._stop_requested = False
 
     def run(self):
-        """Fetch data and emit signals with the results."""
+        """Fetch data, pre-process it, and emit signals with the results."""
         try:
             if self.slurm_api.connection_status != ConnectionState.CONNECTED:
                 return
 
             nodes_data = self.slurm_api.fetch_nodes_info()
-            queue_jobs = self.slurm_api.fetch_job_queue()
+            queue_jobs = self.slurm_api.fetch_job_queue() or []
+
+            # --- MODIFICATION: Pre-sort the data in the worker thread ---
+            # This reduces the workload on the main GUI thread.
+            sorted_queue_jobs = sorted(
+                queue_jobs,
+                key=lambda job: (
+                    job.get("Status", ""),
+                    -ord(job.get("User", " ")[0]) - 0.01 * ord(job.get("User", "  ")[1]),
+                ),
+                reverse=True,
+            )
 
             active_job_ids = self.jobs_model.get_active_job_ids()
             job_details_data = None
             if active_job_ids:
-                job_details_data = self.slurm_api.fetch_job_details_sacct(active_job_ids)
+                job_details_data = self.slurm_api.fetch_job_details_sacct(
+                    active_job_ids
+                )
 
-            self.data_ready.emit({
-                "nodes": nodes_data or [],
-                "jobs": queue_jobs or [],
-                "job_details": job_details_data or []
-            })
+            self.data_ready.emit(
+                {
+                    "nodes": nodes_data or [],
+                    "jobs": sorted_queue_jobs,  # Emit the pre-sorted list
+                    "job_details": job_details_data or [],
+                }
+            )
 
         except Exception as e:
             error_message = f"Worker thread error: {e}"
@@ -68,3 +83,4 @@ class SlurmWorker(QThread):
         self._stop_requested = True
         self.quit()
         self.wait()
+
