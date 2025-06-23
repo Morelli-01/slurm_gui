@@ -18,9 +18,9 @@ A modern, cross-platform GUI for managing and monitoring SLURM clusters, designe
 
 *Visualization of the cluster status and the jobs panel.*
 
-![Cluster Status Panel]()
+![Cluster Status Panel](https://raw.githubusercontent.com/Morelli-01/slurm_gui/refs/heads/main/src_static/cluster_status.webp)
 
-![Jobs Panel]()
+![Jobs Panel](https://raw.githubusercontent.com/Morelli-01/slurm_gui/refs/heads/main/src_static/job_panel.webp)
 
 ## 🚀 Getting Started
 
