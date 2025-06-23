@@ -159,62 +159,42 @@ class JobQueueView(QWidget):
         a full redraw from scratch as a recovery mechanism.
         """
         try:
+            self.table.setUpdatesEnabled(False)
+            self.table.setSortingEnabled(False)
+            
             # Sort jobs data
             jobs_data = sorted(jobs_data, key=lambda job: (job.get("Status", ""), -ord(job.get("User", " ")[0])-0.01*ord(job.get("User","  ")[1])), reverse=True)
-            current_job_ids = {int(job_dict["Job ID"]) for job_dict in jobs_data if "Job ID" in job_dict}
             
-            # Track which job IDs map to which row indices
+            # Create a map of job IDs to their data for efficient lookup
+            jobs_data_map = {job["Job ID"]: job for job in jobs_data if "Job ID" in job}
+            current_job_ids = set(jobs_data_map.keys())
+            
+            # Create a map of existing job IDs in the table to their row index
             job_id_to_row = {}
-            
-            # First pass: identify existing rows and their job IDs
             for row in range(self.table.rowCount()):
-                item = self.table.item(row, 0)  # Job ID is in first column
+                item = self.table.item(row, 0) # Job ID is in the first column
                 if item:
-                    try:
-                        job_id = int(item.text())
-                        job_id_to_row[job_id] = row
-                    except (ValueError, AttributeError):
-                        pass
+                    job_id_to_row[item.text()] = row
             
-            # Remove jobs that are no longer in the data
-            rows_to_remove = []
-            for job_id, row in job_id_to_row.items():
-                if job_id not in current_job_ids:
-                    rows_to_remove.append(row)
+            existing_job_ids = set(job_id_to_row.keys())
             
-            # Remove rows in reverse order to maintain indices
-            for row in sorted(rows_to_remove, reverse=True):
+            # Find jobs to remove
+            jobs_to_remove = existing_job_ids - current_job_ids
+            rows_to_remove = sorted([job_id_to_row[job_id] for job_id in jobs_to_remove], reverse=True)
+            
+            for row in rows_to_remove:
                 self.table.removeRow(row)
-            
-            # Clear the stored references to avoid accessing deleted items
-            self.rows.clear()
-            
+
             # Update existing rows and add new ones
-            for job_dict in jobs_data:
-                job_id_val = job_dict.get("Job ID")
-                if not job_id_val:
-                    continue
-                    
-                job_id = int(job_id_val)
-                
-                # Find if this job already has a row
-                existing_row = None
-                for row in range(self.table.rowCount()):
-                    item = self.table.item(row, 0)
-                    if item and item.text() == str(job_id):
-                        existing_row = row
-                        break
-                
-                if existing_row is not None:
+            for job_id, job_dict in jobs_data_map.items():
+                if job_id in job_id_to_row:
                     # Update existing row
+                    row = job_id_to_row[job_id]
                     for col_idx, field_name in enumerate(displayable_fields.keys()):
+                        item = self.table.item(row, col_idx)
                         item_data = job_dict.get(field_name, "N/A")
-                        item = self.table.item(existing_row, col_idx)
                         
-                        if item is None:
-                            item = QTableWidgetItem()
-                            self.table.setItem(existing_row, col_idx, item)
-                        
+                        # Update item data
                         if isinstance(item_data, (int, str)):
                             item.setData(Qt.ItemDataRole.EditRole, item_data)
                         elif isinstance(item_data, (list, tuple)) and len(item_data) == 2:
@@ -229,12 +209,11 @@ class JobQueueView(QWidget):
                             item.setForeground(QBrush(color))
                 else:
                     # Add new row
-                    current_table_row = self.table.rowCount()
-                    self.table.insertRow(current_table_row)
-                    
+                    row_position = self.table.rowCount()
+                    self.table.insertRow(row_position)
                     for col_idx, field_name in enumerate(displayable_fields.keys()):
-                        item_data = job_dict.get(field_name, "N/A")
                         item = QTableWidgetItem()
+                        item_data = job_dict.get(field_name, "N/A")
                         
                         if isinstance(item_data, int):
                             item.setData(Qt.ItemDataRole.EditRole, item_data)
@@ -251,33 +230,24 @@ class JobQueueView(QWidget):
                             color = QColor(STATE_COLORS.get(status.lower(), COLOR_DARK_FG))
                             item.setForeground(QBrush(color))
                         
-                        if current_table_row % 2 == 0:
+                        if row_position % 2 == 0:
                             item.setBackground(QBrush(QColor(COLOR_DARK_BG)))
                         else:
                             item.setBackground(QBrush(QColor(COLOR_DARK_BG_ALT)))
-                        
-                        self.table.setItem(current_table_row, col_idx, item)
-            
+                            
+                        self.table.setItem(row_position, col_idx, item)
+
             if self._filter:
                 self.filter_rows(self._filter[0], field_index=self._filter[1], negative=self._filter[2])
-            
-            self._table_refresh += 1
-            
+
         except Exception as e:
             print(f"--- ERROR IN JobQueueView.update_table ---")
             traceback.print_exc()
             print(f"Error: {e}")
             
-            # Fallback/Recovery Mechanism
-            if not is_recovery:
-                print("--- ATTEMPTING TO RECOVER BY REDRAWING TABLE FROM SCRATCH ---")
-                # Clear everything
-                self.table.setRowCount(0)
-                self.rows.clear()
-                # Try again
-                self.update_table(jobs_data, displayable_fields, is_recovery=True)
-            else:
-                print("--- RECOVERY FAILED. UNABLE TO UPDATE TABLE. ---")
+        finally:
+            self.table.setSortingEnabled(True)
+            self.table.setUpdatesEnabled(True)
 
     def remove_job_from_table(self, job_id: int):
         """Remove a job from the table by job ID"""
