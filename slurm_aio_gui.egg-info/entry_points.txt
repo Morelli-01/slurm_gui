@@ -1,0 +1,2 @@
+[gui_scripts]
+slurm-aio = main_application:main
