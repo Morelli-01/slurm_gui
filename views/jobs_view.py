@@ -335,10 +335,11 @@ class JobsTableView(QWidget):
         """Override resize event to reposition the button."""
         super().resizeEvent(event)
         # Position the button in the bottom-right corner of the visible area (viewport)
-        self.new_jobs_button.move(
-            self.width() - self.new_jobs_button.width() - 20,
-            self.height() - self.new_jobs_button.height() - 20
-        )
+        if hasattr(self, "new_jobs_button"):
+            self.new_jobs_button.move(
+                self.width() - self.new_jobs_button.width() - 20,
+                self.height() - self.new_jobs_button.height() - 20
+            )
 
     def _create_new_job(self, project_name):
         get_event_bus().emit(

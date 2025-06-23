@@ -1,12 +1,22 @@
 import os
 import re
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTabWidget, QWidget, QPlainTextEdit, QPushButton, QHBoxLayout, QLabel
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QTabWidget,
+    QWidget,
+    QPlainTextEdit,
+    QPushButton,
+    QHBoxLayout,
+    QLabel,
+)
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 from models.project_model import Job
 from core.slurm_api import SlurmAPI
 from core.style import AppStyles
 from core.defaults import STATUS_RUNNING, STATUS_COMPLETING
+
 
 class LogViewerDialog(QDialog):
     """
@@ -18,7 +28,7 @@ class LogViewerDialog(QDialog):
         super().__init__(parent)
         self.job = job
         self.slurm_api = SlurmAPI()
-        
+
         self.setWindowTitle(f"Logs for Job: {self.job.name} ({self.job.id})")
         self.setMinimumSize(800, 600)
         self.setStyleSheet(AppStyles.get_complete_stylesheet())
@@ -39,7 +49,7 @@ class LogViewerDialog(QDialog):
         layout.addWidget(self.tab_widget)
 
         # Common font for log views
-        log_font = QFont("Consolas" if os.name == 'nt' else "Monospace", 10)
+        log_font = QFont("Consolas" if os.name == "nt" else "Monospace", 10)
 
         # Tab 1: Job Script
         script_tab = QWidget()
@@ -101,48 +111,66 @@ class LogViewerDialog(QDialog):
             return ""
 
         # Remove ANSI escape codes
-        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        content = ansi_escape.sub('', content)
+        ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+        content = ansi_escape.sub("", content)
 
         # Normalize line endings
-        content = content.replace('\r\n', '\n')
-        
-        lines = content.split('\n')
+        content = content.replace("\r\n", "\n")
+
+        lines = content.split("\n")
         final_lines = []
         for line in lines:
             # The last part of a \r-split line is the final visual state.
-            final_lines.append(line.split('\r')[-1])
-            
-        return '\n'.join(final_lines)
+            final_lines.append(line.split("\r")[-1])
 
+        return "\n".join(final_lines)
+
+    
     def _update_logs(self):
-        """Fetches and displays the latest content of the log files."""
+        """Fetches and displays the latest content of the log files, preserving scroll position if possible."""
+
+        def update_view(view, path, not_defined_msg):
+            if path:
+                content, err = self.slurm_api.read_remote_file(path)
+                if err:
+                    new_text = f"Could not load log file:\n{path}\n\nError:\n{err}"
+                else:
+                    new_text = self._process_log_for_display(content)
+            else:
+                new_text = not_defined_msg
+
+            # Only update if content changed
+            old_text = view.toPlainText()
+            if old_text != new_text:
+                # Save scroll position
+                scrollbar = view.verticalScrollBar()
+                old_value = scrollbar.value()
+                max_value = scrollbar.maximum()
+                at_bottom = old_value == max_value
+
+                view.setPlainText(new_text)
+
+                # Restore scroll position
+                if at_bottom:
+                    scrollbar.setValue(scrollbar.maximum())
+                else:
+                    # Try to restore previous position (may not be perfect if line count changed)
+                    scrollbar.setValue(min(old_value, scrollbar.maximum()))
+
         # Update error log
         error_path = self._resolve_log_path(self.job.error_file)
-        if error_path:
-            content, err = self.slurm_api.read_remote_file(error_path)
-            if err:
-                self.error_view.setPlainText(f"Could not load log file:\n{error_path}\n\nError:\n{err}")
-            else:
-                processed_content = self._process_log_for_display(content)
-                self.error_view.setPlainText(processed_content)
-        else:
-            self.error_view.setPlainText("Error log path not defined for this job.")
+        update_view(
+            self.error_view, error_path, "Error log path not defined for this job."
+        )
 
         # Update output log
         output_path = self._resolve_log_path(self.job.output_file)
-        if output_path:
-            content, err = self.slurm_api.read_remote_file(output_path)
-            if err:
-                self.output_view.setPlainText(f"Could not load log file:\n{output_path}\n\nError:\n{err}")
-            else:
-                processed_content = self._process_log_for_display(content)
-                self.output_view.setPlainText(processed_content)
-        else:
-            self.output_view.setPlainText("Output log path not defined for this job.")
+        update_view(
+            self.output_view, output_path, "Output log path not defined for this job."
+        )
 
     def closeEvent(self, event):
         """Ensures the timer is stopped when the dialog is closed."""
-        if hasattr(self, 'timer'):
+        if hasattr(self, "timer"):
             self.timer.stop()
         event.accept()
