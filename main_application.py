@@ -641,9 +641,7 @@ class SlurmJobManagerApp(QMainWindow):
 
 # --- Main Execution ---
 
-
-if __name__ == "__main__":
-
+def main():
     if "linux" in platform.system().lower():
         if os.environ.get("XDG_SESSION_TYPE") != "wayland":
             try:
@@ -794,3 +792,6 @@ if __name__ == "__main__":
         window = SlurmJobManagerApp()
         window.show()
         sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()  

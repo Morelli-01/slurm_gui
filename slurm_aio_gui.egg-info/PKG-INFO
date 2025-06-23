@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: slurm-aio-gui
-Version: 0.1.0
+Version: 0.1.1
 Summary: A modern, cross-platform GUI for managing and monitoring SLURM clusters.
 Author-email: Morelli-01 <nicolamorelli30008@gmail.com>
 License: MIT License
@@ -20,7 +20,7 @@ Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: bcrypt==4.3.0
-Requires-Dist: certifi==2025.6.15
+Requires-Dist: certifi==2025.4.26
 Requires-Dist: cffi==1.17.1
 Requires-Dist: charset-normalizer==3.4.2
 Requires-Dist: cryptography==45.0.3
@@ -73,7 +73,7 @@ A modern, cross-platform GUI for managing and monitoring SLURM clusters, designe
 
 1.  **Clone the repository:**
     ```sh
-    git clone [https://github.com/Morelli-01/slurm_gui.git](https://github.com/Morelli-01/slurm_gui.git)
+    git clone https://github.com/Morelli-01/slurm_gui.git
     cd slurm_gui
     ```
 
