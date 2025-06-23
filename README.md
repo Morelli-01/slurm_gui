@@ -1,42 +1,54 @@
-# SLURM GUI
+# Slurm AIO
 
-A modern Python application for managing SLURM jobs with a clean GUI, real-time monitoring, and project-based organization.
+A modern, cross-platform GUI for managing and monitoring SLURM clusters, designed for simplicity and efficiency.
 
-## Features
+## ✨ Features
 
-- Submit and monitor SLURM jobs in real time
-- Visualize cluster status (CPU, GPU, RAM usage)
-- Organize jobs by project
-- Discord notifications for job events
-- Browse remote directories
-- Integrated SSH terminal
-- Dark theme and toast notifications
+-   **Real-time Monitoring:** Visualize cluster status (Nodes, CPU, GPU, and RAM usage) and track the job queue as it happens.
+-   **Project-Based Organization:** Group your jobs into projects for better management and clarity.
+-   **Intuitive Job Management:** Easily create, submit, modify, duplicate, and cancel jobs through a user-friendly interface.
+-   **Integrated Tools:**
+    -   Browse remote directories on the cluster.
+    -   Open an SSH terminal directly to the cluster or a running job's node.
+    -   View job output and error logs in real-time.
+-   **Notifications:** Get Discord notifications for job status changes (start, completion, failure).
+-   **Modern UI:** A clean, dark-themed interface with helpful toast notifications.
 
-## Getting Started
+## 📸 Screenshots
 
-```bash
-git clone https://github.com/Morelli-01/slurm_gui.git
-cd slurm_gui
-pip install -r requirements.txt
-python main_application.py
-```
+*Visualization of the cluster status and the jobs panel.*
 
-## Project Structure
+![Cluster Status and Jobs Panel](https://via.placeholder.com/1200x700.png?text=Visualization+of+Cluster+Status+and+Jobs+Panel)
 
-- `main_application.py` — Application entry point
-- `core/` — Event bus, SLURM API, styling
-- `controllers/` — Business logic
-- `models/` — Data and SLURM operations
-- `views/` — UI components
-- `widgets/` — Reusable UI elements
-- `src_static/` — Icons, images, configs
+## 🚀 Getting Started
 
-## Requirements
+### Prerequisites
 
-- Python 3.8+
-- PyQt6
-- See `requirements.txt` for all dependencies
+-   Python 3.8+
+-   Access to a SLURM cluster via SSH.
+-   `sshpass` is required for password-based terminal authentication on Linux/macOS.
+    -   **Ubuntu/Debian:** `sudo apt-get install sshpass`
+    -   **macOS (Homebrew):** `brew install sshpass`
 
-## License
+### Installation
 
-MIT
+1.  **Clone the repository:**
+    ```sh
+    git clone [https://github.com/Morelli-01/slurm_gui.git](https://github.com/Morelli-01/slurm_gui.git)
+    cd slurm_gui
+    ```
+
+2.  **Install the dependencies:**
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+3.  **Run the application:**
+    ```sh
+    python main_application.py
+    ```
+    The first time you run the application, you will be prompted to enter your cluster's SSH connection details.
+
+## 📄 License
+
+This project is licensed under the MIT License.
