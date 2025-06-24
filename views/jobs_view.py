@@ -188,7 +188,17 @@ class JobsTableView(QWidget):
         placeholder_layout.addWidget(placeholder_label)
         self.stacked_widget.addWidget(self.placeholder_widget)
         self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+
+        # Create a single "New Job" button
+        self.new_jobs_button = QPushButton("New Job", self)
+        self.new_jobs_button.setObjectName(BTN_GREEN)
+        self.new_jobs_button.clicked.connect(self._create_new_job_for_current_project)
+        self.new_jobs_button.setFixedSize(120, 40)
+        self.new_jobs_button.raise_()  # Make sure it's on top
+        self.new_jobs_button.hide() # Initially hidden
+
         self._apply_stylesheet()
+
 
     def _create_new_table(self, table_name=""):
         """Creates and configures a new QTableWidget."""
@@ -231,15 +241,6 @@ class JobsTableView(QWidget):
             else:
                 h.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
-        self.new_jobs_button = QPushButton("New Job", table)  # Set self as parent
-        self.new_jobs_button.setObjectName(BTN_GREEN)
-
-        self.new_jobs_button.clicked.connect(partial(self._create_new_job, table_name))
-        self.new_jobs_button.setFixedSize(120, 40)  # Set a fixed size
-        self.new_jobs_button.move(
-            self.width() - self.new_jobs_button.width() - 20,
-            self.height() - self.new_jobs_button.height() - 20,
-        )
         return table
 
     def _apply_stylesheet(self):
@@ -265,9 +266,6 @@ class JobsTableView(QWidget):
                 self.add_project_table(project.name)
             self.update_jobs_for_project(project.name, project.jobs)
 
-        if len(projects) == 1:
-            self.switch_to_project(projects[0].name)
-
     def add_project_table(self, project_name: str):
         """Adds a new table for a project."""
         if project_name not in self.tables:
@@ -286,8 +284,11 @@ class JobsTableView(QWidget):
         """Switches the view to the table for the selected project."""
         if project_name in self.tables:
             self.stacked_widget.setCurrentWidget(self.tables[project_name])
+            self.new_jobs_button.show()
         else:
             self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+            self.new_jobs_button.hide()
+
 
     def update_jobs_for_project(self, project_name: str, jobs: List[Job]):
         """Populates a project's table with its jobs."""
@@ -341,10 +342,19 @@ class JobsTableView(QWidget):
                 self.height() - self.new_jobs_button.height() - 20
             )
 
+    def _create_new_job_for_current_project(self):
+        """Creates a new job for the currently selected project."""
+        current_widget = self.stacked_widget.currentWidget()
+        if isinstance(current_widget, QTableWidget):
+            project_name = current_widget.objectName()
+            if project_name:
+                self._create_new_job(project_name)
+        elif current_widget is self.placeholder_widget:
+            show_warning_toast(self, "No Project Selected", "Please select or create a project first.")
+
     def _create_new_job(self, project_name):
         get_event_bus().emit(
             Events.CREATE_JOB_DIALOG_REQUESTED,
             data={"project_name": project_name},
             source="JobsTableView",
         )
-

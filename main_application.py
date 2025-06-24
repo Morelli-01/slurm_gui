@@ -356,11 +356,11 @@ class SlurmJobManagerApp(QMainWindow):
         if job_details:
             self.jobs_panel.controller.model.update_jobs_from_sacct(job_details)
 
-        print("Updating job queue...")
+        # print("Updating job queue...")
         if hasattr(self, "job_queue_widget") and queue_jobs:
             self.job_queue_widget.update_queue_status(queue_jobs)
 
-        print("Updating cluster status...")
+        # print("Updating cluster status...")
         if hasattr(self, "cluster_status_overview_widget") and nodes_data:
             self.cluster_status_overview_widget.update_status(nodes_data, queue_jobs)
 

@@ -7,7 +7,6 @@ from core.slurm_api import *
 from widgets.log_viewer_widget import LogViewerDialog
 from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
 from widgets.new_job_widget import JobCreationDialog
-import copy
 
 class JobsPanelController:
     def __init__(self, model: JobsModel, view: JobsPanelView):
@@ -71,10 +70,10 @@ class JobsPanelController:
     def _on_project_list_changed(self, event: Event):
         """Update the view when the project list in the model changes."""
         projects = event.data.get("projects", [])
-        # Update the list of projects in the left-hand panel
-        self.view.project_group.update_view(projects)
-        # Update the job tables in the right-hand panel
+        # Update the job tables in the right-hand panel first
         self.view.jobs_table_view.update_projects(projects)
+        # Then, update the list of projects, which triggers selection
+        self.view.project_group.update_view(projects)
 
     def _handle_delete_project(self, event):
         """Confirm and delete a project."""

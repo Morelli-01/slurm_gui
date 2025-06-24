@@ -15,6 +15,8 @@ from utils import settings_path, parse_duration
 import tempfile
 import os
 
+from widgets.toast_widget import show_info_toast
+
 
 class ConnectionState(Enum):
     """Clear connection states"""
@@ -391,13 +393,16 @@ class SlurmAPI:
             sbatch_output, sbatch_error = self.run_command(f"sbatch {remote_path}")
 
             # 4. Parse output
-            if sbatch_error:
-                return None, sbatch_error
+
             
             match = re.search(r"Submitted batch job (\d+)", sbatch_output)
             if match:
                 new_job_id = match.group(1)
+                if sbatch_error:
+                    show_info_toast(self, "Info", sbatch_error)
                 return new_job_id, None
+            elif sbatch_error:
+                return None, sbatch_error
             else:
                 return None, sbatch_output or "sbatch command did not return a job ID."
 

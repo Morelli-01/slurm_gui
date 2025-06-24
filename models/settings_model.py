@@ -61,7 +61,7 @@ class SettingsModel(QObject):
         self.settings.setValue("discord_webhook_url",
                           self._notification_settings['discord_webhook_url'])
         self.settings.endGroup()
-        print("Notification settings saved!")
+        # print("Notification settings saved!")
 
     def load_from_qsettings(self):
         """Load settings from QSettings"""
