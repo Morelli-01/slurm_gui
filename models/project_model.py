@@ -40,7 +40,7 @@ class Job:
     partition: Optional[str] = None
     qos: Optional[str] = None
     nodelist: Optional[List[str]] = None
-
+    time_limit: Optional[str] = None
     # --- Custom Fields ---
     venv: Optional[str] = None
     project_name: Optional[str] = None  # To link the job to a project in the GUI
@@ -122,6 +122,9 @@ class Job:
             lines.append(f"#SBATCH --qos={self.qos}")
         if self.nodelist:
             lines.append(f"#SBATCH --nodelist={self.nodelist}")
+        if self.time_limit:
+            lines.append(f"#SBATCH --time={self.time_limit}") 
+        
         # --- Custom Options ---
         if self.optional_sbatch:
             lines.append(self.optional_sbatch)

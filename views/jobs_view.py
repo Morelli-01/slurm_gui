@@ -82,7 +82,7 @@ class ActionButtonsWidget(QWidget):
         is_not_submitted = (status == NOT_SUBMITTED)
         is_active = status in [STATUS_RUNNING, STATUS_PENDING, STATUS_SUSPENDED, STATUS_COMPLETING, STATUS_PREEMPTED]
         is_running = (status == STATUS_RUNNING)
-        can_be_deleted = status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, CANCELLED]
+        can_be_deleted = status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, CANCELLED, TIMEOUT]
         has_logs = not is_not_submitted
 
         self.startButton.setEnabled(is_not_submitted)
@@ -118,7 +118,7 @@ class ActionButtonsWidget(QWidget):
 
     def _on_cancel_clicked(self):
         """Emit an event to delete the job."""
-        if self.job.status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, "CANCELLED"]:
+        if self.job.status in [NOT_SUBMITTED, STATUS_COMPLETED, STATUS_FAILED, STATUS_STOPPED, CANCELLED, TIMEOUT]:
             get_event_bus().emit(
                 Events.DEL_JOB,
                 data={"project_name": self.job.project_name, "job_id": self.job.id},

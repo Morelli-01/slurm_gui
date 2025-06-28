@@ -142,6 +142,36 @@ class JobCreationDialog(QDialog):
                 self.partition_edit.addItems(partitions)
         self.partition_edit.setCurrentText(self.job.partition or "")
         layout.addRow("Partition:", self.partition_edit)
+        
+        # Time limit
+        time_layout = QHBoxLayout()
+        self.time_days_spin = QSpinBox()
+        self.time_days_spin.setMinimum(0)
+        self.time_days_spin.setMaximum(365)
+        self.time_days_spin.setValue(0)
+        time_layout.addWidget(QLabel("Days:"))
+        time_layout.addWidget(self.time_days_spin)
+
+        self.time_hours_spin = QSpinBox()
+        self.time_hours_spin.setMinimum(0)
+        self.time_hours_spin.setMaximum(24)
+        self.time_hours_spin.setValue(24)
+        time_layout.addWidget(QLabel("Hours:"))
+        time_layout.addWidget(self.time_hours_spin)
+
+        self.time_minutes_spin = QSpinBox()
+        self.time_minutes_spin.setMinimum(0)
+        self.time_minutes_spin.setMaximum(59)
+        time_layout.addWidget(QLabel("Minutes:"))
+        time_layout.addWidget(self.time_minutes_spin)
+
+        self.time_seconds_spin = QSpinBox()
+        self.time_seconds_spin.setMinimum(0)
+        self.time_seconds_spin.setMaximum(59)
+        time_layout.addWidget(QLabel("Seconds:"))
+        time_layout.addWidget(self.time_seconds_spin)
+        
+        layout.addRow("Time Limit:", time_layout)
 
         # Working directory
         dir_layout = QHBoxLayout()
@@ -462,6 +492,10 @@ class JobCreationDialog(QDialog):
         self.working_dir_edit.textChanged.connect(self._handle_input_change)
         self.venv_edit.textChanged.connect(self._handle_input_change)
         self.script_edit.textChanged.connect(self._handle_input_change)
+        self.time_days_spin.valueChanged.connect(self._handle_input_change)
+        self.time_hours_spin.valueChanged.connect(self._handle_input_change)
+        self.time_minutes_spin.valueChanged.connect(self._handle_input_change)
+        self.time_seconds_spin.valueChanged.connect(self._handle_input_change)
         
         # Resources tab
         self.cpus_spin.valueChanged.connect(self._handle_input_change)
@@ -505,6 +539,18 @@ class JobCreationDialog(QDialog):
         self.job.working_directory = self.working_dir_edit.text() or None
         self.job.venv = self.venv_edit.text() or None
         self.job.script_commands = self.script_edit.toPlainText()
+        
+        # Time limit
+        days = self.time_days_spin.value()
+        hours = self.time_hours_spin.value()
+        minutes = self.time_minutes_spin.value()
+        seconds = self.time_seconds_spin.value()
+
+        if days == 0 and hours == 0 and minutes == 0 and seconds == 0:
+            self.job.time_limit = None
+        else:
+            self.job.time_limit = f"{days}-{hours:02}:{minutes:02}:{seconds:02}"
+            
         # Resources
         self.job.cpus_per_task = self.cpus_spin.value()
         self.job.ntasks = self.ntasks_spin.value()
@@ -656,6 +702,26 @@ class JobCreationDialog(QDialog):
         self.working_dir_edit.setText(job.working_directory or "")
         self.venv_edit.setText(job.venv or "")
         self.script_edit.setPlainText(job.script_commands)
+
+        # Time limit
+        if job.time_limit:
+            try:
+                days_part, time_part = job.time_limit.split('-', 1)
+                time_parts = time_part.split(':')
+                
+                days = int(days_part)
+                hours = int(time_parts[0]) if len(time_parts) > 0 else 0
+                minutes = int(time_parts[1]) if len(time_parts) > 1 else 0
+                seconds = int(time_parts[2]) if len(time_parts) > 2 else 0
+
+                self.time_days_spin.setValue(days)
+                self.time_hours_spin.setValue(hours)
+                self.time_minutes_spin.setValue(minutes)
+                self.time_seconds_spin.setValue(seconds)
+            except (ValueError, IndexError):
+                # Handle potential parsing errors if format is unexpected
+                pass
+
 
         # Resources Tab
         self.cpus_spin.setValue(job.cpus_per_task or 1)
