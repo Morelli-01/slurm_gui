@@ -155,7 +155,7 @@ class JobCreationDialog(QDialog):
         self.time_hours_spin = QSpinBox()
         self.time_hours_spin.setMinimum(0)
         self.time_hours_spin.setMaximum(24)
-        self.time_hours_spin.setValue(24)
+        self.time_hours_spin.setValue(1)
         time_layout.addWidget(QLabel("Hours:"))
         time_layout.addWidget(self.time_hours_spin)
 
