@@ -23,7 +23,12 @@ class SettingsController(QObject):
         
         # # View to controller actions
         self.view.discord_test_requested.connect(self._test_discord_webhook)
+        get_event_bus().subscribe(Events.CONNECTION_STATE_CHANGED, self._handle_remote_connection)
         
+    def _handle_remote_connection(self, event):
+        self.model.load_remote(event)
+        self.view.load_settings()
+
     def _event_bus_subscription(self):
         self.event_bus.subscribe(Events.CONNECTION_SAVE_REQ,
                                  callback=self.model.update_connection_settings,

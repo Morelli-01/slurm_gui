@@ -516,6 +516,33 @@ class SlurmAPI:
             if local_path and os.path.exists(local_path):
                 os.unlink(local_path)
 
+    @requires_connection
+    def save_settings_remotely(self, tmp_path: str):
+        """
+        Copy the file in the tmp_path into $HOME/.slurm_gui/remote_settings.ini on the remote server.
+        """
+        if not tmp_path or not os.path.isfile(tmp_path):
+            raise ValueError(f"Local file '{tmp_path}' does not exist.")
+
+        if not self.remote_home:
+            self.remote_home = self.get_home_directory()
+            if not self.remote_home:
+                raise Exception("Could not determine remote home directory.")
+
+        remote_dir = f"{self.remote_home}/.slurm_gui"
+        remote_file = f"{remote_dir}/remote_settings.ini"
+
+        # Ensure remote directory exists
+        self.create_remote_directory(remote_dir)
+
+        sftp = None
+        try:
+            sftp = self._client.open_sftp()
+            sftp.put(tmp_path, remote_file)
+        finally:
+            if sftp:
+                sftp.close()
+
     def _parse_tres(self, tres_string: str, prefix: str, node_dict: Dict[str, Any]):
         """Parse TRES strings"""
         parts = tres_string.split("=", 1)[1].split(",")
