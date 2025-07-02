@@ -139,7 +139,7 @@ class SlurmAPI:
 
             self.disconnect()
             return False
-    
+
     @requires_connection
     def _load_basic_info(self):
         self.fetch_accounts()
@@ -213,8 +213,13 @@ class SlurmAPI:
                 continue
 
             try:
-                job_dict = self._parse_job_fields(fields)
-                job_queue.append(job_dict)
+                if len(fields[2].split(",")) > 1:
+                    for i in range(len(fields[2].split(","))):
+                        job_dict = self._parse_job_fields(fields, i)
+                        job_queue.append(job_dict)
+                else:
+                    job_dict = self._parse_job_fields(fields, 0)
+                    job_queue.append(job_dict)
             except (IndexError, ValueError) as e:
                 print(f"Error parsing job data: {e}")
 
@@ -263,14 +268,16 @@ class SlurmAPI:
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
-        
+
     @requires_connection
     def fetch_qos(self) -> List[str]:
         """Fetch available partitions."""
         if self.qos:
             return self.qos
         try:
-            msg_out, err_out = self.run_command("sacctmgr show qos --parsable2 format=Name --noheader")
+            msg_out, err_out = self.run_command(
+                "sacctmgr show qos --parsable2 format=Name --noheader"
+            )
             if err_out:
                 print(f"Error fetching partitions: {err_out}")
                 return []
@@ -279,15 +286,17 @@ class SlurmAPI:
             return self.qos
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
-            return []    
-        
+            return []
+
     @requires_connection
     def fetch_constraint(self) -> List[str]:
         """Fetch available partitions."""
         if self.constraint:
             return self.constraint
         try:
-            msg_out, err_out = self.run_command("sinfo -o '%f' --noheader  | sort | uniq")
+            msg_out, err_out = self.run_command(
+                "sinfo -o '%f' --noheader  | sort | uniq"
+            )
             if err_out:
                 print(f"Error fetching partitions: {err_out}")
                 return []
@@ -297,14 +306,14 @@ class SlurmAPI:
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
-    
+
     @requires_connection
     def fetch_nodelist(self) -> List[str]:
         """Fetch available partitions."""
         if self.nodelist:
             return self.nodelist
         try:
-            msg_out, err_out = self.run_command("sinfo -N -h -o \"%N\"")
+            msg_out, err_out = self.run_command('sinfo -N -h -o "%N"')
             if err_out:
                 print(f"Error fetching partitions: {err_out}")
                 return []
@@ -314,7 +323,7 @@ class SlurmAPI:
         except Exception as e:
             print(f"Exception fetching partitions: {e}")
             return []
-        
+
     @requires_connection
     def remote_path_exists(self, path: str) -> bool:
         """Check if a remote path exists and is a directory."""
@@ -353,7 +362,7 @@ class SlurmAPI:
             print(f"Error fetching home directory: {stderr}")
             return None
         return stdout.strip()
-   
+
     @requires_connection
     def cancel_job(self, job_id: str) -> Tuple[Optional[str], Optional[str]]:
         """Cancels a job using scancel."""
@@ -367,19 +376,21 @@ class SlurmAPI:
             return None, stderr
 
         return stdout, None
-    
+
     @requires_connection
     def submit_job(self, job: Job) -> Tuple[Optional[str], Optional[str]]:
         """Creates a temporary script, sbaches it, and returns the job ID or an error."""
         script_content = job.create_sbatch_script()
-        
+
         sftp = None
         local_path = None
         remote_path = f"/tmp/slurm_gui_job_{uuid.uuid4().hex[:8]}.sh"
 
         try:
             # 1. Create a local temporary file
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".sh", encoding='utf-8', newline='') as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".sh", encoding="utf-8", newline=""
+            ) as tmp:
                 tmp.write(script_content)
                 local_path = tmp.name
 
@@ -394,7 +405,6 @@ class SlurmAPI:
 
             # 4. Parse output
 
-            
             match = re.search(r"Submitted batch job (\d+)", sbatch_output)
             if match:
                 new_job_id = match.group(1)
@@ -416,13 +426,13 @@ class SlurmAPI:
                 try:
                     self.run_command(f"rm {remote_path}")
                 except Exception:
-                    pass # Ignore cleanup errors if connection is lost
+                    pass  # Ignore cleanup errors if connection is lost
             if sftp:
-                try: 
+                try:
                     sftp.close()
                 except Exception:
                     pass
-    
+
     @requires_connection
     def fetch_job_details_sacct(self, job_ids: List[str]) -> List[Dict[str, Any]]:
         """Fetch detailed job information using sacct for a list of job IDs."""
@@ -442,10 +452,10 @@ class SlurmAPI:
         lines = out.strip().splitlines()
 
         for line in lines:
-            if '.' in line.split('|')[0]:
+            if "." in line.split("|")[0]:
                 continue
-            
-            parts = line.strip().split('|')
+
+            parts = line.strip().split("|")
             if len(parts) < 13:
                 continue
 
@@ -469,9 +479,9 @@ class SlurmAPI:
             except IndexError as e:
                 print(f"Error parsing sacct line: '{line}'. Error: {e}")
                 continue
-        
+
         return job_details
-    
+
     @requires_connection
     def read_remote_file(self, remote_path: str) -> Tuple[Optional[str], Optional[str]]:
         """Reads the content of a file on the remote server."""
@@ -486,17 +496,19 @@ class SlurmAPI:
             return None, stderr
 
         return stdout, None
-    
+
     @requires_connection
     def create_remote_directory(self, remote_path: str):
         """Creates a directory on the remote server, including parent directories."""
         if self.remote_path_exists(remote_path):
             return
-            
+
         command = f'mkdir -p "{remote_path}"'
         stdout, stderr = self.run_command(command)
         if stderr:
-            raise Exception(f"Failed to create remote directory '{remote_path}': {stderr}")
+            raise Exception(
+                f"Failed to create remote directory '{remote_path}': {stderr}"
+            )
 
     @requires_connection
     def write_remote_file(self, remote_path: str, content: str):
@@ -504,7 +516,9 @@ class SlurmAPI:
         sftp = None
         local_path = None
         try:
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".json", encoding='utf-8') as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".json", encoding="utf-8"
+            ) as tmp:
                 tmp.write(content)
                 local_path = tmp.name
 
@@ -555,7 +569,7 @@ class SlurmAPI:
             except ValueError:
                 pass
 
-    def _parse_job_fields(self, fields: List[str]) -> Dict[str, Any]:
+    def _parse_job_fields(self, fields: List[str], i = 0) -> Dict[str, Any]:
         """Parse job fields from squeue output"""
         raw_status_code = fields[9]
         status = JOB_CODES.get(raw_status_code, "UNKNOWN")
@@ -563,7 +577,7 @@ class SlurmAPI:
         job_dict = {
             "Job ID": fields[0],
             "Reason": fields[1],
-            "Nodelist": fields[2],
+            "Nodelist": fields[2].split(",")[i],
             "User": fields[3],
             "Job Name": fields[7],
             "Partition": fields[8],
