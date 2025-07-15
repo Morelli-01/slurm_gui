@@ -25,6 +25,9 @@ from functools import partial, wraps
 import os
 from threading import Thread
 from core.terminal_helper import *
+import requests
+from packaging.version import parse as parse_version
+import toml
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -648,6 +651,35 @@ class SlurmJobManagerApp(QMainWindow):
 
 # --- Main Execution ---
 
+def check_for_updates(parent):
+    """
+    Checks for a new version of the application on PyPI and shows a notification if an update is available.
+    """
+    package_name = "slurm-aio-gui"
+    try:
+        # Get the currently installed version from pyproject.toml
+        # In a real application, you might get this from importlib.metadata
+        with open("pyproject.toml", "r") as f:
+            pyproject_data = toml.load(f)
+        current_version_str = pyproject_data["project"]["version"]
+        current_version = parse_version(current_version_str)
+
+        # Get the latest version from PyPI
+        response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
+        response.raise_for_status()
+        latest_version_str = response.json()["info"]["version"]
+        latest_version = parse_version(latest_version_str)
+
+        if latest_version > current_version:
+            show_info_toast(
+                parent,
+                "Update Available",
+                f"A new version ({latest_version_str}) of Slurm AIO is available!\n"
+                f"Please run 'pip install --upgrade {package_name}' to update.",
+                duration=10000,
+            )
+    except Exception as e:
+        print(f"Failed to check for updates: {e}")
 
 def main():
     # if "linuxxxx" in platform.system().lower():
@@ -779,6 +811,7 @@ def main():
             window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
             app.setWindowIcon(QIcon(window_icon_path))
             window = SlurmJobManagerApp()
+            check_for_updates(window)
             window.show()
             sys.exit(app.exec())
         else:
@@ -798,6 +831,7 @@ def main():
         window_icon_path = os.path.join(script_dir, "src_static", "app_logo.png")
         app.setWindowIcon(QIcon(window_icon_path))
         window = SlurmJobManagerApp()
+        check_for_updates(window)
         window.show()
         sys.exit(app.exec())
 

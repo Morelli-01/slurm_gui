@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slurm-aio-gui"
-version = "1.0.3"
+version = "1.0.4"
 authors = [{ name = "Morelli-01", email = "nicolamorelli30008@gmail.com" }]
 description = "A modern, cross-platform GUI for managing and monitoring SLURM clusters."
 readme = "README.md"
@@ -38,6 +38,8 @@ dependencies = [
     "PyQt6_sip==13.10.2",
     "requests==2.32.3",
     "urllib3==2.4.0",
+    "packaging",
+    "toml",
 ]
 
 [project.urls]
