@@ -29,7 +29,7 @@ from core.terminal_helper import *
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 system = platform.system()
-if system == "Windows":
+if system == "Windows" or "linux" in platform.system().lower():
     # Windows: Use Qt's built-in high DPI handling
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
     os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
@@ -650,42 +650,42 @@ class SlurmJobManagerApp(QMainWindow):
 
 
 def main():
-    if "linux" in platform.system().lower():
-        if os.environ.get("XDG_SESSION_TYPE") != "wayland":
-            try:
-                output = subprocess.check_output("xdpyinfo", shell=True).decode()
-                match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
+    # if "linuxxxx" in platform.system().lower():
+    #     if os.environ.get("XDG_SESSION_TYPE") != "wayland":
+    #         try:
+    #             output = subprocess.check_output("xdpyinfo", shell=True).decode()
+    #             match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
 
-                if match:
-                    dpi_x = int(match.group(1))
+    #             if match:
+    #                 dpi_x = int(match.group(1))
 
-                    # Map DPI to scale factor
-                    dpi_scale_map = {
-                        96: "1.0",  # 100%
-                        120: "1.25",  # 125%
-                        144: "0.9",  # 150%
-                        168: "0.6",
-                        192: "0.5",
-                    }
+    #                 # Map DPI to scale factor
+    #                 dpi_scale_map = {
+    #                     96: "1.0",  # 100%
+    #                     120: "1.25",  # 125%
+    #                     144: "0.9",  # 150%
+    #                     168: "0.6",
+    #                     192: "0.5",
+    #                 }
 
-                    closest_dpi = min(
-                        dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x)
-                    )
-                    scale = dpi_scale_map[closest_dpi]
+    #                 closest_dpi = min(
+    #                     dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x)
+    #                 )
+    #                 scale = dpi_scale_map[closest_dpi]
 
-                    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
-                    os.environ["QT_SCALE_FACTOR"] = scale
-                    os.environ["QT_FONT_DPI"] = str(closest_dpi)
+    #                 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
+    #                 os.environ["QT_SCALE_FACTOR"] = scale
+    #                 os.environ["QT_FONT_DPI"] = str(closest_dpi)
 
-                    print(f"Set scale: {scale} for DPI: {dpi_x}")
-                else:
-                    print("Could not determine DPI.")
-            except Exception as e:
-                print("Error reading DPI:", e)
-        else:
-            print("Wayland session detected — using automatic scaling.")
-            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    elif "darwin" in platform.system().lower():
+    #                 print(f"Set scale: {scale} for DPI: {dpi_x}")
+    #             else:
+    #                 print("Could not determine DPI.")
+    #         except Exception as e:
+    #             print("Error reading DPI:", e)
+    #     else:
+    #         print("Wayland session detected — using automatic scaling.")
+    #         os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+    if "darwin" in platform.system().lower():
         print("macOS detected — using automatic scaling.")
 
         try:
