@@ -32,14 +32,6 @@ import toml
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 system = platform.system()
-if system == "Windows" or "linux" in platform.system().lower():
-    # Windows: Use Qt's built-in high DPI handling
-    os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-    os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
-    os.environ["QT_FONT_DPI"] = "96"
-    print("Windows: Qt DPI scaling enabled")
-
 
 # --- Constants ---
 APP_TITLE = "SlurmAIO"
@@ -52,23 +44,67 @@ REFRESH_INTERVAL_MS = 5000
 
 # --- Helper Functions ---
 
+def configure_dpi_awareness():
+    """Configure proper DPI awareness for the application"""
+    
+    # Method 1: Set DPI awareness before QApplication creation
+    if hasattr(Qt, 'AA_EnableHighDpiScaling'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_EnableHighDpiScaling, True)
+    
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
+    
+    # Method 2: Set environment variables (add this before importing Qt)
+    os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+    os.environ['QT_SCALE_FACTOR'] = '1'
+    os.environ['QT_SCREEN_SCALE_FACTORS'] = '1'
+    
+    # Method 3: For Windows, set DPI awareness
+    if sys.platform == 'windows':
+        try:
+            import ctypes
+            from ctypes import wintypes
+            
+            # Try to set DPI awareness
+            try:
+                # For Windows 10 version 1703 and later
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+            except:
+                try:
+                    # For older Windows versions
+                    ctypes.windll.user32.SetProcessDPIAware()
+                except:
+                    pass
+        except ImportError:
+            pass
 
+# Updated get_scaled_dimensions function
 def get_scaled_dimensions(screen=None):
-    """Get window dimensions as device-independent pixels (Qt handles DPI automatically)"""
+    """Get window dimensions that work consistently across different DPI settings"""
     if screen is None:
         screen = QApplication.primaryScreen()
-    # Qt 6: geometry() returns device-independent pixels, so we don't need to worry about DPI
+    
+    # Get the physical geometry (actual pixels)
     geometry = screen.geometry()
-
-    width = int(geometry.width() * SCREEN_WIDTH_PERCENTAGE)
-    height = int(geometry.height() * SCREEN_HEIGHT_PERCENTAGE)
-    min_width = int(geometry.width() * MIN_WIDTH_PERCENTAGE)
-    min_height = int(geometry.height() * MIN_HEIGHT_PERCENTAGE)
-
-    width = min_width = 1500
-    height = min_height = 950
+    
+    # Get DPI scaling factor
+    dpi_ratio = screen.devicePixelRatio()
+    
+    # Calculate base dimensions (these should be consistent regardless of DPI)
+    base_width = 1500
+    base_height = 950
+    
+    # Don't scale these values - let Qt handle the DPI scaling automatically
+    width = base_width
+    height = base_height
+    min_width = int(base_width * 0.6)  # 60% of base width as minimum
+    min_height = int(base_height * 0.6)  # 60% of base height as minimum
+    
+    print(f"Screen DPI ratio: {dpi_ratio}")
+    print(f"Screen geometry: {geometry.width()}x{geometry.height()}")
+    print(f"Window size: {width}x{height}")
+    
     return width, height, min_width, min_height
-
 
 class ConnectionSetupDialog(QDialog):
     def __init__(self, parent=None):
@@ -681,76 +717,9 @@ def check_for_updates(parent):
     except Exception as e:
         print(f"Failed to check for updates: {e}")
 
+
 def main():
-    # if "linuxxxx" in platform.system().lower():
-    #     if os.environ.get("XDG_SESSION_TYPE") != "wayland":
-    #         try:
-    #             output = subprocess.check_output("xdpyinfo", shell=True).decode()
-    #             match = re.search(r"resolution:\s*(\d+)x(\d+)\s*dots per inch", output)
-
-    #             if match:
-    #                 dpi_x = int(match.group(1))
-
-    #                 # Map DPI to scale factor
-    #                 dpi_scale_map = {
-    #                     96: "1.0",  # 100%
-    #                     120: "1.25",  # 125%
-    #                     144: "0.9",  # 150%
-    #                     168: "0.6",
-    #                     192: "0.5",
-    #                 }
-
-    #                 closest_dpi = min(
-    #                     dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x)
-    #                 )
-    #                 scale = dpi_scale_map[closest_dpi]
-
-    #                 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
-    #                 os.environ["QT_SCALE_FACTOR"] = scale
-    #                 os.environ["QT_FONT_DPI"] = str(closest_dpi)
-
-    #                 print(f"Set scale: {scale} for DPI: {dpi_x}")
-    #             else:
-    #                 print("Could not determine DPI.")
-    #         except Exception as e:
-    #             print("Error reading DPI:", e)
-    #     else:
-    #         print("Wayland session detected — using automatic scaling.")
-    #         os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
-    if "darwin" in platform.system().lower():
-        print("macOS detected — using automatic scaling.")
-
-        try:
-            from screeninfo import get_monitors
-
-            monitor = get_monitors()[0]  # assume main monitor
-            width_px = monitor.width
-            height_px = monitor.height
-
-            # Heuristic: macbooks are usually ~13" with 2560x1600 (Retina)
-            # So we assume physical width ~11.3 inches → DPI = px / in
-            estimated_width_in = 11.3
-            dpi_x = width_px / estimated_width_in
-            dpi_scale_map = {
-                90: "0.6",  # 100%
-                96: "0.7",  # 100%
-                120: "0.8",  # 125%
-                144: "0.9",  # 150%
-                168: "1",
-                192: "0.5",
-            }
-
-            closest_dpi = min(dpi_scale_map.keys(), key=lambda k: abs(k - dpi_x))
-            scale = dpi_scale_map[closest_dpi]
-            os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "0"
-            os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-            # os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "RoundPreferFloor"
-            os.environ["QT_SCALE_FACTOR"] = f"{scale}"
-            print("env variables setted")
-
-            print(f"Set scale: {scale} for DPI: {dpi_x}")
-        except Exception as e:
-            print("Error reading DPI:", e)
+    configure_dpi_awareness()
 
     app = QApplication(sys.argv)
     # Get system-specific configuration directory
