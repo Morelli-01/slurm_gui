@@ -398,109 +398,6 @@ class SlurmJobManagerApp(QMainWindow):
         self.stacked_widget.setCurrentIndex(index)
         self.update_nav_styles(clicked_button)
 
-    # def create_navigation_bar(self):
-    #     """Creates the top navigation bar with logo, buttons, and search."""
-    #     nav_widget = QWidget()
-    #     nav_layout = QHBoxLayout(nav_widget)
-    #     nav_layout.setContentsMargins(0, 0, 0, 0)
-    #     nav_layout.setSpacing(15)  # Device-independent pixels
-
-    #     # Logo - use device-independent size
-    #     logo_label = QLabel()
-    #     logo_size = 40  # Device-independent pixels
-    #     logo_label.setFixedSize(logo_size, logo_size)
-    #     logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    #     nav_layout.addWidget(logo_label)
-
-    #     logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
-    #     pixmap = QPixmap(logo_path)
-    #     # Qt automatically handles DPI scaling for pixmaps
-    #     scaled_pixmap = pixmap.scaled(
-    #         logo_size,
-    #         logo_size,
-    #         Qt.AspectRatioMode.KeepAspectRatio,
-    #         Qt.TransformationMode.SmoothTransformation,
-    #     )
-    #     logo_label.setPixmap(scaled_pixmap)
-
-    #     nav_layout.addSpacing(25)  # Device-independent spacing
-
-    #     # Navigation buttons
-    #     button_names = ["Jobs", "Cluster Status", "Settings"]
-    #     for i, name in enumerate(button_names):
-    #         btn = QPushButton(name)
-    #         btn.setObjectName("navButton")
-    #         btn.setCheckable(True)
-    #         btn.clicked.connect(
-    #             lambda checked, index=i, button=btn: self.switch_panel(index, button)
-    #         )
-    #         nav_layout.addWidget(btn)
-    #         self.nav_buttons[name] = btn
-
-    #     nav_layout.addStretch()
-
-    #     # Terminal button
-    #     self.terminal_button = QPushButton("Terminal")
-    #     self.terminal_button.setObjectName("terminalButton")
-    #     self.terminal_button.setIcon(
-    #         QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
-    #     )
-    #     self.terminal_button.setToolTip("Open SSH Terminal")
-    #     self.terminal_button.clicked.connect(self.open_terminal)
-    #     nav_layout.addWidget(self.terminal_button)
-
-    #     # Connection status
-    #     self.connection_status = ClickableLabel(" Connection status...")
-    #     self.connection_status.setObjectName("statusButton")
-
-    #     # Set initial icon - Qt handles DPI scaling for icons automatically
-    #     initial_status_icon_path = os.path.join(
-    #         script_dir,
-    #         "src_static",
-    #         "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png",
-    #     )
-    #     # Use device-independent size - Qt scales automatically
-    #     icon_size = QSize(28, 28)
-    #     self.connection_status.setPixmap(
-    #         QPixmap(initial_status_icon_path).scaled(
-    #             icon_size,
-    #             Qt.AspectRatioMode.KeepAspectRatio,
-    #             Qt.TransformationMode.SmoothTransformation,
-    #         )
-    #     )
-    #     nav_layout.addWidget(self.connection_status)
-
-    #     self.main_layout.addWidget(nav_widget)
-
-    def open_terminal(self):
-        """Open a terminal with SSH connection to the cluster"""
-        if (
-            not self.slurm_api
-            or self.slurm_api.connection_status != ConnectionState.CONNECTED
-        ):
-            show_warning_toast(
-                self,
-                "Connection Required",
-                "Please establish a SLURM connection first.",
-            )
-            return
-
-        try:
-
-            helper = TerminalHelper()
-            connection = SSHConnectionDetails(
-                self.slurm_api._config.host,
-                self.slurm_api._config.username,
-                self.slurm_api._config.password,
-            )
-            helper.open_ssh_terminal(connection, parent_widget=self)
-
-        except Exception as e:
-            show_error_toast(
-                self, "Terminal Error", f"Failed to open terminal: {str(e)}"
-            )
-
-    # --- Panel Creation Methods ---
     def create_navigation_bar(self):
             """Creates the top navigation bar with logo, buttons, and search."""
             nav_widget = QWidget()
@@ -589,6 +486,41 @@ class SlurmJobManagerApp(QMainWindow):
 
             self.main_layout.addWidget(nav_widget)
 
+    def open_terminal(self):
+        """Open a terminal with SSH connection to the cluster"""
+        if (
+            not self.slurm_api
+            or self.slurm_api.connection_status != ConnectionState.CONNECTED
+        ):
+            show_warning_toast(
+                self,
+                "Connection Required",
+                "Please establish a SLURM connection first.",
+            )
+            return
+
+        try:
+
+            helper = TerminalHelper()
+            connection = SSHConnectionDetails(
+                self.slurm_api._config.host,
+                self.slurm_api._config.username,
+                self.slurm_api._config.password,
+            )
+            helper.open_ssh_terminal(connection, parent_widget=self)
+
+        except Exception as e:
+            show_error_toast(
+                self, "Terminal Error", f"Failed to open terminal: {str(e)}"
+            )
+
+    # --- Panel Creation Methods ---
+
+    def create_jobs_panel(self):
+        """Creates the main panel for submitting and viewing jobs."""
+        self.jobs_panel = JobsPanelWidget()  # <-- Changed this line
+        self.stacked_widget.addWidget(self.jobs_panel)
+
     def create_cluster_panel(self):
         """Creates the panel displaying cluster status information."""
         cluster_panel = QWidget()
@@ -658,118 +590,6 @@ class SlurmJobManagerApp(QMainWindow):
 
         cluster_layout.addLayout(content_layout)
         self.stacked_widget.addWidget(cluster_panel)
-
-
-    def create_jobs_panel(self):
-        """Creates the main panel for submitting and viewing jobs."""
-        self.jobs_panel = JobsPanelWidget()  # <-- Changed this line
-        self.stacked_widget.addWidget(self.jobs_panel)
-
-    # def create_cluster_panel(self):
-    #     """Creates the panel displaying cluster status information."""
-    #     cluster_panel = QWidget()
-    #     cluster_layout = QVBoxLayout(cluster_panel)
-    #     cluster_layout.setSpacing(15)  # Device-independent spacing
-
-    #     # Header with refresh button
-    #     header_layout = QHBoxLayout()
-    #     self.cluster_label = QLabel("Cluster Status Overview")
-    #     self.cluster_label.setObjectName("sectionTitle")
-    #     # Use device-independent font size - Qt handles DPI scaling
-
-    #     self.maintenance_label = QLabel()
-    #     self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
-    #     self.maintenance_label.hide()  # Initially hidden
-    #     try:
-    #         maintenance_info = self.slurm_api.read_maintenances()
-    #         if maintenance_info:
-    #             # Extract maintenance details
-    #             maintenance_details = []
-    #             for line in maintenance_info.split("\n"):
-    #                 if "ReservationName=" in line:
-    #                     name = line.split("ReservationName=")[1].split()[0]
-    #                     start_time = line.split(" ")[1].split("=")[1]
-    #                     end_time = line.split(" ")[2].split("=")[1]
-    #                     time_to_maintenance = (
-    #                         datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
-    #                         - datetime.now()
-    #                     )
-    #                     maintenance_details.append(
-    #                         f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours"
-    #                     )
-    #                     break
-
-    #             if maintenance_details:
-    #                 self.maintenance_label.setText(
-    #                     f"⚠️ Maintenance: {', '.join(maintenance_details)}"
-    #                 )
-    #                 self.maintenance_label.show()
-    #             else:
-    #                 self.maintenance_label.hide()
-    #         else:
-    #             self.maintenance_label.hide()
-    #     except Exception as e:
-    #         print(f"Error checking maintenance status: {e}")
-    #         self.maintenance_label.hide()
-
-    #     header_layout.addWidget(self.cluster_label)
-    #     header_layout.addWidget(self.maintenance_label)
-    #     header_layout.addStretch()
-
-    #     self.filter_btn_by_users = ButtonGroupWidget()
-    #     self.filter_btn_by_users.selectionChanged.connect(
-    #         lambda text: self.filter_by_accounts(text)
-    #     )
-    #     header_layout.addWidget(self.filter_btn_by_users)
-
-    #     self.filter_jobs = QLineEdit()
-    #     self.filter_jobs.setClearButtonEnabled(True)
-    #     self.filter_jobs.setPlaceholderText("Filter jobs...")
-    #     # Use device-independent width
-    #     self.filter_jobs.setFixedWidth(220)
-    #     header_layout.addWidget(self.filter_jobs)
-
-    #     self.filter_jobs.textChanged.connect(
-    #         lambda: self.job_queue_widget.filter_table(self.filter_jobs.text())
-    #     )
-
-    #     refresh_cluster_btn = QPushButton("Refresh Status")
-    #     refresh_cluster_btn.clicked.connect(self.slurm_worker.start)
-    #     header_layout.addWidget(refresh_cluster_btn)
-
-    #     cluster_layout.addLayout(header_layout)
-
-    #     # Main Content Layout
-    #     content_layout = QHBoxLayout()
-    #     content_layout.setSpacing(15)  # Device-independent spacing
-
-    #     # Left Section: Job Queue
-    #     self.job_queue_widget = JobQueueWidget()
-    #     content_layout.addWidget(self.job_queue_widget)
-    #     self.job_queue_widget.setSizePolicy(
-    #         QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-    #     )
-
-    #     # Right Section: Cluster Overview
-    #     overview_group = QGroupBox("Real-time Usage")
-    #     overview_layout = QVBoxLayout(overview_group)
-    #     overview_layout.setSpacing(15)  # Device-independent spacing
-    #     overview_group.setSizePolicy(
-    #         QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
-    #     )
-
-    #     self.cluster_status_overview_widget = ClusterStatusWidget()
-    #     overview_layout.addWidget(
-    #         self.cluster_status_overview_widget,
-    #         alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-    #     )
-
-    #     content_layout.addWidget(overview_group)
-    #     content_layout.setStretchFactor(self.job_queue_widget, 1)
-    #     content_layout.setStretchFactor(overview_group, 0)
-
-    #     cluster_layout.addLayout(content_layout)
-    #     self.stacked_widget.addWidget(cluster_panel)
 
     def create_settings_panel(self):
         """Creates the panel for application settings."""
@@ -946,7 +766,6 @@ class SlurmJobManagerApp(QMainWindow):
             self.terminal_button.style().polish(self.terminal_button)
 
 
-
 # --- Main Execution ---
 
 
@@ -958,7 +777,7 @@ def check_for_updates(parent):
     try:
         # Get the currently installed version from pyproject.toml
         # In a real application, you might get this from importlib.metadata
-        with open("pyproject.toml", "r") as f:
+        with open(f"{script_dir}/pyproject.toml", "r") as f:
             pyproject_data = toml.load(f)
         current_version_str = pyproject_data["project"]["version"]
         current_version = parse_version(current_version_str)

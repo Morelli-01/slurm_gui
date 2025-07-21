@@ -409,6 +409,7 @@ class JobCreationDialog(QDialog):
         # Nice
         self.nice_spin = QSpinBox()
         self.nice_spin.setValue(self.job.nice or 0)
+        self.nice_spin.setMaximum(1000000000)
         layout.addRow("Nice:", self.nice_spin)
         
         # Oversubscribe
