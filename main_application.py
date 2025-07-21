@@ -28,6 +28,7 @@ from core.terminal_helper import *
 import requests
 from packaging.version import parse as parse_version
 import toml
+import importlib.metadata
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -777,11 +778,9 @@ def check_for_updates(parent):
     try:
         # Get the currently installed version from pyproject.toml
         # In a real application, you might get this from importlib.metadata
-        with open(f"{script_dir}/pyproject.toml", "r") as f:
-            pyproject_data = toml.load(f)
-        current_version_str = pyproject_data["project"]["version"]
-        current_version = parse_version(current_version_str)
 
+        current_version_str = importlib.metadata.version(package_name)
+        current_version = parse_version(current_version_str)
         # Get the latest version from PyPI
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)
         response.raise_for_status()
