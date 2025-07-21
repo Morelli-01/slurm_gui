@@ -44,7 +44,7 @@ def requires_connection(func: Callable) -> Callable:
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         if self.connection_status != ConnectionState.CONNECTED:
-            print("SlurmAPI is not connected!")
+            print(f"Cannot call '{func.__name__}': SlurmAPI is not connected!")
             return None
         return func(self, *args, **kwargs)
 

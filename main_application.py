@@ -349,6 +349,7 @@ class SlurmJobManagerApp(QMainWindow):
                 }
             """
             )
+            self.setup_maintenances()
         else:
             self.connection_status.setToolTip("Disconnected")
             bad_connection_icon_path = os.path.join(
@@ -397,79 +398,79 @@ class SlurmJobManagerApp(QMainWindow):
         self.stacked_widget.setCurrentIndex(index)
         self.update_nav_styles(clicked_button)
 
-    def create_navigation_bar(self):
-        """Creates the top navigation bar with logo, buttons, and search."""
-        nav_widget = QWidget()
-        nav_layout = QHBoxLayout(nav_widget)
-        nav_layout.setContentsMargins(0, 0, 0, 0)
-        nav_layout.setSpacing(15)  # Device-independent pixels
+    # def create_navigation_bar(self):
+    #     """Creates the top navigation bar with logo, buttons, and search."""
+    #     nav_widget = QWidget()
+    #     nav_layout = QHBoxLayout(nav_widget)
+    #     nav_layout.setContentsMargins(0, 0, 0, 0)
+    #     nav_layout.setSpacing(15)  # Device-independent pixels
 
-        # Logo - use device-independent size
-        logo_label = QLabel()
-        logo_size = 40  # Device-independent pixels
-        logo_label.setFixedSize(logo_size, logo_size)
-        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        nav_layout.addWidget(logo_label)
+    #     # Logo - use device-independent size
+    #     logo_label = QLabel()
+    #     logo_size = 40  # Device-independent pixels
+    #     logo_label.setFixedSize(logo_size, logo_size)
+    #     logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    #     nav_layout.addWidget(logo_label)
 
-        logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
-        pixmap = QPixmap(logo_path)
-        # Qt automatically handles DPI scaling for pixmaps
-        scaled_pixmap = pixmap.scaled(
-            logo_size,
-            logo_size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        logo_label.setPixmap(scaled_pixmap)
+    #     logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
+    #     pixmap = QPixmap(logo_path)
+    #     # Qt automatically handles DPI scaling for pixmaps
+    #     scaled_pixmap = pixmap.scaled(
+    #         logo_size,
+    #         logo_size,
+    #         Qt.AspectRatioMode.KeepAspectRatio,
+    #         Qt.TransformationMode.SmoothTransformation,
+    #     )
+    #     logo_label.setPixmap(scaled_pixmap)
 
-        nav_layout.addSpacing(25)  # Device-independent spacing
+    #     nav_layout.addSpacing(25)  # Device-independent spacing
 
-        # Navigation buttons
-        button_names = ["Jobs", "Cluster Status", "Settings"]
-        for i, name in enumerate(button_names):
-            btn = QPushButton(name)
-            btn.setObjectName("navButton")
-            btn.setCheckable(True)
-            btn.clicked.connect(
-                lambda checked, index=i, button=btn: self.switch_panel(index, button)
-            )
-            nav_layout.addWidget(btn)
-            self.nav_buttons[name] = btn
+    #     # Navigation buttons
+    #     button_names = ["Jobs", "Cluster Status", "Settings"]
+    #     for i, name in enumerate(button_names):
+    #         btn = QPushButton(name)
+    #         btn.setObjectName("navButton")
+    #         btn.setCheckable(True)
+    #         btn.clicked.connect(
+    #             lambda checked, index=i, button=btn: self.switch_panel(index, button)
+    #         )
+    #         nav_layout.addWidget(btn)
+    #         self.nav_buttons[name] = btn
 
-        nav_layout.addStretch()
+    #     nav_layout.addStretch()
 
-        # Terminal button
-        self.terminal_button = QPushButton("Terminal")
-        self.terminal_button.setObjectName("terminalButton")
-        self.terminal_button.setIcon(
-            QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
-        )
-        self.terminal_button.setToolTip("Open SSH Terminal")
-        self.terminal_button.clicked.connect(self.open_terminal)
-        nav_layout.addWidget(self.terminal_button)
+    #     # Terminal button
+    #     self.terminal_button = QPushButton("Terminal")
+    #     self.terminal_button.setObjectName("terminalButton")
+    #     self.terminal_button.setIcon(
+    #         QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
+    #     )
+    #     self.terminal_button.setToolTip("Open SSH Terminal")
+    #     self.terminal_button.clicked.connect(self.open_terminal)
+    #     nav_layout.addWidget(self.terminal_button)
 
-        # Connection status
-        self.connection_status = ClickableLabel(" Connection status...")
-        self.connection_status.setObjectName("statusButton")
+    #     # Connection status
+    #     self.connection_status = ClickableLabel(" Connection status...")
+    #     self.connection_status.setObjectName("statusButton")
 
-        # Set initial icon - Qt handles DPI scaling for icons automatically
-        initial_status_icon_path = os.path.join(
-            script_dir,
-            "src_static",
-            "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png",
-        )
-        # Use device-independent size - Qt scales automatically
-        icon_size = QSize(28, 28)
-        self.connection_status.setPixmap(
-            QPixmap(initial_status_icon_path).scaled(
-                icon_size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
-        nav_layout.addWidget(self.connection_status)
+    #     # Set initial icon - Qt handles DPI scaling for icons automatically
+    #     initial_status_icon_path = os.path.join(
+    #         script_dir,
+    #         "src_static",
+    #         "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png",
+    #     )
+    #     # Use device-independent size - Qt scales automatically
+    #     icon_size = QSize(28, 28)
+    #     self.connection_status.setPixmap(
+    #         QPixmap(initial_status_icon_path).scaled(
+    #             icon_size,
+    #             Qt.AspectRatioMode.KeepAspectRatio,
+    #             Qt.TransformationMode.SmoothTransformation,
+    #         )
+    #     )
+    #     nav_layout.addWidget(self.connection_status)
 
-        self.main_layout.addWidget(nav_widget)
+    #     self.main_layout.addWidget(nav_widget)
 
     def open_terminal(self):
         """Open a terminal with SSH connection to the cluster"""
@@ -500,11 +501,93 @@ class SlurmJobManagerApp(QMainWindow):
             )
 
     # --- Panel Creation Methods ---
+    def create_navigation_bar(self):
+            """Creates the top navigation bar with logo, buttons, and search."""
+            nav_widget = QWidget()
+            nav_layout = QHBoxLayout(nav_widget)
+            nav_layout.setContentsMargins(0, 0, 0, 0)
+            nav_layout.setSpacing(15)  # Device-independent pixels
 
-    def create_jobs_panel(self):
-        """Creates the main panel for submitting and viewing jobs."""
-        self.jobs_panel = JobsPanelWidget()  # <-- Changed this line
-        self.stacked_widget.addWidget(self.jobs_panel)
+            # Logo - use device-independent size
+            logo_label = QLabel()
+            logo_size = 40  # Device-independent pixels
+            logo_label.setFixedSize(logo_size, logo_size)
+            logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            nav_layout.addWidget(logo_label)
+
+            logo_path = os.path.join(script_dir, "src_static", "app_logo.png")
+            pixmap = QPixmap(logo_path)
+            # Qt automatically handles DPI scaling for pixmaps
+            scaled_pixmap = pixmap.scaled(
+                logo_size,
+                logo_size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo_label.setPixmap(scaled_pixmap)
+
+            nav_layout.addSpacing(25)  # Device-independent spacing
+
+            # Navigation buttons
+            button_names = ["Jobs", "Cluster Status", "Settings"]
+            for i, name in enumerate(button_names):
+                btn = QPushButton(name)
+                btn.setObjectName("navButton")
+                btn.setCheckable(True)
+                btn.clicked.connect(
+                    lambda checked, index=i, button=btn: self.switch_panel(index, button)
+                )
+                nav_layout.addWidget(btn)
+                self.nav_buttons[name] = btn
+
+            # Add maintenance label to navigation bar
+            self.maintenance_label = QLabel()
+            self.maintenance_label.setStyleSheet("""
+                color: #FF6B6B;
+                font-weight: bold;
+                background-color: rgba(255, 107, 107, 0.1);
+                border: 1px solid #FF6B6B;
+                border-radius: 4px;
+                padding: 6px 12px;
+                margin: 0px 10px;
+            """)
+            self.maintenance_label.hide()  # Initially hidden
+            nav_layout.addWidget(self.maintenance_label)
+
+            nav_layout.addStretch()
+
+            # Terminal button
+            self.terminal_button = QPushButton("Terminal")
+            self.terminal_button.setObjectName("terminalButton")
+            self.terminal_button.setIcon(
+                QIcon(os.path.join(script_dir, "src_static", "terminal.svg"))
+            )
+            self.terminal_button.setToolTip("Open SSH Terminal")
+            self.terminal_button.clicked.connect(self.open_terminal)
+            nav_layout.addWidget(self.terminal_button)
+
+            # Connection status
+            self.connection_status = ClickableLabel(" Connection status...")
+            self.connection_status.setObjectName("statusButton")
+
+            # Set initial icon - Qt handles DPI scaling for icons automatically
+            initial_status_icon_path = os.path.join(
+                script_dir,
+                "src_static",
+                "cloud_off_24dp_EA3323_FILL0_wght400_GRAD0_opsz24.png",
+            )
+            # Use device-independent size - Qt scales automatically
+            icon_size = QSize(28, 28)
+            self.connection_status.setPixmap(
+                QPixmap(initial_status_icon_path).scaled(
+                    icon_size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            nav_layout.addWidget(self.connection_status)
+
+            self.main_layout.addWidget(nav_widget)
 
     def create_cluster_panel(self):
         """Creates the panel displaying cluster status information."""
@@ -512,49 +595,13 @@ class SlurmJobManagerApp(QMainWindow):
         cluster_layout = QVBoxLayout(cluster_panel)
         cluster_layout.setSpacing(15)  # Device-independent spacing
 
-        # Header with refresh button
+        # Header with refresh button (maintenance label removed from here)
         header_layout = QHBoxLayout()
         self.cluster_label = QLabel("Cluster Status Overview")
         self.cluster_label.setObjectName("sectionTitle")
         # Use device-independent font size - Qt handles DPI scaling
 
-        self.maintenance_label = QLabel()
-        self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
-        self.maintenance_label.hide()  # Initially hidden
-        try:
-            maintenance_info = self.slurm_api.read_maintenances()
-            if maintenance_info:
-                # Extract maintenance details
-                maintenance_details = []
-                for line in maintenance_info.split("\n"):
-                    if "ReservationName=" in line:
-                        name = line.split("ReservationName=")[1].split()[0]
-                        start_time = line.split(" ")[1].split("=")[1]
-                        end_time = line.split(" ")[2].split("=")[1]
-                        time_to_maintenance = (
-                            datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
-                            - datetime.now()
-                        )
-                        maintenance_details.append(
-                            f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours"
-                        )
-                        break
-
-                if maintenance_details:
-                    self.maintenance_label.setText(
-                        f"⚠️ Maintenance: {', '.join(maintenance_details)}"
-                    )
-                    self.maintenance_label.show()
-                else:
-                    self.maintenance_label.hide()
-            else:
-                self.maintenance_label.hide()
-        except Exception as e:
-            print(f"Error checking maintenance status: {e}")
-            self.maintenance_label.hide()
-
         header_layout.addWidget(self.cluster_label)
-        header_layout.addWidget(self.maintenance_label)
         header_layout.addStretch()
 
         self.filter_btn_by_users = ButtonGroupWidget()
@@ -612,12 +659,238 @@ class SlurmJobManagerApp(QMainWindow):
         cluster_layout.addLayout(content_layout)
         self.stacked_widget.addWidget(cluster_panel)
 
+
+    def create_jobs_panel(self):
+        """Creates the main panel for submitting and viewing jobs."""
+        self.jobs_panel = JobsPanelWidget()  # <-- Changed this line
+        self.stacked_widget.addWidget(self.jobs_panel)
+
+    # def create_cluster_panel(self):
+    #     """Creates the panel displaying cluster status information."""
+    #     cluster_panel = QWidget()
+    #     cluster_layout = QVBoxLayout(cluster_panel)
+    #     cluster_layout.setSpacing(15)  # Device-independent spacing
+
+    #     # Header with refresh button
+    #     header_layout = QHBoxLayout()
+    #     self.cluster_label = QLabel("Cluster Status Overview")
+    #     self.cluster_label.setObjectName("sectionTitle")
+    #     # Use device-independent font size - Qt handles DPI scaling
+
+    #     self.maintenance_label = QLabel()
+    #     self.maintenance_label.setStyleSheet("color: #FF0000;")  # Red color for warning
+    #     self.maintenance_label.hide()  # Initially hidden
+    #     try:
+    #         maintenance_info = self.slurm_api.read_maintenances()
+    #         if maintenance_info:
+    #             # Extract maintenance details
+    #             maintenance_details = []
+    #             for line in maintenance_info.split("\n"):
+    #                 if "ReservationName=" in line:
+    #                     name = line.split("ReservationName=")[1].split()[0]
+    #                     start_time = line.split(" ")[1].split("=")[1]
+    #                     end_time = line.split(" ")[2].split("=")[1]
+    #                     time_to_maintenance = (
+    #                         datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%S")
+    #                         - datetime.now()
+    #                     )
+    #                     maintenance_details.append(
+    #                         f" in {time_to_maintenance.days} days, {time_to_maintenance.seconds//3600} hours"
+    #                     )
+    #                     break
+
+    #             if maintenance_details:
+    #                 self.maintenance_label.setText(
+    #                     f"⚠️ Maintenance: {', '.join(maintenance_details)}"
+    #                 )
+    #                 self.maintenance_label.show()
+    #             else:
+    #                 self.maintenance_label.hide()
+    #         else:
+    #             self.maintenance_label.hide()
+    #     except Exception as e:
+    #         print(f"Error checking maintenance status: {e}")
+    #         self.maintenance_label.hide()
+
+    #     header_layout.addWidget(self.cluster_label)
+    #     header_layout.addWidget(self.maintenance_label)
+    #     header_layout.addStretch()
+
+    #     self.filter_btn_by_users = ButtonGroupWidget()
+    #     self.filter_btn_by_users.selectionChanged.connect(
+    #         lambda text: self.filter_by_accounts(text)
+    #     )
+    #     header_layout.addWidget(self.filter_btn_by_users)
+
+    #     self.filter_jobs = QLineEdit()
+    #     self.filter_jobs.setClearButtonEnabled(True)
+    #     self.filter_jobs.setPlaceholderText("Filter jobs...")
+    #     # Use device-independent width
+    #     self.filter_jobs.setFixedWidth(220)
+    #     header_layout.addWidget(self.filter_jobs)
+
+    #     self.filter_jobs.textChanged.connect(
+    #         lambda: self.job_queue_widget.filter_table(self.filter_jobs.text())
+    #     )
+
+    #     refresh_cluster_btn = QPushButton("Refresh Status")
+    #     refresh_cluster_btn.clicked.connect(self.slurm_worker.start)
+    #     header_layout.addWidget(refresh_cluster_btn)
+
+    #     cluster_layout.addLayout(header_layout)
+
+    #     # Main Content Layout
+    #     content_layout = QHBoxLayout()
+    #     content_layout.setSpacing(15)  # Device-independent spacing
+
+    #     # Left Section: Job Queue
+    #     self.job_queue_widget = JobQueueWidget()
+    #     content_layout.addWidget(self.job_queue_widget)
+    #     self.job_queue_widget.setSizePolicy(
+    #         QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+    #     )
+
+    #     # Right Section: Cluster Overview
+    #     overview_group = QGroupBox("Real-time Usage")
+    #     overview_layout = QVBoxLayout(overview_group)
+    #     overview_layout.setSpacing(15)  # Device-independent spacing
+    #     overview_group.setSizePolicy(
+    #         QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+    #     )
+
+    #     self.cluster_status_overview_widget = ClusterStatusWidget()
+    #     overview_layout.addWidget(
+    #         self.cluster_status_overview_widget,
+    #         alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
+    #     )
+
+    #     content_layout.addWidget(overview_group)
+    #     content_layout.setStretchFactor(self.job_queue_widget, 1)
+    #     content_layout.setStretchFactor(overview_group, 0)
+
+    #     cluster_layout.addLayout(content_layout)
+    #     self.stacked_widget.addWidget(cluster_panel)
+
     def create_settings_panel(self):
         """Creates the panel for application settings."""
         self.settings_panel = SettingsWidget()
         self.stacked_widget.addWidget(self.settings_panel)
 
     # --- Action & Data Methods ---
+
+    def setup_maintenances(self):
+        try:
+            maintenance_info = self.slurm_api.read_maintenances()
+            if maintenance_info:
+                # Extract maintenance details
+                maintenance_details = parse_slurm_reservations(maintenance_info)
+
+                if maintenance_details:
+                    # Create a readable maintenance warning
+                    warning_messages = []
+                    
+                    for maintenance in maintenance_details:
+                        reservation_name = maintenance.get('ReservationName', 'Unknown')
+                        start_time_str = maintenance.get('StartTime', '')
+                        end_time_str = maintenance.get('EndTime', '')
+                        state = maintenance.get('State', 'Unknown')
+                        nodes = maintenance.get('Nodes', [])
+                        
+                        # Parse start time to calculate time until maintenance
+                        if start_time_str:
+                            try:
+                                start_time = datetime.strptime(start_time_str, "%Y-%m-%dT%H:%M:%S")
+                                now = datetime.now()
+                                
+                                if state == 'ACTIVE':
+                                    # Maintenance is currently active
+                                    if end_time_str:
+                                        end_time = datetime.strptime(end_time_str, "%Y-%m-%dT%H:%M:%S")
+                                        time_remaining = end_time - now
+                                        if time_remaining.total_seconds() > 0:
+                                            hours_remaining = int(time_remaining.total_seconds() // 3600)
+                                            warning_messages.append(f"ACTIVE maintenance ({hours_remaining}h remaining)")
+                                        else:
+                                            warning_messages.append(f"Maintenance ending soon")
+                                    else:
+                                        warning_messages.append(f"ACTIVE maintenance")
+                                        
+                                elif state == 'INACTIVE' and start_time > now:
+                                    # Maintenance is scheduled for the future
+                                    time_to_start = start_time - now
+                                    days_until = time_to_start.days
+                                    hours_until = int((time_to_start.total_seconds() % 86400) // 3600)
+                                    
+                                    if days_until > 0:
+                                        warning_messages.append(f"Scheduled in {days_until}d {hours_until}h")
+                                    elif hours_until > 0:
+                                        warning_messages.append(f"Scheduled in {hours_until}h")
+                                    else:
+                                        minutes_until = int((time_to_start.total_seconds() % 3600) // 60)
+                                        warning_messages.append(f"Scheduled in {minutes_until}m")
+                                
+                            except ValueError as e:
+                                print(f"Error parsing maintenance time: {e}")
+                                warning_messages.append(f"Maintenance scheduled")
+                    
+                    if warning_messages:
+                        # Limit to most urgent/relevant messages and keep it concise
+                        display_message = " • ".join(warning_messages[:2])  # Show max 2 maintenance events
+                        if len(warning_messages) > 2:
+                            display_message += f" (+{len(warning_messages)-2} more)"
+                        
+                        self.maintenance_label.setText(f"⚠️ {display_message}")
+                        self.maintenance_label.setToolTip(self._create_detailed_maintenance_tooltip(maintenance_details))
+                        self.maintenance_label.show()
+                    else:
+                        self.maintenance_label.hide()
+                else:
+                    self.maintenance_label.hide()
+            else:
+                self.maintenance_label.hide()
+        except Exception as e:
+            print(f"Error checking maintenance status: {e}")
+            self.maintenance_label.hide()
+    
+    def _create_detailed_maintenance_tooltip(self, maintenance_details):
+        """Create a detailed tooltip with full maintenance information"""
+        tooltip_lines = []
+        
+        for maintenance in maintenance_details:
+            name = maintenance.get('ReservationName', 'Unknown')
+            start = maintenance.get('StartTime', 'Unknown')
+            end = maintenance.get('EndTime', 'Unknown')
+            state = maintenance.get('State', 'Unknown')
+            nodes = maintenance.get('Nodes', [])
+            
+            # Format the time strings for better readability
+            try:
+                if start != 'Unknown':
+                    start_dt = datetime.strptime(start, "%Y-%m-%dT%H:%M:%S")
+                    start_formatted = start_dt.strftime("%Y-%m-%d %H:%M")
+                else:
+                    start_formatted = start
+                    
+                if end != 'Unknown':
+                    end_dt = datetime.strptime(end, "%Y-%m-%dT%H:%M:%S")
+                    end_formatted = end_dt.strftime("%Y-%m-%d %H:%M")
+                else:
+                    end_formatted = end
+            except ValueError:
+                start_formatted = start
+                end_formatted = end
+            
+            node_count = len(nodes) if nodes else 0
+            node_info = f"{node_count} nodes" if node_count > 5 else f"Nodes: {', '.join(nodes[:5])}"
+            if node_count > 5:
+                node_info += f" (+{node_count-5} more)"
+            
+            tooltip_lines.append(f"• {name} [{state}]")
+            tooltip_lines.append(f"  Time: {start_formatted} → {end_formatted}")
+            tooltip_lines.append(f"  {node_info}")
+            tooltip_lines.append("")  # Empty line for separation
+        
+        return "\n".join(tooltip_lines)
 
     def filter_by_accounts(self, account_type):
         if account_type == "ME":
@@ -673,6 +946,7 @@ class SlurmJobManagerApp(QMainWindow):
             self.terminal_button.style().polish(self.terminal_button)
 
 
+
 # --- Main Execution ---
 
 
@@ -714,7 +988,9 @@ def main():
 
                 temp_app = QApplication([])
                 dpi_ratio = get_dpi_ratio(temp_app)
-                temp_app.quit()
+                temp_app.closeAllWindows()
+                del temp_app # otherwise when the application get closed a segmentation fault is thrown
+
                 os.environ["QT_SCALE_FACTOR"] = str(dpi_ratio)
 
                 output = subprocess.check_output("xdpyinfo", shell=True).decode()

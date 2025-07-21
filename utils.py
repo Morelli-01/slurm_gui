@@ -3,10 +3,17 @@ import subprocess
 from PyQt6.QtWidgets import QLabel, QFrame
 from PyQt6.QtCore import pyqtSignal
 import sys, os
-from PyQt6.QtWidgets import (QApplication, QWidget, QHBoxLayout, QPushButton, QButtonGroup)
-from PyQt6.QtCore import (Qt, pyqtSignal)  # Import pyqtSignal
+from PyQt6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QHBoxLayout,
+    QPushButton,
+    QButtonGroup,
+)
+from PyQt6.QtCore import Qt, pyqtSignal  # Import pyqtSignal
 from datetime import datetime, timedelta
-
+from typing import Any, Callable, Dict, List, Optional, Tuple
+import re
 COLOR_DARK_BORDER = "#6272a4"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,18 +30,18 @@ BTN_BLUE = "btnBlue"
 def parse_duration(s: str) -> timedelta:
     """Parse a duration string in SLURM format to a timedelta object."""
     days = 0
-    if '-' in s:
+    if "-" in s:
         # Format: D-HH:MM:SS
-        day_part, time_part = s.split('-')
+        day_part, time_part = s.split("-")
         days = int(day_part)
     else:
         time_part = s
 
-    parts = [int(p) for p in time_part.split(':')]
+    parts = [int(p) for p in time_part.split(":")]
 
-    if len(parts) == 2:        # MM:SS
+    if len(parts) == 2:  # MM:SS
         h, m, s = 0, parts[0], parts[1]
-    elif len(parts) == 3:      # HH:MM:SS
+    elif len(parts) == 3:  # HH:MM:SS
         h, m, s = parts
     else:
         raise ValueError(f"Invalid time format: {s}")
@@ -59,13 +66,13 @@ def determine_job_status(state: str, exit_code: str = None) -> str:
         if exit_code:
             try:
                 # Exit code format is usually "exit_status:signal"
-                exit_status = exit_code.split(':')[0]
+                exit_status = exit_code.split(":")[0]
                 exit_num = int(exit_status)
 
                 if exit_num == 0:
                     return "COMPLETED"  # Successful completion
                 else:
-                    return "FAILED"     # Non-zero exit code = failure
+                    return "FAILED"  # Non-zero exit code = failure
             except (ValueError, IndexError):
                 # If we can't parse exit code, assume success for COMPLETED state
                 return "COMPLETED"
@@ -103,16 +110,16 @@ def parse_memory_size(size_str):
 
     # Define the multipliers for each unit
     multipliers = {
-        'B': 1,
-        'K': 1024,
-        'M': 1024 ** 2,
-        'G': 1024 ** 3,
-        'T': 1024 ** 4,
-        'P': 1024 ** 5
+        "B": 1,
+        "K": 1024,
+        "M": 1024**2,
+        "G": 1024**3,
+        "T": 1024**4,
+        "P": 1024**5,
     }
 
     # Extract the number and unit
-    if size_str[-2:] in ['KB', 'MB', 'GB', 'TB', 'PB']:
+    if size_str[-2:] in ["KB", "MB", "GB", "TB", "PB"]:
         number = float(size_str[:-2])
         unit = size_str[-2:-1]
     else:
@@ -131,6 +138,7 @@ class ClickableLabel(QLabel):
     def mousePressEvent(self, event):
         self.clicked.emit()
         super().mousePressEvent(event)
+
 
 class ButtonGroupWidget(QWidget):  # Assuming this is a QWidget subclass
     selectionChanged = pyqtSignal(str)  # Signal that emits a string
@@ -213,3 +221,86 @@ def create_separator(shape=QFrame.Shape.HLine, color=COLOR_DARK_BORDER):
     else:
         separator.setFixedWidth(1)
     return separator
+
+
+def _expand_node_range(node_string: str) -> List[str]:
+    """
+    Expands a Slurm node string with ranges into a full list of node names.
+    Example: 'hpc-[01-03],hpc-10' -> ['hpc-01', 'hpc-02', 'hpc-03', 'hpc-10']
+    """
+    match = re.search(r'\[([\d,-]+)\]', node_string)
+    if not match:
+        return [node_string]
+
+    prefix = node_string[:match.start()]
+    suffix = node_string[match.end():]
+    range_spec = match.group(1)
+    
+    nodes = []
+    for part in range_spec.split(','):
+        if '-' in part:
+            start_str, end_str = part.split('-')
+            start, end = int(start_str), int(end_str)
+            padding = len(start_str)
+            for i in range(start, end + 1):
+                node_num = str(i).zfill(padding)
+                nodes.append(f"{prefix}{node_num}{suffix}")
+        else:
+            nodes.append(f"{prefix}{part}{suffix}")
+            
+    return nodes
+
+def parse_slurm_reservations(raw_text: str) -> List[Dict[str, Any]]:
+    """
+    Parses the raw output of 'scontrol show reservation' into a list of dictionaries,
+    extracting only a specific set of fields.
+
+    Args:
+        raw_text: The string output from the scontrol command.
+
+    Returns:
+        A list of dictionaries, where each dictionary represents a reservation.
+    """
+    # Define the only fields we want to keep
+    target_fields = {
+        'ReservationName',
+        'Nodes',
+        'StartTime',
+        'EndTime',
+        'Duration',
+        'Flags',
+        'State'
+    }
+    
+    reservations = []
+    reservation_blocks = raw_text.strip().split('\n\n')
+
+    for block in reservation_blocks:
+        if not block.strip():
+            continue
+
+        res_dict = {}
+        single_line_block = ' '.join(block.split())
+        pairs = re.findall(r'(\w+)=((?:\[.*?\]|\S)+)', single_line_block)
+
+        for key, value in pairs:
+            # Only process the key if it's in our target list
+            if key in target_fields:
+                value = value.strip()
+                
+                # Handle special parsing for specific keys
+                if key == 'Nodes':
+                    all_nodes = []
+                    for node_part in value.split(','):
+                        all_nodes.extend(_expand_node_range(node_part))
+                    res_dict[key] = all_nodes
+                elif key == 'Flags':
+                    res_dict[key] = value.split(',')
+                else:
+                    res_dict[key] = value
+        
+        if res_dict and 'maint' in res_dict['ReservationName']:
+            reservations.append(res_dict)
+
+    return reservations
+
