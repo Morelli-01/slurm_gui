@@ -136,51 +136,132 @@ class Job:
             settings = SettingsModel()
             webhook_url = settings._notification_settings.get('discord_webhook_url')
             if settings._notification_settings.get('discord_enabled') and webhook_url:
-                lines.append("# --- Discord Notifications ---")
+                lines.append("# --- Discord Notifications (Improved) ---")
                 lines.append(f'DISCORD_WEBHOOK_URL="{webhook_url}"')
+                
+                # Improved Discord notification script
                 discord_script = '''
-_CANCELLED=0
-function send_discord_notification() {
+# Global variables for better state tracking
+CANCELLED=0
+NOTIFICATION_SENT=0
+NOTIFICATION_LOG="/tmp/slurm_notification_${SLURM_JOB_ID}.log"
+
+# Improved notification function with better error handling
+send_discord_notification() {
     local status_message="$1"
     local color_code="$2"
-    local job_name="${SLURM_JOB_NAME}"
-    local job_id="${SLURM_JOB_ID}"
-    local timestamp=$(date --iso-8601=seconds)
-    local exit_code_info=""
-    if [ ! -z "$3" ]; then
-      exit_code_info=$(printf '{"name": "Exit Code", "value": "%s", "inline": true},' "$3")
+    local exit_code_info="$3"
+    
+    # Prevent duplicate notifications
+    if [ "$NOTIFICATION_SENT" -eq 1 ] && [ "$status_message" != "🚀 STARTED" ]; then
+        return 0
+    fi
+    
+    local job_name="${SLURM_JOB_NAME:-unknown}"
+    local job_id="${SLURM_JOB_ID:-unknown}"
+    local timestamp=$(date --iso-8601=seconds 2>/dev/null || date)
+    local exit_field=""
+    
+    if [ ! -z "$exit_code_info" ]; then
+        exit_field=",{\"name\": \"Exit Code\", \"value\": \"$exit_code_info\", \"inline\": true}"
     fi
 
+    # Create JSON payload with better escaping
     local json_payload
-    json_payload=$(printf '{"embeds": [{"title": "Job Status: %s", "color": %s, "fields": [%s{"name": "Job Name", "value": "%s", "inline": true}, {"name": "Job ID", "value": "%s", "inline": true}], "timestamp": "%s", "footer": {"text": "SlurmAIO"}}]}' "$status_message" "$color_code" "$exit_code_info" "$job_name" "$job_id" "$timestamp")
+    json_payload=$(cat <<EOF
+{
+    "embeds": [{
+        "title": "Job Status: $status_message",
+        "color": $color_code,
+        "fields": [
+            {"name": "Job Name", "value": "$job_name", "inline": true},
+            {"name": "Job ID", "value": "$job_id", "inline": true}$exit_field
+        ],
+        "timestamp": "$timestamp",
+        "footer": {"text": "SlurmAIO"}
+    }]
+}
+EOF
+)
+
+    # Send notification with better error handling and timeout
+    local curl_output
+    curl_output=$(curl -H "Content-Type: application/json" \
+                      -X POST \
+                      -d "$json_payload" \
+                      "$DISCORD_WEBHOOK_URL" \
+                      --max-time 30 \
+                      --retry 3 \
+                      --retry-delay 5 \
+                      --silent \
+                      --show-error 2>&1)
     
-    curl -H "Content-Type: application/json" -X POST -d "$json_payload" "$DISCORD_WEBHOOK_URL" --silent --fail-with-body &>/dev/null &
+    local curl_exit_code=$?
+    
+    # Log the notification attempt
+    echo "[$(date)] Status: $status_message, Curl exit: $curl_exit_code" >> "$NOTIFICATION_LOG"
+    
+    if [ $curl_exit_code -eq 0 ]; then
+        echo "[$(date)] Discord notification sent successfully: $status_message" >> "$NOTIFICATION_LOG"
+        if [ "$status_message" != "🚀 STARTED" ]; then
+            NOTIFICATION_SENT=1
+        fi
+    else
+        echo "[$(date)] Failed to send Discord notification: $curl_output" >> "$NOTIFICATION_LOG"
+    fi
+    
+    return $curl_exit_code
 }
 
-function handle_cancel() {
-    _CANCELLED=1
+# Improved signal handlers
+handle_cancel() {
+    echo "[$(date)] Received SIGTERM - job being cancelled/timed out" >> "$NOTIFICATION_LOG"
+    CANCELLED=1
+    
+    # Send cancellation notification immediately (foreground)
     send_discord_notification "🛑 CANCELLED / TIMEOUT" "8421504"
+    
+    # Wait briefly to ensure notification is sent
+    sleep 2
+    
+    # Exit with appropriate code
+    exit 143  # 128 + 15 (SIGTERM)
 }
-trap handle_cancel SIGTERM
 
-function handle_exit() {
+handle_exit() {
     local exit_code=$?
-    if [ $_CANCELLED -eq 1 ]; then
+    echo "[$(date)] Script exiting with code: $exit_code, CANCELLED: $CANCELLED" >> "$NOTIFICATION_LOG"
+    
+    # Don't send completion notification if already cancelled
+    if [ "$CANCELLED" -eq 1 ]; then
+        echo "[$(date)] Skipping completion notification - job was cancelled" >> "$NOTIFICATION_LOG"
         exit $exit_code
     fi
-
+    
+    # Send appropriate completion notification
     if [ $exit_code -eq 0 ]; then
         send_discord_notification "✅ COMPLETED" "65280"
     else
         send_discord_notification "❌ FAILED" "16711680" "$exit_code"
     fi
+    
+    # Brief wait to ensure notification is sent
+    sleep 2
+    
+    exit $exit_code
 }
+
+# Set up signal traps - improved order and handling
+trap handle_cancel SIGTERM SIGINT
 trap handle_exit EXIT
 
+# Send start notification
 send_discord_notification "🚀 STARTED" "3447003"
+
+# Add a small delay to ensure start notification is sent
+sleep 1
 '''
                 lines.append(discord_script)
-
 
         lines.append("# --- Your commands start here ---")
 
@@ -189,13 +270,31 @@ send_discord_notification "🚀 STARTED" "3447003"
             lines.append(f"source {self.venv}/bin/activate")
             lines.append("")
 
-        lines.append(self.script_commands)
+        # Wrap user commands with better signal handling if discord notifications are enabled
+        if self.discord_notifications:
+            lines.append("# Execute user commands with proper signal propagation")
+            lines.append("(")
+            lines.append("  # User commands in subshell for better signal handling")
+            lines.append(f"  {self.script_commands}")
+            lines.append(") &")
+            lines.append("USER_CMD_PID=$!")
+            lines.append("")
+            lines.append("# Wait for user commands to complete")
+            lines.append("wait $USER_CMD_PID")
+            lines.append("USER_EXIT_CODE=$?")
+            lines.append("")
+            lines.append("# Exit with the same code as user commands")
+            lines.append("exit $USER_EXIT_CODE")
+        else:
+            lines.append(self.script_commands)
 
         # Join lines with the appropriate separator for the OS
         return "\n".join(lines)
 
     def to_table_row(self):
         return [ self.id, self.name, self.status, self.elapsed, self.cpus_per_task,self.mem, self.gpus if self.gpus != None else "0"]
+
+# Rest of your classes remain the same...
 @dataclass
 class Project:
     """Data structure for a project, containing a name and a list of jobs."""
@@ -321,7 +420,6 @@ class JobsModel:
         self.event_bus.emit(Events.PROJECT_LIST_CHANGED, data={"projects": self.projects})
         self._is_loading = False
         show_success_toast(None, "Projects Loaded", "Loaded projects from remote.", duration=2000)
-
 
     def add_project(self, event: Dict):
         """Adds a new project and emits an event."""
