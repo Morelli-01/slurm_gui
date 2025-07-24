@@ -294,9 +294,19 @@ class JobsTableView(QWidget):
         """Populates a project's table with its jobs."""
         if project_name in self.tables:
             table = self.tables[project_name]
+            scrollbar = table.verticalScrollBar()
+            was_at_bottom = scrollbar.value() == scrollbar.maximum()
+            old_scroll_position = scrollbar.value()
+
             table.setRowCount(0)
             for job_data in jobs:
                 self._add_job_to_table(table, job_data)
+
+            if was_at_bottom:
+                scrollbar.setValue(scrollbar.maximum())
+            else:
+                scrollbar.setValue(old_scroll_position)
+
 
     def _apply_state_color(self, item: QTableWidgetItem):
         """Apply color based on job status"""

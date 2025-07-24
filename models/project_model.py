@@ -111,7 +111,9 @@ class Job:
         if self.nodes:
             lines.append(f"#SBATCH --nodes={self.nodes}")
         if self.ntasks:
-            lines.append(f"#SBATCH --ntasks={self.ntasks}")
+            # Only add ntasks if it's not a job array with the default of 1 task
+            if not self.array or (self.array and self.ntasks > 1):
+                lines.append(f"#SBATCH --ntasks={self.ntasks}")
         if self.output_file:
             lines.append(f"#SBATCH --output={self.output_file}")
         if self.oversubscribe:
@@ -556,29 +558,57 @@ class JobsModel:
                     active_ids.append(job.id)
         return list(set(active_ids))
 
+
     def update_jobs_from_sacct(self, job_updates: List[Dict[str, Any]]):
         """Updates job statuses and details from a list of sacct query results."""
         updated = False
+        
+        # --- Start of fix ---
+        # Group updates by the base job ID
+        updates_by_base_id = {}
         for update in job_updates:
-            job_id = update.get("JobID")
-            if not job_id:
+            job_id_full = update.get("JobID")
+            if not job_id_full:
                 continue
             
+            # Extract the base job ID (e.g., '12345' from '12345_1')
+            base_job_id = job_id_full.split('_')[0]
+            if base_job_id not in updates_by_base_id:
+                updates_by_base_id[base_job_id] = []
+            updates_by_base_id[base_job_id].append(update)
+
+        for base_job_id, updates in updates_by_base_id.items():
+            # Find the job in your projects
             found_job = None
             for project in self.projects:
-                job = self.get_job_by_id(project.name, job_id)
+                job = self.get_job_by_id(project.name, base_job_id)
                 if job:
                     found_job = job
                     break
-            
+
             if found_job:
-                new_status = update.get("State", found_job.status).upper()
-                new_elapsed = update.get("Elapsed", found_job.elapsed)
+                # Aggregate the statuses of all tasks in the array
+                statuses = [u.get("State", "").upper().split(" ")[0] for u in updates]
+                
+                # Determine the overall status based on a priority
+                new_status = found_job.status
+                if "FAILED" in statuses or "CANCELLED" in statuses or "TIMEOUT" in statuses:
+                    new_status = "FAILED"
+                elif "RUNNING" in statuses:
+                    new_status = "RUNNING"
+                elif "PENDING" in statuses:
+                    new_status = "PENDING"
+                elif all(s == "COMPLETED" for s in statuses):
+                    new_status = "COMPLETED"
+                
+                # For simplicity, we'll take the elapsed time of the first task.
+                new_elapsed = updates[0].get("Elapsed", found_job.elapsed)
 
                 if found_job.status != new_status or found_job.elapsed != new_elapsed:
                     found_job.status = new_status
                     found_job.elapsed = new_elapsed
                     updated = True
+        # --- End of fix ---
 
         if updated:
             self.event_bus.emit(

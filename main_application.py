@@ -555,7 +555,7 @@ class SlurmJobManagerApp(QMainWindow):
         )
 
         refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.clicked.connect(self.slurm_worker.start)
+        refresh_cluster_btn.clicked.connect(self.slurm_worker.run)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)
