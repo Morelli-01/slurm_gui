@@ -15,7 +15,10 @@ class JobsPanelView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.main_layout = QHBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        self.splitter.setHandleWidth(8)
         self.main_layout.addWidget(self.splitter)
 
         self.project_group = ProjectGroup()
@@ -23,7 +26,9 @@ class JobsPanelView(QWidget):
 
         self.jobs_table_view = JobsTableView()
         self.splitter.addWidget(self.jobs_table_view)
-        self.splitter.setSizes([200, 600])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 4)
+        self.splitter.setSizes([320, 980])
 
         get_event_bus().subscribe(
             Events.PROJECT_SELECTED,
@@ -53,4 +58,3 @@ class JobsPanelView(QWidget):
             self.main_layout.addWidget(self._no_connection_panel)
         else:
             self.main_layout.addWidget(self.splitter)
-

@@ -1,6 +1,4 @@
-import uuid
-from functools import partial
-from typing import List
+from typing import List, Optional, Sequence
 
 from core.defaults import *
 from core.event_bus import Events, get_event_bus
@@ -8,11 +6,6 @@ from core.style import AppStyles
 from models.project_model import Job, Project
 from widgets.toast_widget import show_warning_toast
 # from models.project_model import Project
-from utils import script_dir
-from widgets.new_job_widget import JobCreationDialog
-
-
-
 class ActionButtonsWidget(QWidget):
     """Widget containing the seven action buttons for a job."""
 
@@ -173,29 +166,92 @@ class JobsTableView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("jobsTableView")
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(8)
+
+        self._project_filter_text = ""
+        self._status_filter_value = ""
+
+        toolbar = QWidget()
+        toolbar.setObjectName("jobsToolbar")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(8)
+
+        self.panel_title_label = QLabel("Jobs")
+        self.panel_title_label.setObjectName("jobsPanelTitle")
+        toolbar_layout.addWidget(self.panel_title_label)
+
+        self.jobs_meta_label = QLabel("No project selected")
+        self.jobs_meta_label.setObjectName("jobsMetaLabel")
+        toolbar_layout.addWidget(self.jobs_meta_label)
+
+        toolbar_layout.addStretch(1)
+
+        self.search_input = QLineEdit()
+        self.search_input.setObjectName("jobsFilterInput")
+        self.search_input.setPlaceholderText("Search by ID, name, status, runtime...")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self._on_filter_inputs_changed)
+        toolbar_layout.addWidget(self.search_input)
+
+        self.status_filter = QComboBox()
+        self.status_filter.setObjectName("jobsStatusFilter")
+        self.status_filter.addItems(
+            [
+                "All statuses",
+                NOT_SUBMITTED,
+                STATUS_PENDING,
+                STATUS_RUNNING,
+                STATUS_COMPLETING,
+                STATUS_COMPLETED,
+                STATUS_FAILED,
+                CANCELLED,
+                STATUS_STOPPED,
+                TIMEOUT,
+            ]
+        )
+        self.status_filter.currentTextChanged.connect(self._on_filter_inputs_changed)
+        toolbar_layout.addWidget(self.status_filter)
+
+        self.clear_filters_button = QPushButton("Clear")
+        self.clear_filters_button.setObjectName(BTN_BLUE)
+        self.clear_filters_button.clicked.connect(self._clear_filters)
+        toolbar_layout.addWidget(self.clear_filters_button)
+
+        self.layout.addWidget(toolbar)
+
         self.stacked_widget = QStackedWidget()
-        self.layout.addWidget(self.stacked_widget)
+        self.layout.addWidget(self.stacked_widget, 1)
 
         self.tables = {}  # {project_name: QTableWidget}
+        self._project_signatures = {}  # {project_name: tuple}
+        self._current_project_name = None
 
         # A placeholder widget for when no project is selected
         self.placeholder_widget = QWidget()
         placeholder_layout = QVBoxLayout(self.placeholder_widget)
         placeholder_label = QLabel("Select or create a project to view its jobs.")
+        placeholder_label.setObjectName("jobsPlaceholderLabel")
         placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         placeholder_layout.addWidget(placeholder_label)
         self.stacked_widget.addWidget(self.placeholder_widget)
         self.stacked_widget.setCurrentWidget(self.placeholder_widget)
 
-        # Create a single "New Job" button
-        self.new_jobs_button = QPushButton("New Job", self)
+        # Footer action row keeps the button always accessible and avoids table overlap.
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.addStretch(1)
+
+        self.new_jobs_button = QPushButton("New Job")
         self.new_jobs_button.setObjectName(BTN_GREEN)
         self.new_jobs_button.clicked.connect(self._create_new_job_for_current_project)
         self.new_jobs_button.setFixedSize(120, 40)
-        self.new_jobs_button.raise_()  # Make sure it's on top
-        self.new_jobs_button.hide() # Initially hidden
+        self.new_jobs_button.hide()  # Initially hidden until a project is selected
+        footer_layout.addWidget(self.new_jobs_button)
+        self.layout.addLayout(footer_layout)
 
         self._apply_stylesheet()
 
@@ -220,9 +276,16 @@ class JobsTableView(QWidget):
             1, QHeaderView.ResizeMode.Stretch
         )
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        table.setWordWrap(False)
+        table.setTextElideMode(Qt.TextElideMode.ElideRight)
         table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(getattr(self, "_ROW_HEIGHT", 50))
         table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
         table.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -250,6 +313,37 @@ class JobsTableView(QWidget):
         style += AppStyles.get_button_styles()
         style += AppStyles.get_scrollbar_styles()
         style += AppStyles.get_job_action_styles()
+        style += f"""
+        QWidget#jobsToolbar {{
+            background-color: transparent;
+        }}
+        QLabel#jobsPanelTitle {{
+            font-size: 18px;
+            font-weight: 700;
+            color: {COLOR_DARK_FG};
+            padding-right: 6px;
+        }}
+        QLabel#jobsMetaLabel {{
+            font-size: 12px;
+            color: {COLOR_GRAY};
+        }}
+        QLineEdit#jobsFilterInput {{
+            min-width: 270px;
+            max-width: 380px;
+        }}
+        QComboBox#jobsStatusFilter {{
+            min-width: 150px;
+        }}
+        QLabel#jobsPlaceholderLabel {{
+            color: {COLOR_GRAY};
+            font-size: 14px;
+        }}
+        QWidget#jobsTableView QTableWidget::item:selected {{
+            background-color: {COLOR_DARK_BG_HOVER};
+            color: {COLOR_BLUE};
+            border: 1px solid {COLOR_DARK_BORDER};
+        }}
+        """
 
         self.setStyleSheet(style)
 
@@ -264,7 +358,20 @@ class JobsTableView(QWidget):
         for project in projects:
             if project.name not in self.tables:
                 self.add_project_table(project.name)
-            self.update_jobs_for_project(project.name, project.jobs)
+
+            project_signature = self._build_project_signature(project.jobs)
+            if self._project_signatures.get(project.name) != project_signature:
+                self.update_jobs_for_project(project.name, project.jobs)
+                self._project_signatures[project.name] = project_signature
+
+        if not projects:
+            self._current_project_name = None
+            self.stacked_widget.setCurrentWidget(self.placeholder_widget)
+            self.new_jobs_button.hide()
+            self._update_panel_header(None)
+            return
+
+        self._update_panel_header(self._current_project_name)
 
     def add_project_table(self, project_name: str):
         """Adds a new table for a project."""
@@ -277,35 +384,121 @@ class JobsTableView(QWidget):
         """Removes the table for a project."""
         if project_name in self.tables:
             table = self.tables.pop(project_name)
+            self._project_signatures.pop(project_name, None)
             self.stacked_widget.removeWidget(table)
             table.deleteLater()
 
     def switch_to_project(self, project_name: str):
         """Switches the view to the table for the selected project."""
         if project_name in self.tables:
+            self._current_project_name = project_name
             self.stacked_widget.setCurrentWidget(self.tables[project_name])
             self.new_jobs_button.show()
+            self.new_jobs_button.setToolTip(f"Create a new job in '{project_name}'")
+            self._apply_filters_to_table(self.tables[project_name])
+            self._update_panel_header(project_name)
         else:
+            self._current_project_name = None
             self.stacked_widget.setCurrentWidget(self.placeholder_widget)
             self.new_jobs_button.hide()
+            self._update_panel_header(None)
 
 
     def update_jobs_for_project(self, project_name: str, jobs: List[Job]):
         """Populates a project's table with its jobs."""
-        if project_name in self.tables:
-            table = self.tables[project_name]
-            scrollbar = table.verticalScrollBar()
-            was_at_bottom = scrollbar.value() == scrollbar.maximum()
-            old_scroll_position = scrollbar.value()
+        if project_name not in self.tables:
+            return
 
-            table.setRowCount(0)
-            for job_data in jobs:
-                self._add_job_to_table(table, job_data)
+        table = self.tables[project_name]
+        scrollbar = table.verticalScrollBar()
+        was_at_bottom = scrollbar.value() == scrollbar.maximum()
+        old_scroll_position = scrollbar.value()
 
-            if was_at_bottom:
-                scrollbar.setValue(scrollbar.maximum())
+        table.setUpdatesEnabled(False)
+        try:
+            previous_keys = table.property("job_keys") or []
+            new_keys = [self._job_key(job_data) for job_data in jobs]
+
+            if previous_keys == new_keys and table.rowCount() == len(jobs):
+                self._refresh_existing_rows(table, jobs)
             else:
-                scrollbar.setValue(old_scroll_position)
+                self._rebuild_table_rows(table, jobs)
+                table.setProperty("job_keys", new_keys)
+        finally:
+            table.setUpdatesEnabled(True)
+
+        self._apply_filters_to_table(table)
+
+        if was_at_bottom:
+            scrollbar.setValue(scrollbar.maximum())
+        else:
+            scrollbar.setValue(old_scroll_position)
+
+    def _build_project_signature(self, jobs: List[Job]) -> tuple:
+        """Build a lightweight signature to skip unchanged table refreshes."""
+        signature_rows = []
+        for job_data in jobs:
+            values = self._get_row_values(job_data)
+            signature_rows.append(tuple(str(value) for value in values))
+        return tuple(signature_rows)
+
+    def _job_key(self, job_data: Job) -> str:
+        """Stable row identity used for in-place table refresh."""
+        job_id = getattr(job_data, "id", None)
+        if job_id not in (None, ""):
+            return str(job_id)
+        return f"tmp::{id(job_data)}"
+
+    def _get_row_values(self, job_data: Job) -> Sequence[str]:
+        if hasattr(job_data, "to_table_row"):
+            raw_values = job_data.to_table_row()
+        else:
+            raw_values = [
+                getattr(job_data, "id", ""),
+                getattr(job_data, "name", ""),
+                getattr(job_data, "status", ""),
+                getattr(job_data, "elapsed", ""),
+                getattr(job_data, "cpus_per_task", ""),
+                getattr(job_data, "mem", ""),
+                getattr(job_data, "gpus", "0"),
+            ]
+
+        values = [str(value) for value in raw_values[:7]]
+        while len(values) < 7:
+            values.append("")
+        return values
+
+    def _refresh_existing_rows(self, table: QTableWidget, jobs: List[Job]):
+        actions_col = table.columnCount() - 1
+        for row_index, job_data in enumerate(jobs):
+            row_values = self._get_row_values(job_data)
+            for col in range(actions_col):
+                self._set_table_item(table, row_index, col, row_values[col])
+
+            action_widget = table.cellWidget(row_index, actions_col)
+            if isinstance(action_widget, ActionButtonsWidget):
+                action_widget.job = job_data
+                action_widget.update_status(getattr(job_data, "status", ""))
+            else:
+                table.setCellWidget(row_index, actions_col, ActionButtonsWidget(job=job_data))
+
+    def _rebuild_table_rows(self, table: QTableWidget, jobs: List[Job]):
+        table.clearContents()
+        table.setRowCount(len(jobs))
+        for row_index, job_data in enumerate(jobs):
+            self._populate_job_row(table, row_index, job_data)
+
+    def _set_table_item(self, table: QTableWidget, row: int, col: int, value: str):
+        item = table.item(row, col)
+        if item is None:
+            item = QTableWidgetItem(value)
+            table.setItem(row, col, item)
+        elif item.text() != value:
+            item.setText(value)
+
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        if col == 2:  # Status column
+            self._apply_state_color(item)
 
 
     def _apply_state_color(self, item: QTableWidgetItem):
@@ -314,53 +507,34 @@ class JobsTableView(QWidget):
         if txt in STATE_COLORS:
             color = QColor(STATE_COLORS[txt])
             item.setData(Qt.ItemDataRole.ForegroundRole, QBrush(color))
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:
+            item.setData(Qt.ItemDataRole.ForegroundRole, QBrush(QColor(COLOR_DARK_FG)))
+        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    def _add_job_to_table(self, table: QTableWidget, job_data: Job):
-        """Adds a single job row to the given table, matching style and logic of _add_job_row."""
+    def _populate_job_row(self, table: QTableWidget, row_position: int, job_data: Job):
+        """Populates a single job row in the provided table."""
         actions_col = table.columnCount() - 1
-        row_position = table.rowCount()
-        table.insertRow(row_position)
-        table.verticalHeader().setDefaultSectionSize(getattr(self, "_ROW_HEIGHT", 50))
-
-        # Use to_table_row if available, else fallback to attributes
-        if hasattr(job_data, "to_table_row"):
-            row_values = job_data.to_table_row()
+        row_values = self._get_row_values(job_data)
 
         for col in range(actions_col):
-            val = row_values[col] if col < len(row_values) else ""
-            item = QTableWidgetItem(str(val))
-            item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-
-            if col == 2:  # Status column
-                if hasattr(self, "_apply_state_color"):
-                    self._apply_state_color(item)
-            table.setItem(row_position, col, item)
+            self._set_table_item(table, row_position, col, row_values[col])
 
         # Add action buttons
         action_widget = ActionButtonsWidget(job=job_data)
         action_widget._job_status = getattr(job_data, "status", None)
         table.setCellWidget(row_position, actions_col, action_widget)
-    
-    def resizeEvent(self, event):
-        """Override resize event to reposition the button."""
-        super().resizeEvent(event)
-        # Position the button in the bottom-right corner of the visible area (viewport)
-        if hasattr(self, "new_jobs_button"):
-            self.new_jobs_button.move(
-                self.width() - self.new_jobs_button.width() - 20,
-                self.height() - self.new_jobs_button.height() - 20
-            )
 
     def _create_new_job_for_current_project(self):
         """Creates a new job for the currently selected project."""
-        current_widget = self.stacked_widget.currentWidget()
-        if isinstance(current_widget, QTableWidget):
-            project_name = current_widget.objectName()
-            if project_name:
-                self._create_new_job(project_name)
-        elif current_widget is self.placeholder_widget:
-            show_warning_toast(self, "No Project Selected", "Please select or create a project first.")
+        if self._current_project_name and self._current_project_name in self.tables:
+            self._create_new_job(self._current_project_name)
+            return
+
+        show_warning_toast(
+            self,
+            "No Project Selected",
+            "Please select or create a project first.",
+        )
 
     def _create_new_job(self, project_name):
         get_event_bus().emit(
@@ -368,3 +542,64 @@ class JobsTableView(QWidget):
             data={"project_name": project_name},
             source="JobsTableView",
         )
+
+    def _clear_filters(self):
+        self.search_input.clear()
+        self.status_filter.setCurrentIndex(0)
+
+    def _on_filter_inputs_changed(self):
+        self._project_filter_text = self.search_input.text().strip().lower()
+        selected_status = self.status_filter.currentText().strip()
+        self._status_filter_value = "" if selected_status == "All statuses" else selected_status.upper()
+        self._apply_filters_to_current_table()
+
+    def _apply_filters_to_current_table(self):
+        if self._current_project_name and self._current_project_name in self.tables:
+            self._apply_filters_to_table(self.tables[self._current_project_name])
+        else:
+            self._update_panel_header(None)
+
+    def _apply_filters_to_table(self, table: QTableWidget):
+        table.setUpdatesEnabled(False)
+        try:
+            for row in range(table.rowCount()):
+                row_texts = []
+                for col in range(4):  # ID, name, status, runtime
+                    item = table.item(row, col)
+                    row_texts.append(item.text().lower() if item else "")
+
+                status_item = table.item(row, 2)
+                row_status = status_item.text().upper() if status_item else ""
+
+                matches_query = (
+                    not self._project_filter_text
+                    or any(self._project_filter_text in text for text in row_texts)
+                )
+                matches_status = (
+                    not self._status_filter_value
+                    or row_status == self._status_filter_value
+                )
+                table.setRowHidden(row, not (matches_query and matches_status))
+        finally:
+            table.setUpdatesEnabled(True)
+
+        self._update_panel_header(self._current_project_name)
+
+    def _update_panel_header(self, project_name: Optional[str]):
+        if not project_name or project_name not in self.tables:
+            self.panel_title_label.setText("Jobs")
+            self.jobs_meta_label.setText("No project selected")
+            return
+
+        table = self.tables[project_name]
+        total_rows = table.rowCount()
+        visible_rows = sum(1 for row in range(total_rows) if not table.isRowHidden(row))
+
+        self.panel_title_label.setText(f"Jobs · {project_name}")
+        if total_rows == 0:
+            self.jobs_meta_label.setText("No jobs yet")
+        elif visible_rows != total_rows:
+            self.jobs_meta_label.setText(f"Showing {visible_rows} of {total_rows} jobs")
+        else:
+            label = "job" if total_rows == 1 else "jobs"
+            self.jobs_meta_label.setText(f"{total_rows} {label}")
