@@ -528,11 +528,10 @@ class SlurmJobManagerApp(QMainWindow):
         cluster_layout = QVBoxLayout(cluster_panel)
         cluster_layout.setSpacing(15)  # Device-independent spacing
 
-        # Header with refresh button (maintenance label removed from here)
+        # Header with filtering and refresh controls
         header_layout = QHBoxLayout()
         self.cluster_label = QLabel("Cluster Status Overview")
         self.cluster_label.setObjectName("sectionTitle")
-        # Use device-independent font size - Qt handles DPI scaling
 
         header_layout.addWidget(self.cluster_label)
         header_layout.addStretch()
@@ -545,33 +544,37 @@ class SlurmJobManagerApp(QMainWindow):
 
         self.filter_jobs = QLineEdit()
         self.filter_jobs.setClearButtonEnabled(True)
-        self.filter_jobs.setPlaceholderText("Filter jobs...")
-        # Use device-independent width
-        self.filter_jobs.setFixedWidth(220)
+        self.filter_jobs.setPlaceholderText("Search jobs in queue...")
+        self.filter_jobs.setFixedWidth(260)
         header_layout.addWidget(self.filter_jobs)
 
         self.filter_jobs.textChanged.connect(
             lambda: self.job_queue_widget.filter_table(self.filter_jobs.text())
         )
 
-        refresh_cluster_btn = QPushButton("Refresh Status")
-        refresh_cluster_btn.clicked.connect(self.slurm_worker.run)
+        clear_cluster_filters_btn = QPushButton("Clear Filters")
+        clear_cluster_filters_btn.setObjectName(BTN_BLUE)
+        clear_cluster_filters_btn.clicked.connect(self._reset_cluster_filters)
+        header_layout.addWidget(clear_cluster_filters_btn)
+
+        refresh_cluster_btn = QPushButton("Refresh Now")
+        refresh_cluster_btn.setObjectName(BTN_GREEN)
+        refresh_cluster_btn.clicked.connect(self._trigger_manual_cluster_refresh)
         header_layout.addWidget(refresh_cluster_btn)
 
         cluster_layout.addLayout(header_layout)
 
-        # Main Content Layout
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(15)  # Device-independent spacing
+        # Main content uses splitter for better resize behavior.
+        content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        content_splitter.setChildrenCollapsible(False)
+        content_splitter.setHandleWidth(8)
 
-        # Left Section: Job Queue
         self.job_queue_widget = JobQueueWidget()
-        content_layout.addWidget(self.job_queue_widget)
         self.job_queue_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
+        content_splitter.addWidget(self.job_queue_widget)
 
-        # Right Section: Cluster Overview
         overview_group = QGroupBox("Real-time Usage")
         overview_layout = QVBoxLayout(overview_group)
         overview_layout.setSpacing(15)  # Device-independent spacing
@@ -580,16 +583,15 @@ class SlurmJobManagerApp(QMainWindow):
         )
 
         self.cluster_status_overview_widget = ClusterStatusWidget()
-        overview_layout.addWidget(
-            self.cluster_status_overview_widget,
-            alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-        )
+        overview_layout.addWidget(self.cluster_status_overview_widget)
+        content_splitter.addWidget(overview_group)
+        # Keep queue dominant while avoiding clipping in real-time usage.
+        overview_group.setMinimumWidth(250)
+        content_splitter.setStretchFactor(0, 8)
+        content_splitter.setStretchFactor(1, 2)
+        content_splitter.setSizes([1190, 410])
 
-        content_layout.addWidget(overview_group)
-        content_layout.setStretchFactor(self.job_queue_widget, 1)
-        content_layout.setStretchFactor(overview_group, 0)
-
-        cluster_layout.addLayout(content_layout)
+        cluster_layout.addWidget(content_splitter)
         self.stacked_widget.addWidget(cluster_panel)
 
     def create_settings_panel(self):
@@ -726,6 +728,19 @@ class SlurmJobManagerApp(QMainWindow):
             self.job_queue_widget.filter_table_by_account(
                 STUDENTS_JOBS_KEYWORD, negative=True
             )
+
+    def _reset_cluster_filters(self):
+        """Reset all queue filters in the Cluster Status panel."""
+        self.filter_jobs.clear()
+        if hasattr(self.filter_btn_by_users, "buttons") and "ALL" in self.filter_btn_by_users.buttons:
+            self.filter_btn_by_users.buttons["ALL"].click()
+        self.filter_by_accounts("ALL")
+        self.job_queue_widget.show_all_rows()
+
+    def _trigger_manual_cluster_refresh(self):
+        """Trigger an immediate worker refresh if the worker is idle."""
+        if not self.slurm_worker.isRunning():
+            self.slurm_worker.start()
 
     def closeEvent(self, event):
         """Handles the window close event."""

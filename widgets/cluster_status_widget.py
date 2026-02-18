@@ -5,8 +5,8 @@ from views.cluster_entities import Cluster
 
 # --- Constants ---
 APP_TITLE = "Cluster Status Representation"
-MIN_WIDTH = 400
-MIN_HEIGHT = 700
+MIN_WIDTH = 250
+MIN_HEIGHT = 360
 REFRESH_INTERVAL_MS = 10000  # Refresh every 10 seconds
 
 # MAIN WIDGET (Facade)

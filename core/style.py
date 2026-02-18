@@ -688,6 +688,20 @@ class AppStyles:
         colors = cls.THEMES[theme]
 
         return f"""
+        /* Compact tab labels for narrow real-time usage panel */
+        QTabWidget#clusterStatusTabs::tab-bar {{
+            left: 0px;
+        }}
+        QTabWidget#clusterStatusTabs QTabBar::tab {{
+            padding: 6px 10px;
+            font-size: 11pt;
+            min-width: 0px;
+            margin-right: 0px;
+        }}
+        QTabWidget#clusterStatusTabs QTabBar::tab:!selected {{
+            margin-top: 0px;
+        }}
+        
         /* Section titles */
         QLabel#sectionTitle {{
             font-size: 16pt;
