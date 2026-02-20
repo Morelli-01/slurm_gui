@@ -250,6 +250,60 @@ def _expand_node_range(node_string: str) -> List[str]:
             
     return nodes
 
+
+def _split_csv_outside_brackets(value: str) -> List[str]:
+    """Split comma-separated values while preserving bracketed ranges."""
+    parts = []
+    current = []
+    depth = 0
+
+    for char in value:
+        if char == "[":
+            depth += 1
+        elif char == "]" and depth > 0:
+            depth -= 1
+
+        if char == "," and depth == 0:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+
+        current.append(char)
+
+    tail = "".join(current).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+
+def _split_reservation_blocks(raw_text: str) -> List[str]:
+    """Split reservation output into blocks, handling with/without blank lines."""
+    blocks = []
+    current = []
+
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if current:
+                blocks.append(" ".join(current))
+                current = []
+            continue
+
+        if line.startswith("ReservationName=") and current:
+            blocks.append(" ".join(current))
+            current = [line]
+            continue
+
+        current.append(line)
+
+    if current:
+        blocks.append(" ".join(current))
+
+    return blocks
+
+
 def parse_slurm_reservations(raw_text: str) -> List[Dict[str, Any]]:
     """
     Parses the raw output of 'scontrol show reservation' into a list of dictionaries,
@@ -273,15 +327,15 @@ def parse_slurm_reservations(raw_text: str) -> List[Dict[str, Any]]:
     }
     
     reservations = []
-    reservation_blocks = raw_text.strip().split('\n\n')
+    reservation_blocks = _split_reservation_blocks(raw_text)
 
     for block in reservation_blocks:
         if not block.strip():
             continue
 
         res_dict = {}
-        single_line_block = ' '.join(block.split())
-        pairs = re.findall(r'(\w+)=((?:\[.*?\]|\S)+)', single_line_block)
+        single_line_block = " ".join(block.split())
+        pairs = re.findall(r"(\w+)=([\s\S]*?)(?=\s+\w+=|$)", single_line_block)
 
         for key, value in pairs:
             # Only process the key if it's in our target list
@@ -291,16 +345,17 @@ def parse_slurm_reservations(raw_text: str) -> List[Dict[str, Any]]:
                 # Handle special parsing for specific keys
                 if key == 'Nodes':
                     all_nodes = []
-                    for node_part in value.split(','):
+                    for node_part in _split_csv_outside_brackets(value):
                         all_nodes.extend(_expand_node_range(node_part))
                     res_dict[key] = all_nodes
                 elif key == 'Flags':
-                    res_dict[key] = value.split(',')
+                    res_dict[key] = [flag for flag in value.split(',') if flag]
                 else:
                     res_dict[key] = value
-        
-        if res_dict and 'maint' in res_dict['ReservationName']:
+
+        reservation_name = str(res_dict.get("ReservationName", "")).lower()
+        flags = [flag.upper() for flag in res_dict.get("Flags", [])]
+        if res_dict and ("maint" in reservation_name or "MAINT" in flags):
             reservations.append(res_dict)
 
     return reservations
-
