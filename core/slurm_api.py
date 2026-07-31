@@ -355,6 +355,15 @@ class SlurmAPI:
         return [d for d in directories if d]
 
     @requires_connection
+    def create_remote_directory(self, path: str) -> Tuple[bool, Optional[str]]:
+        """Creates a remote directory (and any missing parents). Returns (success, error_message)."""
+        command = f"mkdir -p '{path}' && echo OK"
+        stdout, stderr = self.run_command(command)
+        if stdout.strip() != "OK":
+            return False, stderr.strip() if stderr else "Unknown error creating directory"
+        return True, None
+
+    @requires_connection
     def get_home_directory(self) -> Optional[str]:
         """Get the user's home directory on the remote server."""
         stdout, stderr = self.run_command("echo $HOME")

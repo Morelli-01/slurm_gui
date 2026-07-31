@@ -765,6 +765,79 @@ class AppStyles:
         """
 
     @classmethod
+    def get_remote_browser_styles(cls, theme=THEME_DARK):
+        """Styles for the remote directory browser dialog (toolbar, breadcrumbs, sidebar)."""
+        colors = cls.THEMES[theme]
+
+        return f"""
+        QToolButton {{
+            background-color: {colors['bg_alt']};
+            border: 1px solid {colors['border']};
+            border-radius: 6px;
+        }}
+        QToolButton:hover {{
+            background-color: {colors['bg_hover']};
+            border: 1px solid {COLOR_BLUE};
+        }}
+        QToolButton:pressed {{
+            background-color: {colors['bg']};
+        }}
+        QToolButton:disabled {{
+            background-color: {colors['border']};
+            opacity: 0.5;
+        }}
+        QToolButton#favoriteButton:checked {{
+            background-color: {colors['bg_hover']};
+            border: 1px solid {COLOR_ORANGE};
+        }}
+        QToolButton#breadcrumbSegment {{
+            background-color: transparent;
+            border: none;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            color: {colors['fg']};
+        }}
+        QToolButton#breadcrumbSegment:hover {{
+            background-color: {colors['bg_hover']};
+            color: {COLOR_BLUE};
+            border: none;
+        }}
+        QToolButton#breadcrumbSegmentCurrent {{
+            background-color: transparent;
+            border: none;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: bold;
+            color: {COLOR_BLUE};
+        }}
+        QLabel#breadcrumbSeparator {{
+            color: {colors['border']};
+            padding: 0px 2px;
+        }}
+        QListWidget#sidebarList {{
+            background-color: {colors['bg_alt']};
+            border: 1px solid {colors['border']};
+            border-radius: 6px;
+            padding: 4px;
+            outline: 0;
+        }}
+        QListWidget#sidebarList::item {{
+            padding: 6px 8px;
+            border-radius: 4px;
+            margin: 1px 0px;
+        }}
+        QListWidget#sidebarList::item:hover {{
+            background-color: {colors['bg_hover']};
+        }}
+        QListWidget#sidebarList::item:selected {{
+            background-color: {COLOR_BLUE};
+            color: #000000;
+        }}
+        """
+
+    @classmethod
     def get_dialog_styles(cls, theme=THEME_DARK):
         """Dialog specific styles"""
         colors = cls.THEMES[theme]
