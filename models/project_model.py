@@ -592,7 +592,11 @@ class JobsModel:
                 
                 # Determine the overall status based on a priority
                 new_status = found_job.status
-                if "FAILED" in statuses or "CANCELLED" in statuses or "TIMEOUT" in statuses:
+                failure_states = {
+                    "FAILED", "CANCELLED", "TIMEOUT", "OUT_OF_MEMORY",
+                    "NODE_FAIL", "BOOT_FAIL", "DEADLINE", "REVOKED", "SPECIAL_EXIT",
+                }
+                if failure_states.intersection(statuses):
                     new_status = "FAILED"
                 elif "RUNNING" in statuses:
                     new_status = "RUNNING"

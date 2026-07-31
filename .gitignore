@@ -3,3 +3,4 @@ __pycache__/
 slurm_aio_gui.egg-info/
 dist/
 build/
+.venv/
