@@ -193,7 +193,16 @@ class SettingsView(QWidget):
         button_row = QWidget()
         button_layout = QHBoxLayout(button_row)
         button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(8)
         button_layout.addStretch(1)
+
+        self.reset_column_widths_btn = QPushButton("Reset Column Widths")
+        self.reset_column_widths_btn.setObjectName(BTN_BLUE)
+        self.reset_column_widths_btn.setFixedWidth(220)
+        self.reset_column_widths_btn.setToolTip(
+            "Forget the column widths you set in the Job Queue table and restore the defaults."
+        )
+        button_layout.addWidget(self.reset_column_widths_btn)
 
         self.save_appearance_btn = QPushButton("Save Display Settings")
         self.save_appearance_btn.setObjectName(BTN_GREEN)
@@ -249,6 +258,7 @@ class SettingsView(QWidget):
         self.show_password_btn.toggled.connect(self._toggle_password_visibility)
 
         self.save_appearance_btn.clicked.connect(self._emit_display_opt_save)
+        self.reset_column_widths_btn.clicked.connect(self._emit_column_widths_reset)
         self.column_filter_input.textChanged.connect(self._filter_display_options)
         self.columns_select_all_btn.clicked.connect(partial(self._set_all_column_checks, True))
         self.columns_clear_all_btn.clicked.connect(partial(self._set_all_column_checks, False))
@@ -324,6 +334,9 @@ class SettingsView(QWidget):
             data={"display_settings": display_settings},
             source="settings.view",
         )
+
+    def _emit_column_widths_reset(self):
+        self.event_bus.emit(Events.COLUMN_WIDTHS_RESET_REQ, source="settings.view")
 
     def _emit_discord_test(self):
         self.discord_test_requested.emit(self.discord_webhook_url.text().strip())

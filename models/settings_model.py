@@ -7,6 +7,10 @@ from PyQt6.QtCore import QSettings
 import tempfile
 import os
 
+# Groups never synced with the remote settings file: credentials, and column
+# widths (which depend on the local screen size).
+LOCAL_ONLY_SETTINGS_GROUPS = {"GeneralSettings", JOB_QUEUE_COLUMN_WIDTHS_GROUP}
+
 # MODEL
 class SettingsModel(QObject):
     """Model: Handles settings data and persistence"""
@@ -68,7 +72,7 @@ class SettingsModel(QObject):
                 tmp_settings = QSettings(tmp_path, QSettings.Format.IniFormat)
 
                 for group in self.settings.childGroups():
-                    if group == "GeneralSettings":
+                    if group in LOCAL_ONLY_SETTINGS_GROUPS:
                         continue
                     self.settings.beginGroup(group)
                     tmp_settings.beginGroup(group)
@@ -104,7 +108,7 @@ class SettingsModel(QObject):
                     remote_settings_file.close()
                     remote_settings = QSettings(remote_settings_file.name, QSettings.Format.IniFormat)
                     for group in remote_settings.childGroups():
-                        if group == "GeneralSettings":
+                        if group in LOCAL_ONLY_SETTINGS_GROUPS:
                             continue
                         remote_settings.beginGroup(group)
                         self.settings.beginGroup(group)
