@@ -88,6 +88,8 @@ class JobQueueController:
     def update_queue_status(self, jobs_data: List[Dict[str, Any]]):
         """Update queue status by passing the full dataset to the model."""
         self.table_model.update_jobs(jobs_data)
+        if jobs_data:
+            self.view.ensure_column_widths()
 
     def filter_table_by_account(self, kws: list[str], negative=False):
         """Applies a keyword filter to the 'Account' column."""

@@ -1,6 +1,8 @@
+from pathlib import Path
 from PyQt6.QtWidgets import QTableView
 from core.defaults import *
-from PyQt6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt
+from PyQt6.QtCore import QAbstractTableModel, QSettings, QSortFilterProxyModel, Qt, QTimer
+from utils import settings_path
 import traceback
 from typing import Dict
 
@@ -12,6 +14,7 @@ class JobQueueView(QTableView):  # Changed from QWidget
         super().__init__(parent)
         self._shutdown_panel = None
         self._setup_table_properties()
+        self._setup_column_width_persistence()
 
     def _setup_table_properties(self):
         """Setup table properties with cell selection and copy functionality"""
@@ -100,16 +103,119 @@ class JobQueueView(QTableView):  # Changed from QWidget
 
     def setup_columns(self, displayable_fields: Dict[str, bool]):
         """Hides or shows columns based on settings."""
-        source_model = self.model().sourceModel()
-        for i in range(source_model.columnCount()):
-             header_name = source_model.headerData(i, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
-             is_visible = displayable_fields.get(header_name, True)
-             self.setColumnHidden(i, not is_visible)
-             if is_visible:
-                 if header_name == "Job Name":
-                    self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-                 else:
-                    self.horizontalHeader().setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        header = self.horizontalHeader()
+        self._applying_widths = True
+        try:
+            # Interactive mode lets the user drag column borders to resize them
+            # (double-clicking a border still auto-fits the column to its content).
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            header.setMinimumSectionSize(40)
+            source_model = self.model().sourceModel()
+            for i in range(source_model.columnCount()):
+                 header_name = source_model.headerData(i, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+                 is_visible = displayable_fields.get(header_name, True)
+                 self.setColumnHidden(i, not is_visible)
+        finally:
+            self._applying_widths = False
+
+    # --- Column widths ---
+
+    def _setup_column_width_persistence(self):
+        """Persist user-adjusted column widths to the local settings file."""
+        self._applying_widths = False
+        self._widths_initialized = False
+        self._save_widths_timer = QTimer(self)
+        self._save_widths_timer.setSingleShot(True)
+        self._save_widths_timer.setInterval(400)
+        self._save_widths_timer.timeout.connect(self.save_column_widths)
+        self.horizontalHeader().sectionResized.connect(self._on_section_resized)
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._flush_pending_width_save)
+
+    def _column_name(self, logical_index: int) -> str:
+        return self.model().headerData(logical_index, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+
+    def _last_visible_section(self) -> int:
+        header = self.horizontalHeader()
+        for visual in reversed(range(header.count())):
+            logical = header.logicalIndex(visual)
+            if not header.isSectionHidden(logical):
+                return logical
+        return -1
+
+    def _on_section_resized(self, logical_index: int, old_size: int, new_size: int):
+        # Ignore programmatic resizes and the stretched last column, whose
+        # width just follows the window size.
+        if self._applying_widths or not self._widths_initialized:
+            return
+        if self.horizontalHeader().stretchLastSection() and logical_index == self._last_visible_section():
+            return
+        self._save_widths_timer.start()
+
+    def _flush_pending_width_save(self):
+        if self._save_widths_timer.isActive():
+            self._save_widths_timer.stop()
+            self.save_column_widths()
+
+    def _widths_settings(self) -> QSettings:
+        return QSettings(str(Path(settings_path)), QSettings.Format.IniFormat)
+
+    def save_column_widths(self):
+        """Store the width of each visible column, keyed by column name."""
+        header = self.horizontalHeader()
+        last_visible = self._last_visible_section() if header.stretchLastSection() else -1
+        settings = self._widths_settings()
+        settings.beginGroup(JOB_QUEUE_COLUMN_WIDTHS_GROUP)
+        for i in range(header.count()):
+            if header.isSectionHidden(i) or i == last_visible:
+                continue
+            settings.setValue(self._column_name(i), header.sectionSize(i))
+        settings.endGroup()
+        settings.sync()
+
+    def fit_columns_to_contents(self, max_width: int = 350):
+        """Size columns to their content, capping overly wide ones."""
+        self.resizeColumnsToContents()
+        header = self.horizontalHeader()
+        for i in range(header.count()):
+            if header.sectionSize(i) > max_width:
+                header.resizeSection(i, max_width)
+
+    def ensure_column_widths(self):
+        """Apply initial widths once: saved user widths, else fit to content.
+
+        Called on every data load but only acts the first time, so later
+        refreshes don't override widths the user has adjusted manually.
+        """
+        if self._widths_initialized:
+            return
+        settings = self._widths_settings()
+        settings.beginGroup(JOB_QUEUE_COLUMN_WIDTHS_GROUP)
+        saved = {key: settings.value(key, 0, type=int) for key in settings.childKeys()}
+        settings.endGroup()
+
+        header = self.horizontalHeader()
+        self._applying_widths = True
+        try:
+            self.fit_columns_to_contents()
+            for i in range(header.count()):
+                width = saved.get(self._column_name(i), 0)
+                if width > 0:
+                    header.resizeSection(i, max(width, header.minimumSectionSize()))
+        finally:
+            self._applying_widths = False
+        self._widths_initialized = True
+
+    def reset_column_widths(self):
+        """Forget saved column widths and go back to the default fit-to-content."""
+        self._save_widths_timer.stop()
+        settings = self._widths_settings()
+        settings.remove(JOB_QUEUE_COLUMN_WIDTHS_GROUP)
+        settings.sync()
+        self._widths_initialized = False
+        if self.model() is not None and self.model().rowCount() > 0:
+            self.ensure_column_widths()
 
 
     def shutdown_ui(self, is_connected=False):

@@ -310,6 +310,7 @@ class Events:
     # Internal settings events
     CONNECTION_SAVE_REQ = "settings.view.connection_save_btn"
     DISPLAY_SAVE_REQ = "settings.view.display_save_btn"
+    COLUMN_WIDTHS_RESET_REQ = "settings.view.column_widths_reset_btn"
     NOTIF_SAVE_REQ = "settings.view.notification_changed"
     DISCORD_TEST_REQ = "settings.view.discord_test_btn"
     

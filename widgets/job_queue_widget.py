@@ -27,6 +27,10 @@ class JobQueueWidget(QGroupBox):
             Events.CONNECTION_STATE_CHANGED,
             self.controller._shutdown
         )
+        get_event_bus().subscribe(
+            Events.COLUMN_WIDTHS_RESET_REQ,
+            callback=lambda event: self.controller.view.reset_column_widths()
+        )
 
     def _handle_display_settings_change(self, event):
         """

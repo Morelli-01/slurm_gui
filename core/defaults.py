@@ -130,3 +130,6 @@ STATE_COLORS = {
 }
 
 
+
+# Settings group holding user-adjusted job queue column widths (kept local, not synced remotely)
+JOB_QUEUE_COLUMN_WIDTHS_GROUP = "JobQueueColumnWidths"
