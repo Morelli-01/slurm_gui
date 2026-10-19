@@ -794,7 +794,11 @@ def check_for_updates(parent):
         # Get the currently installed version from pyproject.toml
         # In a real application, you might get this from importlib.metadata
 
-        current_version_str = importlib.metadata.version(package_name)
+        try:
+            current_version_str = importlib.metadata.version(package_name)
+        except importlib.metadata.PackageNotFoundError:
+            # Running from a source checkout, not a pip install: nothing to compare against
+            return
         current_version = parse_version(current_version_str)
         # Get the latest version from PyPI
         response = requests.get(f"https://pypi.org/pypi/{package_name}/json", timeout=5)

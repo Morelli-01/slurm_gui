@@ -9,16 +9,21 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from PyQt6.QtCore import (
     QObject, QTimer, QPropertyAnimation, QEasingCurve, QRect, QPoint, QSize, 
-    pyqtSignal, Qt
+    pyqtSignal, Qt, QEvent
 )
 from PyQt6.QtGui import QFont, QPixmap, QColor
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, 
-    QGraphicsDropShadowEffect, QSizePolicy, QApplication
+    QGraphicsDropShadowEffect, QSizePolicy, QApplication, QMainWindow
 )
 
 from core.defaults import *
 from utils import script_dir
+
+
+def _is_wayland() -> bool:
+    """Wayland compositors don't let clients set window opacity or position top-level windows."""
+    return QApplication.platformName().startswith("wayland")
 
 # ============================================================================
 # ENUMS AND DATA CLASSES
@@ -154,6 +159,8 @@ class ToastView(QWidget):
         super().__init__(parent)
         self.toast_data = toast_data
         self.is_visible = False
+        # With a parent, the toast is an overlay child widget instead of its own window
+        self.is_overlay = parent is not None
         self._setup_window_properties()
         self._setup_ui()
         self._apply_styling()
@@ -162,12 +169,13 @@ class ToastView(QWidget):
         
     def _setup_window_properties(self):
         """Configure window properties for overlay behavior"""
-        self.setWindowFlags(
-            Qt.WindowType.Tool |
-            Qt.WindowType.FramelessWindowHint |
-            Qt.WindowType.WindowStaysOnTopHint |
-            Qt.WindowType.X11BypassWindowManagerHint
-        )
+        if not self.is_overlay:
+            self.setWindowFlags(
+                Qt.WindowType.Tool |
+                Qt.WindowType.FramelessWindowHint |
+                Qt.WindowType.WindowStaysOnTopHint |
+                Qt.WindowType.X11BypassWindowManagerHint
+            )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -412,9 +420,11 @@ class ToastView(QWidget):
         self.slide_animation.setDuration(400)
         self.slide_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         
-        self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
-        self.opacity_animation.setDuration(400)
-        self.opacity_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.opacity_animation = None
+        if not self.is_overlay and not _is_wayland():
+            self.opacity_animation = QPropertyAnimation(self, b"windowOpacity")
+            self.opacity_animation.setDuration(400)
+            self.opacity_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         
         if hasattr(self, 'progress_frame') and self.toast_data.duration > 0:
             self.progress_animation = QPropertyAnimation(self.progress_frame, b"geometry")
@@ -443,19 +453,22 @@ class ToastView(QWidget):
             
         self.is_visible = True
         super().show()
+        if self.is_overlay:
+            self.raise_()
         
         # Setup slide animation
         start_pos = QPoint(target_position.x(), target_position.y())
         self.move(start_pos)
-        self.setWindowOpacity(0.0)
         
         self.slide_animation.setStartValue(start_pos)
         self.slide_animation.setEndValue(target_position)
         self.slide_animation.start()
         
-        self.opacity_animation.setStartValue(0.0)
-        self.opacity_animation.setEndValue(1.0)
-        self.opacity_animation.start()
+        if self.opacity_animation:
+            self.setWindowOpacity(0.0)
+            self.opacity_animation.setStartValue(0.0)
+            self.opacity_animation.setEndValue(1.0)
+            self.opacity_animation.start()
         
         # Start progress animation if applicable
         if hasattr(self, 'progress_animation'):
@@ -488,9 +501,10 @@ class ToastView(QWidget):
         self.slide_animation.finished.connect(self._on_hide_finished)
         self.slide_animation.start()
         
-        self.opacity_animation.setStartValue(1.0)
-        self.opacity_animation.setEndValue(0.0)
-        self.opacity_animation.start()
+        if self.opacity_animation:
+            self.opacity_animation.setStartValue(1.0)
+            self.opacity_animation.setEndValue(0.0)
+            self.opacity_animation.start()
 
     def _on_hide_finished(self):
         """Handle animation completion"""
@@ -518,6 +532,7 @@ class ToastController(QObject):
         self.model = model
         self.active_views: Dict[str, ToastView] = {}
         self.auto_hide_timers: Dict[str, QTimer] = {}
+        self._overlay_host: Optional[QWidget] = None
         self._setup_connections()
         
     def _setup_connections(self):
@@ -529,7 +544,13 @@ class ToastController(QObject):
         
     def _create_toast_view(self, toast_data: ToastData):
         """Create and show a new toast view"""
-        view = ToastView(toast_data)
+        # On Wayland top-level windows can't be positioned, so draw toasts inside the main window.
+        # Toasts often fire while the main window is still being constructed, so don't require it visible.
+        host = self._find_main_window(require_visible=False) if _is_wayland() else None
+        if host is not None and host is not self._overlay_host:
+            host.installEventFilter(self)
+            self._overlay_host = host
+        view = ToastView(toast_data, parent=host)
         self.active_views[toast_data.id] = view
         
         # Connect view signals
@@ -579,6 +600,10 @@ class ToastController(QObject):
             main_window.windowState() != Qt.WindowState.WindowMinimized
         )
         
+        if self._overlay_host is not None:
+            main_window = self._overlay_host
+            is_window_visible = True
+
         if is_window_visible and main_window:
             # Position relative to main window
             parent_geometry = main_window.geometry()
@@ -591,7 +616,7 @@ class ToastController(QObject):
                     view = self.active_views[toast_data.id]
                     toast_height = view.sizeHint().height()
                     y -= toast_height
-                    global_pos = main_window.mapToGlobal(QPoint(x, y))
+                    global_pos = QPoint(x, y) if view.is_overlay else main_window.mapToGlobal(QPoint(x, y))
                     
                     # Animate to new position if already visible
                     if view.is_visible:
@@ -637,6 +662,11 @@ class ToastController(QObject):
             main_window.windowState() != Qt.WindowState.WindowMinimized
         )
         
+        view = self.active_views.get(toast_id)
+        if view and view.is_overlay:
+            main_window = view.parentWidget()
+            is_window_visible = True
+
         if is_window_visible and main_window:
             # Position relative to main window
             parent_geometry = main_window.geometry()
@@ -653,10 +683,12 @@ class ToastController(QObject):
                     y -= existing_view.sizeHint().height() + config.spacing
             
             # Subtract this toast's height
-            if toast_id in self.active_views:
-                view = self.active_views[toast_id]
+            view = self.active_views.get(toast_id)
+            if view:
                 y -= view.sizeHint().height()
             
+            if view and view.is_overlay:
+                return QPoint(x, y)
             return main_window.mapToGlobal(QPoint(x, y))
         else:
             # Position on desktop
@@ -680,12 +712,22 @@ class ToastController(QObject):
             
             return QPoint(x, y)
             
-    def _find_main_window(self) -> Optional[QWidget]:
-        """Find the main application window"""
-        for widget in QApplication.topLevelWidgets():
-            if hasattr(widget, 'geometry') and widget.isVisible():
+    def eventFilter(self, obj, event):
+        """Keep overlay toasts anchored to the bottom-right when the host window is shown or resized"""
+        if obj is self._overlay_host and event.type() in (QEvent.Type.Show, QEvent.Type.Resize):
+            self._position_all_toasts()
+        return super().eventFilter(obj, event)
+
+    def _find_main_window(self, require_visible: bool = True) -> Optional[QWidget]:
+        """Find the main application window, never a floating toast"""
+        candidates = [
+            w for w in QApplication.topLevelWidgets()
+            if not isinstance(w, ToastView) and (w.isVisible() or not require_visible)
+        ]
+        for widget in candidates:
+            if isinstance(widget, QMainWindow):
                 return widget
-        return None
+        return next((w for w in candidates if w.isVisible()), None)
         
     def _get_average_toast_height(self) -> int:
         """Get average height of active toasts"""
