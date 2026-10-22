@@ -626,7 +626,6 @@ class SlurmAPI:
 
 
 if __name__ == "__main__":
-    settings_path = "/home/nicola/Desktop/slurm_gui/configs/settings.ini"
     api = SlurmAPI()
     print(api._config)
     api.connect()

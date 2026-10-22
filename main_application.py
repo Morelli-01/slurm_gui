@@ -897,38 +897,16 @@ def main():
             print("Error reading DPI:", e)
 
     app = QApplication(sys.argv)
-    # Get system-specific configuration directory
-    config_dir_name = "SlurmAIO"
-    configs_dir = (
-        Path(
-            QStandardPaths.writableLocation(
-                QStandardPaths.StandardLocation.AppConfigLocation
-            )
-        )
-        / config_dir_name
-    )
-    if not configs_dir.is_dir():
-        configs_dir = (
-            Path(
-                QStandardPaths.writableLocation(
-                    QStandardPaths.StandardLocation.GenericConfigLocation
-                )
-            )
-            / config_dir_name
-        )
-        if not configs_dir.is_dir():
-            configs_dir = Path(script_dir) / "configs"
-
-    settings_path = configs_dir / "settings.ini"
-
     if not os.path.isfile(settings_path):
         print(f"Settings file not found at: {settings_path}")
 
-        if not configs_dir.exists():
-            os.makedirs(configs_dir)
+        if not os.path.isdir(configs_dir):
+            os.makedirs(configs_dir, exist_ok=True)
             print(f"Created configs directory at: {configs_dir}")
 
         shutil.copy2(default_settings_path, settings_path)
+        # The settings file stores the SSH password, keep it private to the user
+        os.chmod(settings_path, 0o600)
         print(f"Created settings file at: {settings_path} using defaults")
 
         # Set default font with fallback - let Qt handle DPI scaling

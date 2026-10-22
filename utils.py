@@ -1,8 +1,10 @@
 import platform
 import subprocess
 from PyQt6.QtWidgets import QLabel, QFrame
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, QStandardPaths
 import sys, os
+import shutil
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -17,9 +19,37 @@ import re
 COLOR_DARK_BORDER = "#6272a4"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-settings_path = os.path.join(script_dir, "configs", "settings.ini")
-configs_dir = os.path.join(script_dir, "configs")
 default_settings_path = os.path.join(script_dir, "src_static", "defaults.ini")
+
+
+def _resolve_configs_dir() -> Path:
+    """Return the per-user config directory, migrating legacy settings if needed."""
+    # ~/.config on Linux, ~/Library/Preferences on macOS, %LOCALAPPDATA% on Windows
+    user_dir = Path(
+        QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.GenericConfigLocation
+        )
+    ) / "SlurmAIO"
+
+    # One-time migration from the old in-package location, only when the install
+    # belongs to this user, so a global install never leaks another user's credentials
+    legacy_file = Path(script_dir) / "configs" / "settings.ini"
+    user_file = user_dir / "settings.ini"
+    if (
+        not user_file.exists()
+        and legacy_file.is_file()
+        and os.access(legacy_file.parent, os.W_OK)
+    ):
+        user_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy_file, user_file)
+        os.chmod(user_file, 0o600)
+        print(f"Migrated settings from {legacy_file} to {user_file}")
+
+    return user_dir
+
+
+configs_dir = str(_resolve_configs_dir())
+settings_path = os.path.join(configs_dir, "settings.ini")
 font_directory = os.path.join("src_static", "Open_Sans")
 # Object Names for Styling
 BTN_GREEN = "btnGreen"
