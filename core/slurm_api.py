@@ -116,19 +116,45 @@ class SlurmAPI:
         stdin, stdout, stderr = self._client.exec_command(command)
         return stdout.read().decode().strip(), stderr.read().decode().strip()
 
+    def _ssh_config_for_host(self, host: str) -> Dict[str, Any]:
+        """Return the ~/.ssh/config entry for host, like the ssh command would use."""
+        config_path = os.path.expanduser("~/.ssh/config")
+        if not os.path.isfile(config_path):
+            return {}
+        try:
+            return paramiko.SSHConfig.from_path(config_path).lookup(host)
+        except Exception as e:
+            print(f"Could not read {config_path}: {e}")
+            return {}
+
     def connect(self, *args):
         """Establish SSH connection"""
         self._set_connection_status(ConnectionState.CONNECTING)
         try:
+            # Honor HostName/Port/IdentityFile from ~/.ssh/config for this host
+            host_config = self._ssh_config_for_host(self._config.host)
+            identity_files = [
+                os.path.expanduser(path)
+                for path in host_config.get("identityfile", [])
+                if os.path.isfile(os.path.expanduser(path))
+            ]
+
             self._client = paramiko.SSHClient()
             self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # Try SSH keys (from ~/.ssh/config, the ssh-agent and default ~/.ssh/id_*
+            # files) before the password. Some clusters accept the password alone
+            # on the internal network but require key + password from outside;
+            # paramiko sends the password after a key is accepted with partial
+            # success, and falls back to password-only when keys are refused.
             self._client.connect(
-                self._config.host,
+                host_config.get("hostname", self._config.host),
+                port=int(host_config.get("port", 22)),
                 username=self._config.username,
                 password=self._config.password,
+                key_filename=identity_files or None,
                 timeout=self._config.timeout,
-                allow_agent=False,
-                look_for_keys=False,
+                allow_agent=True,
+                look_for_keys=True,
             )
             self._set_connection_status(ConnectionState.CONNECTED)
             self._load_basic_info()
