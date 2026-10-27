@@ -135,6 +135,15 @@ class ConnectionSetupDialog(QDialog):
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         form_layout.addRow("Password:", self.password_input)
 
+        self.key_file_input = QLineEdit()
+        self.key_file_input.setPlaceholderText("Optional, defaults to ~/.ssh/id_*")
+        form_layout.addRow("SSH Key:", self.key_file_input)
+
+        self.key_passphrase_input = QLineEdit()
+        self.key_passphrase_input.setPlaceholderText("Only if the key has a passphrase")
+        self.key_passphrase_input.setEchoMode(QLineEdit.EchoMode.Password)
+        form_layout.addRow("Key Passphrase:", self.key_passphrase_input)
+
         layout.addLayout(form_layout)
 
         self.button_box = QDialogButtonBox(
@@ -150,6 +159,8 @@ class ConnectionSetupDialog(QDialog):
             "clusterAddress": self.cluster_address_input.text().strip(),
             "username": self.username_input.text().strip(),
             "psw": self.password_input.text().strip(),
+            "keyFile": self.key_file_input.text().strip(),
+            "keyPassphrase": self.key_passphrase_input.text(),
         }
 
 
@@ -926,6 +937,8 @@ def main():
             settings.setValue("clusterAddress", connection_details["clusterAddress"])
             settings.setValue("username", connection_details["username"])
             settings.setValue("psw", connection_details["psw"])
+            settings.setValue("keyFile", connection_details["keyFile"])
+            settings.setValue("keyPassphrase", connection_details["keyPassphrase"])
             settings.endGroup()
             settings.sync()
             print(f"Updated settings file at: {settings_path} with user input")

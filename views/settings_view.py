@@ -4,7 +4,9 @@ from functools import partial
 from core.event_bus import Events, get_event_bus
 from core.defaults import *
 from core.style import AppStyles
+from core.ssh_connect import check_key_files
 from utils import settings_path
+from widgets.toast_widget import show_error_toast, show_success_toast, show_warning_toast
 
 
 class SettingsView(QWidget):
@@ -49,6 +51,11 @@ class SettingsView(QWidget):
         }}
         QLineEdit#settingsColumnFilter {{
             min-height: 34px;
+        }}
+        /* Buttons sitting next to a 34px input: the default padding clips their text */
+        QPushButton[inlineButton="true"] {{
+            padding: 0px 8px;
+            font-size: 13px;
         }}
         """
         self.setStyleSheet(style)
@@ -117,12 +124,44 @@ class SettingsView(QWidget):
         self.password.setPlaceholderText("password")
         password_layout.addWidget(self.password, 1)
 
-        self.show_password_btn = QPushButton("Show")
-        self.show_password_btn.setObjectName(BTN_BLUE)
+        self.show_password_btn = self._inline_button("Show")
         self.show_password_btn.setCheckable(True)
-        self.show_password_btn.setFixedSize(80, 34)
         password_layout.addWidget(self.show_password_btn)
         conn_layout.addRow("Password:", password_row)
+
+        key_file_row = QWidget()
+        key_file_layout = QHBoxLayout(key_file_row)
+        key_file_layout.setContentsMargins(0, 0, 0, 0)
+        key_file_layout.setSpacing(6)
+
+        self.key_file = QLineEdit()
+        self.key_file.setFixedHeight(34)
+        self.key_file.setPlaceholderText("optional, defaults to ~/.ssh/config and ~/.ssh/id_*")
+        key_file_layout.addWidget(self.key_file, 1)
+
+        self.browse_key_file_btn = self._inline_button("Browse")
+        key_file_layout.addWidget(self.browse_key_file_btn)
+        conn_layout.addRow("SSH Key:", key_file_row)
+
+        passphrase_row = QWidget()
+        passphrase_layout = QHBoxLayout(passphrase_row)
+        passphrase_layout.setContentsMargins(0, 0, 0, 0)
+        passphrase_layout.setSpacing(6)
+
+        self.key_passphrase = QLineEdit()
+        self.key_passphrase.setFixedHeight(34)
+        self.key_passphrase.setEchoMode(QLineEdit.EchoMode.Password)
+        self.key_passphrase.setPlaceholderText("only if the key is protected by a passphrase")
+        passphrase_layout.addWidget(self.key_passphrase, 1)
+
+        self.show_passphrase_btn = self._inline_button("Show")
+        self.show_passphrase_btn.setCheckable(True)
+        passphrase_layout.addWidget(self.show_passphrase_btn)
+
+        self.test_key_btn = self._inline_button("Test Key")
+        self.test_key_btn.setToolTip("Check that the SSH key can be unlocked, without connecting")
+        passphrase_layout.addWidget(self.test_key_btn)
+        conn_layout.addRow("Key Passphrase:", passphrase_row)
 
         actions_row = QWidget()
         actions_layout = QHBoxLayout(actions_row)
@@ -141,7 +180,23 @@ class SettingsView(QWidget):
         actions_layout.addStretch(1)
         conn_layout.addRow("", actions_row)
 
+        # Labels are only as tall as their text and sit at the top of the row:
+        # match the 34px inputs so they line up with them
+        for row in range(conn_layout.rowCount()):
+            label = conn_layout.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            if label and label.widget():
+                label.widget().setMinimumHeight(34)
+                label.widget().setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
         layout.addWidget(conn_group)
+
+    @staticmethod
+    def _inline_button(text: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName(BTN_BLUE)
+        button.setProperty("inlineButton", True)
+        button.setFixedSize(84, 34)
+        return button
 
     def _setup_display_section(self, layout):
         display_group = QGroupBox("Display Options")
@@ -256,6 +311,9 @@ class SettingsView(QWidget):
         self.connection_settings_btn.clicked.connect(self._emit_connection_save)
         self.reload_settings_btn.clicked.connect(self.load_settings)
         self.show_password_btn.toggled.connect(self._toggle_password_visibility)
+        self.browse_key_file_btn.clicked.connect(self._browse_key_file)
+        self.show_passphrase_btn.toggled.connect(self._toggle_passphrase_visibility)
+        self.test_key_btn.clicked.connect(self._test_key)
 
         self.save_appearance_btn.clicked.connect(self._emit_display_opt_save)
         self.reset_column_widths_btn.clicked.connect(self._emit_column_widths_reset)
@@ -273,6 +331,37 @@ class SettingsView(QWidget):
     def _toggle_password_visibility(self, show: bool):
         self.password.setEchoMode(QLineEdit.EchoMode.Normal if show else QLineEdit.EchoMode.Password)
         self.show_password_btn.setText("Hide" if show else "Show")
+
+    def _toggle_passphrase_visibility(self, show: bool):
+        self.key_passphrase.setEchoMode(QLineEdit.EchoMode.Normal if show else QLineEdit.EchoMode.Password)
+        self.show_passphrase_btn.setText("Hide" if show else "Show")
+
+    def _test_key(self):
+        """Check locally that the key files the connection would use can be unlocked."""
+        # Same fallback as the connection: no passphrase means the password is tried
+        passphrase = self.key_passphrase.text() or self.password.text().strip()
+        results = check_key_files(
+            self.cluster_address.text().strip(), self.key_file.text().strip(), passphrase
+        )
+        if not results:
+            show_warning_toast(self, "No SSH Key Found",
+                               "Choose a key file, or add one to ~/.ssh/config or ~/.ssh/id_*.")
+            return
+        problems = [problem for _, problem in results if problem]
+        usable = [path for path, problem in results if not problem]
+        if not problems:
+            show_success_toast(self, "SSH Key OK", "\n".join(f"Unlocked {path}" for path in usable))
+        elif usable:
+            show_warning_toast(self, "Some SSH Keys Unusable",
+                               "\n".join([f"Unlocked {path}" for path in usable] + problems))
+        else:
+            show_error_toast(self, "SSH Key Unusable", "\n".join(problems))
+
+    def _browse_key_file(self):
+        start_dir = self.key_file.text().strip() or str(Path.home() / ".ssh")
+        path, _ = QFileDialog.getOpenFileName(self, "Select SSH private key", start_dir)
+        if path:
+            self.key_file.setText(path)
 
     def _set_all_column_checks(self, enabled: bool):
         for checkbox in self._job_queue_checkboxes:
@@ -318,6 +407,8 @@ class SettingsView(QWidget):
             "cluster_address": self.cluster_address.text().strip(),
             "username": self.username.text().strip(),
             "password": self.password.text().strip(),
+            "key_file": self.key_file.text().strip(),
+            "key_passphrase": self.key_passphrase.text(),
         }
         self.event_bus.emit(
             Events.CONNECTION_SAVE_REQ,
@@ -356,6 +447,8 @@ class SettingsView(QWidget):
         self.cluster_address.setText(self.settings.value("clusterAddress", ""))
         self.username.setText(self.settings.value("username", ""))
         self.password.setText(self.settings.value("psw", ""))
+        self.key_file.setText(self.settings.value("keyFile", ""))
+        self.key_passphrase.setText(self.settings.value("keyPassphrase", ""))
         self.settings.endGroup()
 
         for checkbox in self._job_queue_checkboxes:

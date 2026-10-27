@@ -34,6 +34,8 @@ class ConnectionConfig:
     host: str = None
     username: str = None
     password: str = None
+    key_file: str = None
+    key_passphrase: str = None
     timeout: int = 30
     retry_attempts: int = 1
     retry_delay: int = 5
@@ -77,7 +79,7 @@ class SlurmAPI:
         self.event_bus = get_event_bus()
         self.connection_status = ConnectionState.DISCONNECTED
         self._config = ConnectionConfig()
-        self._client: Optional[paramiko.SSHClient]
+        self._client: Optional[paramiko.SSHClient] = None
         self._load_connection_config()
         self._initialized = True
         self.accounts = None
@@ -95,6 +97,9 @@ class SlurmAPI:
             self._config.host = config["GeneralSettings"]["clusterAddress"]
             self._config.password = config["GeneralSettings"]["psw"]
             self._config.username = config["GeneralSettings"]["username"]
+            # Optional, older settings files do not have them
+            self._config.key_file = config["GeneralSettings"].get("keyFile", "")
+            self._config.key_passphrase = config["GeneralSettings"].get("keyPassphrase", "")
             return True
         except (KeyError, ValueError) as e:
             print(f"Invalid configuration file: {e}")
@@ -127,6 +132,8 @@ class SlurmAPI:
                 self._config.username,
                 self._config.password,
                 timeout=self._config.timeout,
+                key_file=self._config.key_file,
+                key_passphrase=self._config.key_passphrase,
             )
             self._set_connection_status(ConnectionState.CONNECTED)
             self._load_basic_info()

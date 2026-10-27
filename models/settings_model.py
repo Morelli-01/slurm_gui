@@ -40,7 +40,9 @@ class SettingsModel(QObject):
         self._connection_settings = {
             'cluster_address': self.settings.value("clusterAddress", ""),
             'username': self.settings.value("username", ""),
-            'password': self.settings.value("psw", "")
+            'password': self.settings.value("psw", ""),
+            'key_file': self.settings.value("keyFile", ""),
+            'key_passphrase': self.settings.value("keyPassphrase", "")
         }
         self.settings.endGroup()
 
@@ -133,6 +135,8 @@ class SettingsModel(QObject):
                           self._connection_settings['cluster_address'])
         self.settings.setValue("username", self._connection_settings['username'])
         self.settings.setValue("psw", self._connection_settings['password'])
+        self.settings.setValue("keyFile", self._connection_settings['key_file'])
+        self.settings.setValue("keyPassphrase", self._connection_settings['key_passphrase'])
         self.settings.endGroup()
 
         # Save display settings - match original format exactly
@@ -160,6 +164,8 @@ class SettingsModel(QObject):
                           self._connection_settings['cluster_address'])
         self.settings.setValue("username", self._connection_settings['username'])
         self.settings.setValue("psw", self._connection_settings['password'])
+        self.settings.setValue("keyFile", self._connection_settings['key_file'])
+        self.settings.setValue("keyPassphrase", self._connection_settings['key_passphrase'])
         self.settings.endGroup()
         self.settings.sync()
         print("Connection settings saved!")
